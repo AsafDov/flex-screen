@@ -8,8 +8,13 @@ namespace FlexScreen.Companion;
 record AppVolume(string Id, string Name, int Level, bool Muted);
 
 /// <summary>
-/// Per-app volume on the default playback device, like the Windows volume mixer. Apps with
-/// several audio sessions (Chrome, Teams) show as one entry and move together.
+/// Per-app volume, like the Windows volume mixer: one level per app. Windows keeps a
+/// separate session (and volume) for each output device an app has played on, and its
+/// own mixer may show the session on a device the app isn't using, so the deck keeps all
+/// of an app's sessions, on every output, at one level: a fader move sets them all, and a
+/// change made in Windows (its mixer, or the app itself) to any of them is taken up as the
+/// app's level and copied to the rest. Apps are shown if they have a session on the
+/// default playback device.
 /// </summary>
 sealed class MixerSource
 {
@@ -45,18 +50,29 @@ sealed class MixerSource
 
     static int Rank(string id) => FaderOrder.TryGetValue(id, out var rank) ? rank : FaderOrder.Count;
 
+    /// <summary>An app's sessions as read this round, on every output device.</summary>
     sealed class Group
     {
         public required string Name;
-        public float Level;
-        public bool Muted = true;
-        public bool Active;
+        public bool OnDefault;  // has a session on the default device: shown on the deck
+        public bool Active;     // playing on the default device right now
+        public readonly List<Seen> Sessions = [];
+    }
+
+    /// <param name="Key">The device and the session's instance id: the same session from round to round.</param>
+    sealed record Seen(string Key, AudioSessionControl Session, bool OnDefault, bool Active, Level Level);
+
+    readonly record struct Level(float Volume, bool Muted)
+    {
+        public bool Same(Level other) => Muted == other.Muted && Math.Abs(Volume - other.Volume) < 0.005f;
     }
 
     readonly object _gate = new();
     readonly object _publishGate = new();
     readonly Dictionary<uint, string?> _processIds = new();  // pid → mixer id
     readonly Dictionary<string, string> _names = new();      // mixer id → display name
+    readonly Dictionary<string, Level> _levels = new();      // mixer id → the app's one level
+    Dictionary<string, Level> _last = new();                 // session key → as last read or set
     MMDeviceEnumerator? _enumerator;
     string _key = "";
 
@@ -69,24 +85,24 @@ sealed class MixerSource
 
     public void SetLevel(string appId, int level)
     {
-        ForEachSession(appId, s => s.SimpleAudioVolume.Volume = ToAmplitude(level));
+        lock (_gate) _levels[appId] = new Level(ToAmplitude(level), _levels.TryGetValue(appId, out var was) && was.Muted);
         Poll();
     }
 
-    // Master volume follows Windows' audio-tapered curve, but a session's volume is a plain
-    // amplitude multiplier, so 50% on an app is far louder than 50% on master. Faders use
-    // master's curve (about amplitude = level^1.75) so both feel the same.
-    const double Taper = 1.75;
+    // The numbers Windows' volume mixer shows: a session's volume as stored, times 100.
+    // (Faders used to follow master's audio-tapered curve, level^1.75, so 50% on an app
+    // sounded like 50% on master, but then the deck and Windows showed different numbers.)
+    static float ToAmplitude(int percent) => Math.Clamp(percent, 0, 100) / 100f;
 
-    static float ToAmplitude(int percent) => (float)Math.Pow(Math.Clamp(percent, 0, 100) / 100.0, Taper);
-
-    static int ToPercent(float amplitude) => (int)Math.Round(Math.Pow(Math.Clamp(amplitude, 0f, 1f), 1 / Taper) * 100);
+    static int ToPercent(float amplitude) => (int)Math.Round(Math.Clamp(amplitude, 0f, 1f) * 100);
 
     public void ToggleMute(string appId)
     {
-        var app = Current.FirstOrDefault(a => a.Id == appId);
-        if (app == null) return;
-        ForEachSession(appId, s => s.SimpleAudioVolume.Mute = !app.Muted);
+        lock (_gate)
+        {
+            if (!_levels.TryGetValue(appId, out var was)) return;
+            _levels[appId] = was with { Muted = !was.Muted };
+        }
         Poll();
     }
 
@@ -127,56 +143,101 @@ sealed class MixerSource
 
     List<AppVolume> Read()
     {
-        var groups = new Dictionary<string, Group>();
-        ForEachSessionLocked(session =>
+        if (_enumerator == null) return [];
+        var open = new List<IDisposable>();  // devices and sessions, released once this round is done
+        try
         {
-            var id = Identify(session);
-            if (id == null) return;
-            if (!groups.TryGetValue(id, out var g)) groups[id] = g = new Group { Name = _names[id] };
-            g.Level = Math.Max(g.Level, session.SimpleAudioVolume.Volume);
-            g.Muted &= session.SimpleAudioVolume.Mute;
-            g.Active |= session.State == NAudio.CoreAudioApi.Interfaces.AudioSessionState.AudioSessionStateActive;
-        });
+            var groups = ReadSessions(open);
+            var shown = groups
+                .Where(g => g.Value.OnDefault)
+                .OrderBy(g => Rank(g.Key))
+                .ThenByDescending(g => g.Value.Active)
+                .ThenBy(g => g.Value.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Take(MaxApps)
+                .Select(g => g.Key)
+                .ToList();
+            foreach (var id in shown) _levels.TryAdd(id, Heard(groups[id]));
 
-        return groups
-            .OrderBy(g => Rank(g.Key))
-            .ThenByDescending(g => g.Value.Active)
-            .ThenBy(g => g.Value.Name, StringComparer.CurrentCultureIgnoreCase)
-            .Take(MaxApps)
-            .Select(g => new AppVolume(g.Key, g.Value.Name, ToPercent(g.Value.Level), g.Value.Muted))
-            .ToList();
-    }
-
-    void ForEachSession(string appId, Action<AudioSessionControl> action)
-    {
-        lock (_gate)
+            var last = new Dictionary<string, Level>();
+            foreach (var (id, g) in groups)
+            {
+                if (_levels.ContainsKey(id)) Align(id, g, last);
+                else foreach (var s in g.Sessions) last[s.Key] = s.Level;
+            }
+            _last = last;
+            return shown.Select(id => new AppVolume(id, groups[id].Name, ToPercent(_levels[id].Volume), _levels[id].Muted)).ToList();
+        }
+        finally
         {
-            try
-            {
-                ForEachSessionLocked(s =>
-                {
-                    if (Identify(s) == appId) action(s);
-                });
-            }
-            catch (COMException e)
-            {
-                Log.Write($"mixer: {appId}: {e.Message}");
-            }
+            foreach (var o in open) o.Dispose();
         }
     }
 
-    void ForEachSessionLocked(Action<AudioSessionControl> action)
+    Dictionary<string, Group> ReadSessions(List<IDisposable> open)
     {
-        if (_enumerator == null) return;
-        using var device = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-        var manager = device.AudioSessionManager;
-        manager.RefreshSessions();
-        var sessions = manager.Sessions;
-        for (var i = 0; i < sessions.Count; i++)
+        var groups = new Dictionary<string, Group>();
+        var defaultDevice = _enumerator!.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+        open.Add(defaultDevice);
+        var devices = _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+        for (var d = 0; d < devices.Count; d++)
         {
-            using var session = sessions[i];
-            if (session.State == NAudio.CoreAudioApi.Interfaces.AudioSessionState.AudioSessionStateExpired) continue;
-            action(session);
+            var device = devices[d];
+            open.Add(device);
+            var onDefault = device.ID == defaultDevice.ID;
+            var manager = device.AudioSessionManager;
+            manager.RefreshSessions();
+            var sessions = manager.Sessions;
+            for (var i = 0; i < sessions.Count; i++)
+            {
+                var session = sessions[i];
+                open.Add(session);
+                if (session.State == NAudio.CoreAudioApi.Interfaces.AudioSessionState.AudioSessionStateExpired) continue;
+                var id = Identify(session);
+                if (id == null) continue;
+                if (!groups.TryGetValue(id, out var g)) groups[id] = g = new Group { Name = _names[id] };
+                var active = session.State == NAudio.CoreAudioApi.Interfaces.AudioSessionState.AudioSessionStateActive;
+                g.OnDefault |= onDefault;
+                g.Active |= onDefault && active;
+                var level = new Level(session.SimpleAudioVolume.Volume, session.SimpleAudioVolume.Mute);
+                g.Sessions.Add(new Seen($"{device.ID}|{session.GetSessionInstanceIdentifier}", session, onDefault, active, level));
+            }
+        }
+        return groups;
+    }
+
+    /// <summary>What's heard of an app seen for the first time: its session playing on the
+    /// default device, else any of its sessions there.</summary>
+    static Level Heard(Group g) =>
+        g.Sessions.Where(s => s.OnDefault).OrderByDescending(s => s.Active).Select(s => s.Level).FirstOrDefault(g.Sessions[0].Level);
+
+    /// <summary>
+    /// Brings every session of the app to its one level. A session that changed since the
+    /// last round was moved in Windows (its mixer, or the app's own volume control), so
+    /// that becomes the level first; the default device's session wins a tie.
+    /// </summary>
+    void Align(string id, Group g, Dictionary<string, Level> last)
+    {
+        var moved = g.Sessions
+            .Where(s => _last.TryGetValue(s.Key, out var was) && !was.Same(s.Level))
+            .OrderByDescending(s => s.OnDefault)
+            .FirstOrDefault();
+        if (moved != null) _levels[id] = moved.Level;
+        var level = _levels[id];
+        foreach (var s in g.Sessions)
+        {
+            if (!s.Level.Same(level))
+            {
+                try
+                {
+                    if (Math.Abs(s.Level.Volume - level.Volume) >= 0.005f) s.Session.SimpleAudioVolume.Volume = level.Volume;
+                    if (s.Level.Muted != level.Muted) s.Session.SimpleAudioVolume.Mute = level.Muted;
+                }
+                catch (COMException e)
+                {
+                    Log.Write($"mixer: {id}: {e.Message}");  // the session ended meanwhile
+                }
+            }
+            last[s.Key] = level;
         }
     }
 

@@ -194,8 +194,18 @@ Gotchas found in phase 2:
   a media app over a browser, otherwise the one shown last.
 - Chrome first reports its own icon as the thumbnail, then the page's artwork; art is
   reloaded on every media-properties change and deduplicated by content hash.
-- App (session) volume is linear amplitude while master is audio-tapered; app faders map
-  through `level^1.75` so 50% sounds like 50% on master.
+- App (session) volume is linear amplitude while master is audio-tapered. App faders
+  first mapped through `level^1.75` so 50% sounded like 50% on master, but then the deck
+  read Chrome 53 where Windows' volume mixer said 33; since 2026-11-07 they show the
+  session's own value, as Windows does.
+- One level per app, on every output: Windows keeps a session per output device an app
+  has played on, each with its own volume, and Settings' Volume mixer showed (and moved)
+  Chrome's and Flow Launcher's sessions on the monitor's audio although both follow the
+  default device (Speakers), where the deck read them. The companion now reads every
+  active output's sessions: a deck fader sets all of an app's sessions, a session that
+  changed between two reads (Windows' mixer, or the app's own control) sets the app's
+  level, the default device's winning a tie, and the rest are brought into line. An app
+  seen for the first time takes the level heard on the default device.
 - Endpoint volume notifications arrive on several threads and can overtake each other;
   the companion re-reads the real level (at most every 30 ms) instead of trusting them.
 - Switching the default device takes 0.5–2 s in Windows and fires the change
