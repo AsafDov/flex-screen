@@ -1,0 +1,536 @@
+#include "ui.h"
+
+#include <time.h>
+
+#include "display.h"
+#include <Preferences.h>
+
+#include "esp_heap_caps.h"
+#include "call.h"
+#include "cheat.h"
+#include "idle.h"
+
+#include "model.h"
+#include "page_audio.h"
+#include "page_capture.h"
+#include "page_dev.h"
+#include "page_numpad.h"
+#include "page_today.h"
+#include "page_windows.h"
+#include "pc.h"
+#include "ui_kit.h"
+
+namespace ui {
+namespace {
+
+struct {
+  lv_obj_t *time;
+  lv_obj_t *date;
+  lv_obj_t *pc_dot;
+  lv_obj_t *pc_text;
+  lv_obj_t *vol_button;
+  lv_obj_t *vol;
+  lv_obj_t *mic;
+  lv_obj_t *mic_text;
+  MicIcon mic_icon;
+  lv_obj_t *claude, *claude_dot, *claude_text;
+  lv_obj_t *build, *build_text;
+  lv_obj_t *layer, *layer_text;
+  lv_obj_t *pc;
+  lv_obj_t *meeting, *meeting_text;
+} bar;
+
+struct {
+  lv_obj_t *root, *icon, *text;
+} toast;
+
+lv_obj_t *tabview;
+constexpr uint32_t kDevTab = 2;
+constexpr uint32_t kToastMs = 4000;
+
+constexpr uint32_t kPreviewHoldMs = 800;
+// A second tap this soon on a toggle is a bounce, not a change of mind: two quick
+// toggles cancel out and look like the button did nothing.
+constexpr uint32_t kToggleGuardMs = 300;
+
+uint32_t volume_seen = UINT32_MAX;
+uint32_t mic_seen = UINT32_MAX;
+uint32_t preview_ms = 0;
+uint32_t art_seen = 0;
+int connected_seen = -1;
+int64_t clock_seen = -1;
+uint32_t mute_tap_ms = 0;
+uint32_t mic_tap_ms = 0;
+uint32_t claude_seen = UINT32_MAX;
+uint32_t build_seen = UINT32_MAX;
+uint32_t layer_seen = UINT32_MAX;
+uint32_t meeting_tick_ms = 0;
+uint32_t meeting_seen = UINT32_MAX;
+constexpr uint32_t kMeetingTickMs = 15000;
+constexpr int64_t kMeetingAheadSecs = 12 * 3600;  // the pill shows meetings starting within this
+uint32_t toast_seen = 0;
+uint32_t toast_ms = 0;
+uint32_t bench_seen = 0;
+
+bool acceptTap(uint32_t &last_ms) {
+  if (millis() - last_ms < kToggleGuardMs) return false;
+  last_ms = millis();
+  return true;
+}
+
+void showMic(bool muted);
+
+void onMute(lv_event_t *) {
+  if (acceptTap(mute_tap_ms)) pc::toggleMute();
+}
+
+void onMic(lv_event_t *) {
+  if (!acceptTap(mic_tap_ms)) return;
+  showMic(!model::mic.muted);  // flip now; the PC's report follows within milliseconds
+  pc::toggleMic();
+}
+
+void onShowDev(lv_event_t *) { lv_tabview_set_active(tabview, kDevTab, LV_ANIM_OFF); }
+
+// A swipe changes page at once: sliding redrew the whole page every frame, which this
+// panel can't do smoothly.
+void onSwipe(lv_event_t *) {
+  lv_indev_t *indev = lv_indev_active();
+  if (!indev) return;
+  const lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+  const uint32_t tab = lv_tabview_get_tab_active(tabview);
+  if (dir == LV_DIR_LEFT && tab + 1 < lv_tabview_get_tab_count(tabview)) {
+    lv_tabview_set_active(tabview, tab + 1, LV_ANIM_OFF);
+  } else if (dir == LV_DIR_RIGHT && tab > 0) {
+    lv_tabview_set_active(tabview, tab - 1, LV_ANIM_OFF);
+  } else {
+    return;
+  }
+  lv_indev_wait_release(indev);  // the swipe isn't also a tap on what it started on
+  pc::releaseAllKeys();          // nor a numpad key left held down
+}
+
+// A toast with an action (Claude waiting for approval) runs it; any toast goes away.
+void onToast(lv_event_t *) {
+  if (model::toast.action.length()) pc::runAction(model::toast.action.c_str(), model::toast.id.c_str());
+  lv_obj_set_hidden(toast.root, true);
+}
+
+// The Claude pill brings up the most urgent session's window.
+void onClaudePill(lv_event_t *) {
+  if (model::claude.count > 0) pc::openClaude(model::claude.sessions[0].id.c_str());
+}
+
+// Volume and mic are buttons, not pills: raised so they read as tappable, and with a few
+// px of extra hit area since the bar's edge is easy to miss.
+lv_obj_t *barButton(lv_obj_t *parent, lv_event_cb_t cb) {
+  lv_obj_t *b = button(parent, LV_SIZE_CONTENT, 34, kRaised, cb);
+  lv_obj_set_style_radius(b, 10, 0);
+  lv_obj_set_style_pad_hor(b, 12, 0);
+  lv_obj_set_ext_click_area(b, 5);
+  flexRow(b, 6);
+  return b;
+}
+
+void buildStatusBar(lv_obj_t *parent) {
+  lv_obj_t *b = box(parent);
+  lv_obj_set_size(b, LV_PCT(100), kBarH);
+  lv_obj_set_style_pad_hor(b, 12, 0);
+  lv_obj_set_style_border_side(b, LV_BORDER_SIDE_BOTTOM, 0);
+  lv_obj_set_style_border_color(b, hex(0x22272E), 0);
+  lv_obj_set_style_border_width(b, 1, 0);
+  flexRow(b, 8);
+
+  bar.time = label(b, "--:--", &lv_font_montserrat_20, kText);
+  bar.date = label(b, "", &lv_font_montserrat_16, kMuted);
+  lv_obj_set_style_margin_right(bar.date, 4, 0);
+
+  lv_obj_t *pc = bar.pc = pill(b);
+  bar.pc_dot = box(pc);
+  lv_obj_set_size(bar.pc_dot, 8, 8);
+  lv_obj_set_style_radius(bar.pc_dot, 4, 0);
+  lv_obj_set_style_bg_opa(bar.pc_dot, LV_OPA_COVER, 0);
+  bar.pc_text = label(pc, "PC offline", &lv_font_montserrat_16, kMuted);
+
+  call::buildPill(b);
+
+  // The next meeting today; tapping it opens Today.
+  bar.meeting = pill(b);
+  lv_obj_set_clickable(bar.meeting, true);
+  lv_obj_add_event_cb(bar.meeting, [](lv_event_t *) { showPage(0); }, LV_EVENT_CLICKED, nullptr);
+  label(bar.meeting, LV_SYMBOL_BELL, &lv_font_montserrat_16, kAccent);
+  bar.meeting_text = label(bar.meeting, "", &body_font, kText);
+  lv_obj_set_height(bar.meeting_text, lv_font_get_line_height(&body_font));
+  lv_obj_set_hidden(bar.meeting, true);
+
+  // Claude and build status: Claude brings up its window, the build opens the Dev page.
+  bar.claude = pill(b);
+  lv_obj_set_clickable(bar.claude, true);
+  lv_obj_add_event_cb(bar.claude, onClaudePill, LV_EVENT_CLICKED, nullptr);
+  lv_obj_set_ext_click_area(bar.claude, 5);
+  bar.claude_dot = box(bar.claude);
+  lv_obj_set_size(bar.claude_dot, 8, 8);
+  lv_obj_set_style_radius(bar.claude_dot, 4, 0);
+  lv_obj_set_style_bg_opa(bar.claude_dot, LV_OPA_COVER, 0);
+  bar.claude_text = label(bar.claude, "", &lv_font_montserrat_16, kText);
+  lv_obj_set_hidden(bar.claude, true);
+
+  bar.build = pill(b);
+  lv_obj_set_clickable(bar.build, true);
+  lv_obj_add_event_cb(bar.build, onShowDev, LV_EVENT_CLICKED, nullptr);
+  lv_obj_set_ext_click_area(bar.build, 5);
+  bar.build_text = label(bar.build, "", &lv_font_montserrat_16, kText);
+  lv_obj_set_hidden(bar.build, true);
+
+  // The Corne's layer, from the companion; hidden without the keyboard.
+  bar.layer = pill(b);
+  label(bar.layer, LV_SYMBOL_KEYBOARD, &lv_font_montserrat_16, kMuted);
+  bar.layer_text = label(bar.layer, "", &lv_font_montserrat_16, kText);
+  lv_obj_set_hidden(bar.layer, true);
+  lv_obj_set_clickable(bar.layer, true);  // opens the layer cheat sheet
+  lv_obj_add_event_cb(bar.layer, [](lv_event_t *) { cheat::toggle(); }, LV_EVENT_CLICKED, nullptr);
+
+  lv_obj_t *spacer = box(b);
+  lv_obj_set_flex_grow(spacer, 1);
+
+  bar.vol_button = barButton(b, onMute);
+  bar.vol = label(bar.vol_button, LV_SYMBOL_VOLUME_MAX "  --", &lv_font_montserrat_16, kText);
+
+  bar.mic = barButton(b, onMic);
+  bar.mic_icon = micIcon(bar.mic);
+  bar.mic_text = label(bar.mic, "Muted", &lv_font_montserrat_16, kAmber);
+  lv_obj_set_hidden(bar.mic, true);  // until the companion reports a microphone
+}
+
+// Finished builds, git operations and Claude approvals pop up over every page for a few seconds.
+void buildToast() {
+  toast.root = card(lv_layer_top(), kRaised, 0x323A45);
+  lv_obj_set_size(toast.root, LV_SIZE_CONTENT, 52);
+  lv_obj_set_style_max_width(toast.root, 640, 0);
+  lv_obj_set_style_radius(toast.root, 14, 0);
+  lv_obj_set_style_pad_hor(toast.root, 16, 0);
+  lv_obj_set_style_pad_ver(toast.root, 0, 0);
+  lv_obj_set_style_shadow_width(toast.root, 24, 0);
+  lv_obj_set_style_shadow_color(toast.root, hex(0x000000), 0);
+  lv_obj_set_style_shadow_opa(toast.root, LV_OPA_50, 0);
+  flexRow(toast.root, 10);
+  lv_obj_align(toast.root, LV_ALIGN_BOTTOM_MID, 0, -(kBarH + kGap));
+  lv_obj_set_clickable(toast.root, true);
+  lv_obj_add_event_cb(toast.root, onToast, LV_EVENT_CLICKED, nullptr);
+  toast.icon = label(toast.root, "", &lv_font_montserrat_20, kGreen);
+  toast.text = label(toast.root, "", &body_font, kText);
+  lv_obj_set_height(toast.text, lv_font_get_line_height(&body_font));
+  lv_obj_set_hidden(toast.root, true);
+}
+
+void styleTabs(lv_obj_t *tabview) {
+  lv_obj_t *tabs = lv_tabview_get_tab_bar(tabview);
+  lv_obj_set_style_bg_color(tabs, hex(kBg), 0);
+  lv_obj_set_style_border_side(tabs, LV_BORDER_SIDE_TOP, 0);
+  lv_obj_set_style_border_color(tabs, hex(0x22272E), 0);
+  lv_obj_set_style_border_width(tabs, 1, 0);
+  lv_obj_set_style_pad_hor(tabs, 12, 0);
+  lv_obj_set_style_pad_ver(tabs, 3, 0);
+  lv_obj_set_style_pad_column(tabs, 6, 0);
+  const uint32_t n = lv_obj_get_child_count(tabs);
+  for (uint32_t i = 0; i < n; i++) {
+    lv_obj_t *t = lv_obj_get_child(tabs, i);
+    lv_obj_set_style_radius(t, 10, 0);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(t, hex(kMuted), 0);
+    lv_obj_set_style_bg_opa(t, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(t, 0, LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(t, hex(kText), LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(t, hex(kSelected), LV_STATE_CHECKED);
+    lv_obj_set_style_bg_opa(t, LV_OPA_COVER, LV_STATE_CHECKED);
+  }
+}
+
+void updateClock() {
+  const int64_t now = model::localNow();
+  if (now == 0 || now / 60 == clock_seen) return;  // the bar shows minutes
+  clock_seen = now / 60;
+  const time_t t = time_t(now);
+  struct tm tm;
+  gmtime_r(&t, &tm);  // already shifted to local time
+  char buf[32];
+  strftime(buf, sizeof(buf), "%H:%M", &tm);
+  lv_label_set_text(bar.time, buf);
+  strftime(buf, sizeof(buf), "%a %e %b", &tm);
+  lv_label_set_text(bar.date, buf);
+}
+
+void updateCompanion() {
+  const int up = pc::connected() ? 1 : 0;
+  if (up == connected_seen) return;
+  connected_seen = up;
+  lv_obj_set_hidden(bar.pc, up);  // only worth the room when the PC is gone
+  lv_obj_set_style_bg_color(bar.pc_dot, hex(up ? kGreen : 0x5A626C), 0);
+  lv_label_set_text(bar.pc_text, up ? "PC" : "PC offline");
+  lv_obj_set_style_text_color(bar.pc_text, hex(up ? kText : kMuted), 0);
+  mic_seen = UINT32_MAX;  // the mic button only makes sense with the companion
+}
+
+void updateVolume() {
+  const model::Volume &v = model::volume;
+  if (v.version == volume_seen) return;
+  // Mid-drag, the PC's reports trail the finger; let the preview stand until it settles.
+  if (millis() - preview_ms < kPreviewHoldMs) return;
+  volume_seen = v.version;
+  if (v.level < 0) return;
+  if (v.muted) {
+    lv_label_set_text(bar.vol, LV_SYMBOL_MUTE "  Muted");
+  } else {
+    lv_label_set_text_fmt(bar.vol, LV_SYMBOL_VOLUME_MAX "  %d%%", v.level);
+  }
+  lv_obj_set_style_text_color(bar.vol, hex(v.muted ? kAmber : kText), 0);
+  lv_obj_set_style_bg_color(bar.vol_button, hex(v.muted ? kAmberBg : kRaised), 0);
+}
+
+void showMic(bool muted) {
+  setMicIcon(bar.mic_icon, muted ? kAmber : kText, muted);
+  lv_obj_set_hidden(bar.mic_text, !muted);
+  lv_obj_set_style_bg_color(bar.mic, hex(muted ? kAmberBg : kRaised), 0);
+}
+
+void updateMic() {
+  const model::Mic &m = model::mic;
+  if (m.version == mic_seen) return;
+  mic_seen = m.version;
+  lv_obj_set_hidden(bar.mic, !(pc::connected() && m.available));
+  showMic(m.muted);
+}
+
+void updateClaude() {
+  const uint32_t v = model::claude.version + (pc::connected() ? 0 : 0x80000000u);
+  if (v == claude_seen) return;
+  claude_seen = v;
+  const bool show = pc::connected() && model::claude.count > 0;
+  lv_obj_set_hidden(bar.claude, !show);
+  if (!show) return;
+  const String &state = model::claude.sessions[0].state;
+  uint32_t color = kMuted, bg = kSurface;
+  const char *text = "Claude ready";
+  if (state == "input") color = kAmber, bg = kAmberBg, text = "Claude needs you";
+  else if (state == "working") color = kAccent, text = "Claude working";
+  else if (state == "done") color = kGreen, text = "Claude done";
+  lv_obj_set_style_bg_color(bar.claude_dot, hex(color), 0);
+  lv_obj_set_style_bg_color(bar.claude, hex(bg), 0);
+  lv_label_set_text(bar.claude_text, text);
+  lv_obj_set_style_text_color(bar.claude_text, hex(state == "input" ? kAmber : kText), 0);
+}
+
+void updateBuild() {
+  const uint32_t v = model::build.version + (pc::connected() ? 0 : 0x80000000u);
+  if (v == build_seen) return;
+  build_seen = v;
+  const String &state = model::build.state;
+  const bool show = pc::connected() && state != "none";
+  lv_obj_set_hidden(bar.build, !show);
+  if (!show) return;
+  if (state == "running") {
+    lv_label_set_text(bar.build_text, LV_SYMBOL_REFRESH "  Building");
+    lv_obj_set_style_text_color(bar.build_text, hex(kAccent), 0);
+  } else if (state == "failed") {
+    lv_label_set_text(bar.build_text, LV_SYMBOL_CLOSE "  Build failed");
+    lv_obj_set_style_text_color(bar.build_text, hex(0xFF9A70), 0);
+  } else {
+    lv_label_set_text(bar.build_text, LV_SYMBOL_OK "  Build passed");
+    lv_obj_set_style_text_color(bar.build_text, hex(kGreen), 0);
+  }
+}
+
+void updateLayer() {
+  const uint32_t v = model::keyboard.version + (pc::connected() ? 0 : 0x80000000u);
+  if (v == layer_seen) return;
+  layer_seen = v;
+  const bool show = pc::connected() && model::keyboard.present;
+  lv_obj_set_hidden(bar.layer, !show);
+  if (!show) return;
+  // Off the base layer it stands out, so a stuck toggle layer gets noticed.
+  const bool base = model::keyboard.layer == 0;
+  setText(bar.layer_text, model::keyboard.label.c_str());
+  setTextColor(bar.layer_text, base ? kText : kOnAccent);
+  setTextColor(lv_obj_get_child(bar.layer, 0), base ? kMuted : kOnAccent);
+  setBgColor(bar.layer, base ? kSurface : kAccent);
+}
+
+void updateMeeting() {
+  if (model::google.version == meeting_seen && millis() - meeting_tick_ms < kMeetingTickMs) return;
+  meeting_seen = model::google.version;
+  meeting_tick_ms = millis();
+  const int64_t now = model::utcNow();
+  const model::Event *e = pc::connected() && model::google.status == "ok" && now ? model::google.next(now) : nullptr;
+  // In a call the call pill says enough.
+  const bool show = e && e->start - now < kMeetingAheadSecs && model::call.app.length() == 0;
+  lv_obj_set_hidden(bar.meeting, !show);
+  lv_obj_set_hidden(bar.date, show);  // room for it; the date is on the Today page anyway
+  if (!show) return;
+  const int64_t mins = (e->start - now + 59) / 60;
+  char text[96];
+  if (e->start <= now) snprintf(text, sizeof(text), "%s · now", e->title.c_str());
+  else if (mins < 60) snprintf(text, sizeof(text), "%s · %dm", e->title.c_str(), int(mins));
+  else snprintf(text, sizeof(text), "%s · %dh", e->title.c_str(), int(mins / 60));
+  setTextUpTo(bar.meeting_text, text, 170);
+  // Five minutes out it turns amber, like the canvas's "needs you".
+  const bool soon = mins <= 5;
+  setBgColor(bar.meeting, soon ? kAmberBg : kSurface);
+  setTextColor(bar.meeting_text, soon ? 0xF5C36B : kText);
+}
+
+void updateToast() {
+  if (model::toast.version != toast_seen) {
+    toast_seen = model::toast.version;
+    const String &level = model::toast.level;
+    const char *icon = LV_SYMBOL_OK;
+    uint32_t color = kGreen, border = 0x1F4A3A;
+    if (level == "error") icon = LV_SYMBOL_CLOSE, color = 0xFF9A70, border = 0x5A2E1E;
+    else if (level == "attention") icon = LV_SYMBOL_WARNING, color = kAmber, border = 0x4A3A1C;
+    lv_label_set_text(toast.icon, icon);
+    lv_obj_set_style_text_color(toast.icon, hex(color), 0);
+    setTextUpTo(toast.text, model::toast.text.c_str(), 580);
+    lv_obj_set_style_border_color(toast.root, hex(border), 0);
+    lv_obj_set_hidden(toast.root, false);
+    lv_obj_align(toast.root, LV_ALIGN_BOTTOM_MID, 0, -(kBarH + kGap));
+    toast_ms = millis();
+  } else if (!lv_obj_is_hidden(toast.root) && millis() - toast_ms >= kToastMs) {
+    lv_obj_set_hidden(toast.root, true);
+  }
+}
+
+void updateArt() {
+  if (model::art.version == art_seen) return;
+  art_seen = model::art.version;
+  if (!installPendingArt()) return;
+  today::showArt();
+  audio::showArt();
+  releaseOldArt();  // nothing points at the previous image any more
+}
+
+// Times a full redraw of every page (best of three; total, and without the wait for
+// vsync) and PSRAM's raw speed, and logs them, for tuning. The companion asks for it; the
+// pages flash past in about a second.
+void bench() {
+  const uint32_t tab = lv_tabview_get_tab_active(tabview);
+  const uint32_t n = lv_tabview_get_tab_count(tabview);
+  char line[200];
+  int len = snprintf(line, sizeof(line), "bench @%u MHz: full redraw ms (without vsync wait):", unsigned(getCpuFrequencyMhz()));
+  for (uint32_t i = 0; i < n && len < int(sizeof(line)); i++) {
+    lv_tabview_set_active(tabview, i, LV_ANIM_OFF);
+    uint32_t best = UINT32_MAX, best_draw = UINT32_MAX;
+    for (int k = 0; k < 3; k++) {
+      lv_obj_invalidate(lv_screen_active());
+      const uint32_t wait0 = display::vsyncWaitUs();
+      const uint32_t t0 = micros();
+      lv_refr_now(nullptr);
+      const uint32_t total = micros() - t0;
+      const uint32_t draw = total - (display::vsyncWaitUs() - wait0);
+      if (total / 1000 < best) best = total / 1000;
+      if (draw / 1000 < best_draw) best_draw = draw / 1000;
+    }
+    len += snprintf(line + len, sizeof(line) - len, " %u (%u)", unsigned(best), unsigned(best_draw));
+  }
+  lv_tabview_set_active(tabview, tab, LV_ANIM_OFF);
+  lv_obj_invalidate(lv_screen_active());
+
+  // PSRAM: fill and copy 384 KB (half a frame).
+  constexpr size_t kBytes = 384 * 1024;
+  auto *a = static_cast<uint8_t *>(heap_caps_malloc(kBytes, MALLOC_CAP_SPIRAM));
+  auto *b = static_cast<uint8_t *>(heap_caps_malloc(kBytes, MALLOC_CAP_SPIRAM));
+  uint32_t fill_mbs = 0, copy_mbs = 0;
+  if (a && b) {
+    uint32_t t0 = micros();
+    memset(a, 0x5A, kBytes);
+    fill_mbs = kBytes / (micros() - t0);  // bytes per us = MB/s
+    t0 = micros();
+    memcpy(b, a, kBytes);
+    copy_mbs = kBytes / (micros() - t0);
+  }
+  heap_caps_free(a);
+  heap_caps_free(b);
+  pc::log("%s; PSRAM fill %u MB/s, copy %u MB/s; internal RAM free %u, lowest %u", line, unsigned(fill_mbs),
+          unsigned(copy_mbs), unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+          unsigned(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)));
+}
+
+}  // namespace
+
+void begin() {
+  Preferences prefs;
+  prefs.begin("deck", true);
+  usePalette(prefs.getString("palette", "base").c_str());
+  prefs.end();
+  initFonts();
+
+  lv_obj_t *scr = lv_screen_active();
+  lv_obj_set_style_bg_color(scr, hex(kBg), 0);
+  lv_obj_set_style_text_color(scr, hex(kText), 0);
+  lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_scrollable(scr, false);
+
+  buildStatusBar(scr);
+
+  lv_obj_t *tv = tabview = lv_tabview_create(scr);
+  lv_obj_set_width(tv, LV_PCT(100));
+  lv_obj_set_flex_grow(tv, 1);
+  lv_obj_set_style_bg_opa(tv, LV_OPA_TRANSP, 0);
+  lv_tabview_set_tab_bar_position(tv, LV_DIR_BOTTOM);
+  lv_tabview_set_tab_bar_size(tv, kBarH);
+  lv_obj_t *content = lv_tabview_get_content(tv);
+  lv_obj_set_scrollable(content, false);
+  // LVGL hands a gesture to the nearest parent that doesn't pass gestures on, and every
+  // object passes them on by default: without this, swipes went past to the screen.
+  lv_obj_set_gesture_bubble(content, false);
+  lv_obj_add_event_cb(content, onSwipe, LV_EVENT_GESTURE, nullptr);
+
+  today::build(lv_tabview_add_tab(tv, LV_SYMBOL_HOME "  Today"));
+  audio::build(lv_tabview_add_tab(tv, LV_SYMBOL_AUDIO "  Audio"));
+  dev::build(lv_tabview_add_tab(tv, LV_SYMBOL_EDIT "  Dev"));
+  windows::build(lv_tabview_add_tab(tv, LV_SYMBOL_LIST "  Windows"));
+  capture::build(lv_tabview_add_tab(tv, LV_SYMBOL_COPY "  Capture"));
+  numpad::build(lv_tabview_add_tab(tv, LV_SYMBOL_KEYBOARD "  Numpad"));
+  styleTabs(tv);
+  call::build();
+  cheat::build();
+  buildToast();
+  idle::build();
+
+  update();
+}
+
+void showPage(int index) { lv_tabview_set_active(tabview, index, LV_ANIM_OFF); }
+
+void previewVolume(int level) {
+  preview_ms = millis();
+  lv_label_set_text_fmt(bar.vol, LV_SYMBOL_VOLUME_MAX "  %d%%", level);
+  lv_obj_set_style_text_color(bar.vol, hex(kText), 0);
+  lv_obj_set_style_bg_color(bar.vol_button, hex(kRaised), 0);  // a drag up unmutes
+}
+
+void update() {
+  updateCompanion();
+  updateClock();
+  updateVolume();
+  updateMic();
+  updateClaude();
+  updateBuild();
+  updateLayer();
+  updateMeeting();
+  updateToast();
+  updateArt();
+  today::update();
+  audio::update();
+  dev::update();
+  windows::update();
+  numpad::update();
+  capture::update();
+  call::update();
+  cheat::update();
+  idle::update();
+  if (model::bench_requests != bench_seen) {
+    bench_seen = model::bench_requests;
+    bench();
+  }
+}
+
+}  // namespace ui

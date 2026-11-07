@@ -1,0 +1,11 @@
+# Build output: all of it is rebuilt from the source here.
+companion/bin/
+companion/obj/
+firmware/.pio/
+vscode-ext/node_modules/
+vscode-ext/out/
+*.vsix
+# The install kit (install/build-dist.ps1 makes it).
+dist/
+
+*.log

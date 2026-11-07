@@ -1,0 +1,294 @@
+#include "ui_kit.h"
+
+#include <stdarg.h>
+
+#include "esp_heap_caps.h"
+#include "model.h"
+
+extern "C" {
+LV_FONT_DECLARE(font_extra_14)
+LV_FONT_DECLARE(font_extra_16)
+LV_FONT_DECLARE(font_extra_20)
+}
+
+namespace ui {
+
+lv_font_t title_font;
+lv_font_t body_font;
+lv_font_t small_font;
+
+uint32_t kBg, kSurface, kBorder, kRaised, kSelected, kText, kSoftText, kMuted, kTrack;
+uint32_t kAccent, kOnAccent, kGreen, kAmber, kAmberBg, kArtBg;
+
+void usePalette(const char *name) {
+  if (!strcmp(name, "vibrant")) {
+    kBg = 0x0A0D1A, kSurface = 0x121931, kBorder = 0x26305A, kRaised = 0x1A2445, kSelected = 0x223A78;
+    kText = 0xF2F5FF, kSoftText = 0xCAD3F5, kMuted = 0x97A3CF, kTrack = 0x2A3866;
+    kAccent = 0x4C8DFF, kOnAccent = 0x050F2E, kGreen = 0x2BE3A0, kAmber = 0xFFB020, kAmberBg = 0x45300A;
+    kArtBg = 0x2B3C80;
+    return;
+  }
+  kBg = 0x0D0F12, kSurface = 0x16191E, kBorder = 0x232830, kRaised = 0x1F242B, kSelected = 0x1F2A36;
+  kText = 0xECEEF1, kSoftText = 0xC4CBD3, kMuted = 0x9BA4AF, kTrack = 0x2A3038;
+  kAccent = 0x5AB4FF, kOnAccent = 0x0B1520, kGreen = 0x4FD1A5, kAmber = 0xF5A623, kAmberBg = 0x3A2A10;
+  kArtBg = 0x263445;
+}
+
+namespace {
+
+// Two descriptors so the one on screen stays valid while the next one is set up. LVGL's
+// image and header caches are off in lv_conf.h, so once no lv_image points at a
+// descriptor its pixels can be freed.
+struct ArtSlot {
+  lv_image_dsc_t dsc = {};
+  String id;
+  uint8_t *pixels = nullptr;
+};
+ArtSlot slots[2];
+int current_slot = -1;
+int old_slot = -1;
+
+}  // namespace
+
+void initFonts() {
+  // Montserrat -> the characters it lacks (src/fonts/font_extra.c) -> DejaVu.
+  title_font = lv_font_montserrat_20;
+  title_font.fallback = &font_extra_20;
+  body_font = lv_font_montserrat_16;
+  body_font.fallback = &font_extra_16;
+  small_font = lv_font_montserrat_14;
+  small_font.fallback = &font_extra_14;
+}
+
+lv_color_t hex(uint32_t c) { return lv_color_hex(c); }
+
+lv_obj_t *box(lv_obj_t *parent) {
+  lv_obj_t *o = lv_obj_create(parent);
+  lv_obj_remove_style_all(o);
+  lv_obj_set_scrollable(o, false);
+  // LVGL objects take presses by default, so a box inside a button swallowed every tap
+  // that landed on it; the button only heard taps on its padding.
+  lv_obj_set_clickable(o, false);
+  return o;
+}
+
+lv_obj_t *card(lv_obj_t *parent, uint32_t bg, uint32_t border) {
+  lv_obj_t *o = box(parent);
+  lv_obj_set_style_bg_color(o, hex(bg), 0);
+  lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_color(o, hex(border), 0);
+  lv_obj_set_style_border_width(o, 1, 0);
+  lv_obj_set_style_radius(o, 12, 0);
+  lv_obj_set_style_pad_all(o, 12, 0);
+  return o;
+}
+
+lv_obj_t *label(lv_obj_t *parent, const char *text, const lv_font_t *font, uint32_t color) {
+  lv_obj_t *l = lv_label_create(parent);
+  lv_label_set_text(l, text);
+  lv_obj_set_style_text_font(l, font, 0);
+  lv_obj_set_style_text_color(l, hex(color), 0);
+  return l;
+}
+
+void flexCol(lv_obj_t *o, int gap) {
+  lv_obj_set_flex_flow(o, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(o, gap, 0);
+}
+
+void flexRow(lv_obj_t *o, int gap) {
+  lv_obj_set_flex_flow(o, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(o, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(o, gap, 0);
+}
+
+lv_obj_t *pill(lv_obj_t *parent) {
+  lv_obj_t *p = card(parent, kSurface, 0x262C34);
+  lv_obj_set_size(p, LV_SIZE_CONTENT, 28);
+  lv_obj_set_style_radius(p, 14, 0);
+  lv_obj_set_style_pad_hor(p, 10, 0);
+  lv_obj_set_style_pad_ver(p, 0, 0);
+  flexRow(p, 6);
+  return p;
+}
+
+lv_obj_t *button(lv_obj_t *parent, int w, int h, uint32_t bg, lv_event_cb_t cb, void *user) {
+  lv_obj_t *b = lv_button_create(parent);
+  lv_obj_remove_style_all(b);
+  lv_obj_set_size(b, w, h);
+  lv_obj_set_style_bg_color(b, hex(bg), 0);
+  lv_obj_set_style_bg_opa(b, bg == kSurface ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_color(b, hex(kSelected), LV_STATE_PRESSED);
+  lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_STATE_PRESSED);
+  lv_obj_set_style_radius(b, LV_RADIUS_CIRCLE, 0);
+  if (cb) lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, user);
+  return b;
+}
+
+lv_obj_t *iconButton(lv_obj_t *parent, int w, int h, uint32_t bg, const char *symbol, uint32_t color,
+                     lv_event_cb_t cb, void *user) {
+  lv_obj_t *b = button(parent, w, h, bg, cb, user);
+  lv_obj_t *l = label(b, symbol, &lv_font_montserrat_20, color);
+  lv_obj_center(l);
+  return l;
+}
+
+void ellipsize(lv_obj_t *l) {
+  lv_obj_set_width(l, LV_PCT(100));
+  lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+  // Dots only kick in once the height is fixed; until then a long text wraps instead.
+  lv_obj_set_height(l, lv_font_get_line_height(lv_obj_get_style_text_font(l, LV_PART_MAIN)));
+}
+
+void setText(lv_obj_t *l, const char *text) {
+  if (strcmp(lv_label_get_text(l), text) != 0) lv_label_set_text(l, text);
+}
+
+void fillRow(lv_obj_t *l) {
+  lv_obj_set_width(l, 1);  // any fixed width: the row's flex layout gives it the rest
+  lv_obj_set_flex_grow(l, 1);
+  lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+  lv_obj_set_height(l, lv_font_get_line_height(lv_obj_get_style_text_font(l, LV_PART_MAIN)));
+}
+
+void setTextUpTo(lv_obj_t *l, const char *text, int32_t max) {
+  if (strcmp(lv_label_get_text(l), text) == 0) return;
+  lv_obj_set_width(l, LV_SIZE_CONTENT);
+  lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+  lv_label_set_text(l, text);
+  lv_obj_update_layout(l);
+  if (lv_obj_get_width(l) > max) lv_obj_set_width(l, max);
+}
+
+void setTextf(lv_obj_t *l, const char *fmt, ...) {
+  char text[256];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(text, sizeof(text), fmt, args);
+  va_end(args);
+  setText(l, text);
+}
+
+void setTextColor(lv_obj_t *o, uint32_t color) {
+  if (!lv_color_eq(lv_obj_get_style_text_color(o, LV_PART_MAIN), hex(color))) lv_obj_set_style_text_color(o, hex(color), 0);
+}
+
+void setBgColor(lv_obj_t *o, uint32_t color) {
+  if (!lv_color_eq(lv_obj_get_style_bg_color(o, LV_PART_MAIN), hex(color))) lv_obj_set_style_bg_color(o, hex(color), 0);
+}
+
+void setBorderColor(lv_obj_t *o, uint32_t color) {
+  if (!lv_color_eq(lv_obj_get_style_border_color(o, LV_PART_MAIN), hex(color))) {
+    lv_obj_set_style_border_color(o, hex(color), 0);
+  }
+}
+
+void setHidden(lv_obj_t *o, bool hidden) {
+  if (lv_obj_is_hidden(o) != hidden) lv_obj_set_hidden(o, hidden);
+}
+
+void formatTime(char *buf, size_t n, float seconds) {
+  const int s = seconds > 0 ? int(seconds) : 0;
+  if (s >= 3600) {
+    snprintf(buf, n, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60);
+  } else {
+    snprintf(buf, n, "%d:%02d", s / 60, s % 60);
+  }
+}
+
+void formatAgo(char *buf, size_t n, int32_t secs) {
+  if (secs < 0) snprintf(buf, n, "%s", "");
+  else if (secs < 10) snprintf(buf, n, "just now");
+  else if (secs < 60) snprintf(buf, n, "%d s ago", int(secs));
+  else if (secs < 3600) snprintf(buf, n, "%d min ago", int(secs / 60));
+  else if (secs < 86400) snprintf(buf, n, "%d h ago", int(secs / 3600));
+  else snprintf(buf, n, "%d d ago", int(secs / 86400));
+}
+
+void formatDuration(char *buf, size_t n, uint32_t ms) {
+  if (ms < 60000) snprintf(buf, n, "%.1f s", ms / 1000.0f);
+  else snprintf(buf, n, "%u min %u s", unsigned(ms / 60000), unsigned(ms / 1000 % 60));
+}
+
+const lv_image_dsc_t *artFor(const String &id) {
+  if (current_slot < 0 || id.length() == 0 || slots[current_slot].id != id) return nullptr;
+  return &slots[current_slot].dsc;
+}
+
+bool installPendingArt() {
+  model::Art &art = model::art;
+  if (!art.pending) return false;
+  const int next = current_slot == 0 ? 1 : 0;
+  ArtSlot &slot = slots[next];
+  if (slot.pixels) {  // an old image nobody released; never on screen now
+    heap_caps_free(slot.pixels);
+  }
+  slot.pixels = art.pending;
+  slot.id = art.pending_id;
+  slot.dsc = {};
+  slot.dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+  slot.dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+  slot.dsc.header.w = art.w;
+  slot.dsc.header.h = art.h;
+  slot.dsc.header.stride = art.w * 2;
+  slot.dsc.data_size = uint32_t(art.w) * art.h * 2;
+  slot.dsc.data = slot.pixels;
+  art.pending = nullptr;
+  old_slot = current_slot;
+  current_slot = next;
+  return true;
+}
+
+void releaseOldArt() {
+  if (old_slot < 0) return;
+  ArtSlot &slot = slots[old_slot];
+  heap_caps_free(slot.pixels);
+  slot.pixels = nullptr;
+  slot.id = "";
+  old_slot = -1;
+}
+
+MicIcon micIcon(lv_obj_t *parent) {
+  static const lv_point_precise_t slash_points[] = {{1, 1}, {17, 19}};
+  MicIcon m;
+  m.root = box(parent);
+  lv_obj_set_size(m.root, 18, 20);
+
+  m.capsule = box(m.root);
+  lv_obj_set_size(m.capsule, 8, 12);
+  lv_obj_set_pos(m.capsule, 5, 0);
+  lv_obj_set_style_radius(m.capsule, 4, 0);
+  lv_obj_set_style_border_width(m.capsule, 2, 0);
+
+  m.arc = lv_arc_create(m.root);
+  lv_obj_remove_style(m.arc, nullptr, LV_PART_KNOB);
+  lv_obj_set_clickable(m.arc, false);
+  lv_obj_set_size(m.arc, 14, 14);
+  lv_obj_set_pos(m.arc, 2, 3);
+  lv_obj_set_style_pad_all(m.arc, 0, 0);
+  lv_arc_set_bg_angles(m.arc, 0, 180);  // the cup under the capsule
+  lv_obj_set_style_arc_width(m.arc, 2, LV_PART_MAIN);
+  lv_obj_set_style_arc_opa(m.arc, LV_OPA_TRANSP, LV_PART_INDICATOR);
+
+  m.stem = box(m.root);
+  lv_obj_set_size(m.stem, 2, 4);
+  lv_obj_set_pos(m.stem, 8, 16);
+  lv_obj_set_style_bg_opa(m.stem, LV_OPA_COVER, 0);
+
+  m.slash = lv_line_create(m.root);
+  lv_line_set_points(m.slash, slash_points, 2);
+  lv_obj_set_style_line_width(m.slash, 2, 0);
+  lv_obj_set_style_line_rounded(m.slash, true, 0);
+  return m;
+}
+
+void setMicIcon(const MicIcon &m, uint32_t color, bool slashed) {
+  const lv_color_t c = hex(color);
+  lv_obj_set_style_border_color(m.capsule, c, 0);
+  lv_obj_set_style_arc_color(m.arc, c, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(m.stem, c, 0);
+  lv_obj_set_style_line_color(m.slash, c, 0);
+  lv_obj_set_hidden(m.slash, !slashed);
+}
+
+}  // namespace ui

@@ -1,0 +1,37 @@
+{
+  "name": "flex-screen",
+  "displayName": "flex-screen deck",
+  "description": "Reports terminal commands, tasks and the open workspace to the flex-screen companion app, and runs commands sent from the deck.",
+  "version": "0.2.0",
+  "publisher": "flex-screen",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": ["Other"],
+  "main": "./out/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "configuration": {
+      "title": "flex-screen",
+      "properties": {
+        "flexScreen.companionPort": {
+          "type": "number",
+          "default": 48151,
+          "description": "Port of the flex-screen companion app on this PC."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "package": "vsce package --allow-missing-repository --skip-license -o flex-screen.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "1.93.0",
+    "@vscode/vsce": "^3.2.0",
+    "typescript": "^5.7.0"
+  }
+}
