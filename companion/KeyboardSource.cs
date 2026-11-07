@@ -243,7 +243,7 @@ sealed class KeyboardSource
         foreach (var t in _toggled) active.Add(t);
         var top = active.Max;
         var label = LayerName(top, "LAYER ");
-        // Held on (not toggled): the deck shows the cheat sheet once it's been held a second.
+        // Held on (not toggled): the deck shows the cheat sheet once it's been held ten seconds.
         DateTime? heldSince = null;
         var heldKey = -1;
         if (!_toggled.Contains(top) && heldBy.TryGetValue(top, out var holder))

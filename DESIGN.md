@@ -489,6 +489,8 @@ Gotchas found after phase 6:
     skill. A meeting on two calendars shows once (same iCalUID and start). Chosen over a
     second sign-in on the companion: no second token, and Google Calendar's own ticks
     decide what the deck shows.
+- Firmware 0.10.1: the layer cheat sheet waits for ten seconds of holding (was one), on
+  request; tapping the layer pill still opens it at once.
 
 ## Decisions
 

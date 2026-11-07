@@ -9,7 +9,7 @@
 namespace ui::cheat {
 namespace {
 
-constexpr uint32_t kHoldMs = 1000;  // from the layer key's press
+constexpr uint32_t kHoldMs = 10000;  // from the layer key's press
 constexpr int kW = 788, kH = 480 - kBarH - 10;
 constexpr int kPad = 14, kBorderW = 2;
 constexpr int kHeadH = 30;

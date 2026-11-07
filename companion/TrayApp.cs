@@ -481,7 +481,7 @@ sealed class TrayApp : ApplicationContext
             name = k.Name,
             layer = k.Layer,
             label = k.Label,
-            // How long the layer's key has been held, so the deck can wait out a second from the press.
+            // How long the layer's key has been held, so the deck can time the cheat sheet's hold from the press.
             held_ms = k.HeldSince is { } since ? (int)Math.Max(0, (DateTime.UtcNow - since).TotalMilliseconds) : -1,
             key = k.HeldKey,
         },
