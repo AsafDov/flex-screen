@@ -7,7 +7,7 @@ namespace FlexScreen.Companion;
 /// changes. Everything has a default, so the file only needs what differs:
 /// <code>
 /// {
-///   "palette": "base",                                        // the deck's colors: "base" or "vibrant"
+///   "palette": "base",                                        // the deck's colors: "base", "vibrant", "ember" or "violet"
 ///   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
 ///   "layerNames": ["BASE", "NAV", "SYMBOL"],                  // the keyboard's layers, from 0
 ///   "obsidianVault": "C:\\Users\\me\\Notes\\MyVault"            // if it can't be found by itself
@@ -29,7 +29,10 @@ static class Settings
 
     public static string? ObsidianVault => (string?)Get("obsidianVault") is { Length: > 0 } path ? path : null;
 
-    public static string Palette => (string?)Get("palette") is "vibrant" ? "vibrant" : "base";
+    /// <summary>The deck's color theme: what the tray's Deck colors menu offers.</summary>
+    public static readonly (string Name, string Label)[] Palettes = [("base", "Base"), ("vibrant", "Vibrant"), ("ember", "Ember"), ("violet", "Violet")];
+
+    public static string Palette => (string?)Get("palette") is { } name && Palettes.Any(p => p.Name == name) ? name : "base";
 
     /// <summary>Idle minutes before the deck shows its clock, and before its screen goes off.</summary>
     public static (double Clock, double Off) Idle =>

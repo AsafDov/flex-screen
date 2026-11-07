@@ -137,6 +137,23 @@ struct Recent {
   uint32_t version = 0;
 };
 
+// The Today page's Recent card: the last few things done from the deck that can be done
+// again (a window brought up, a note opened, a command run…), newest first, each once.
+struct RecentAction {
+  String id;
+  String kind;   // window, note, command, meeting, mail, claude, device
+  String name;   // the app, or what kind of thing it is
+  String title;  // the window's title, the note, the command…
+  String icon;   // a window's icon id, else ""
+};
+
+struct Actions {
+  static constexpr int kMax = 5;
+  RecentAction list[kMax];
+  int count = 0;
+  uint32_t version = 0;
+};
+
 struct Git {
   String repo;
   String branch;
@@ -197,6 +214,7 @@ struct Window {
   String title;
   String icon;  // icons:: id, or ""
   bool active = false;
+  bool minimized = false;  // still a tile; a tap brings it back
 };
 
 struct Windows {
@@ -362,6 +380,7 @@ extern Claude claude;
 extern Term term;
 extern Build build;
 extern Recent recent;
+extern Actions actions;
 extern Git git;
 extern Toast toast;
 extern Settings settings;

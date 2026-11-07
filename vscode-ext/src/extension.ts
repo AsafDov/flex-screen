@@ -26,9 +26,11 @@ let last: { terminal: vscode.Terminal; commandLine: string } | undefined;
 const ranIn = new Map<string, vscode.Terminal>();  // where each command ran last, this session
 let deckTerminal: vscode.Terminal | undefined;
 let memory: vscode.Memento | undefined;
+let version = '';
 
 export function activate(context: vscode.ExtensionContext): void {
   memory = context.workspaceState;
+  version = String(context.extension.packageJSON.version ?? '');
   // A command still marked running belonged to a window that closed mid-run.
   const past = history();
   if (past.some((p) => p.running)) void memory.update(HISTORY_KEY, past.map((p) => ({ ...p, running: false })));
@@ -53,6 +55,7 @@ export function deactivate(): void {
 function hello() {
   return {
     t: 'hello',
+    version,
     window: vscode.env.sessionId,
     name: vscode.workspace.name ?? '',
     folders: (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),

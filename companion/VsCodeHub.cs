@@ -85,7 +85,9 @@ sealed class VsCodeHub
                 window.Name = (string?)message["name"] ?? "";
                 window.Folders = (message["folders"] as JsonArray)?.Select(f => (string?)f ?? "").Where(f => f.Length > 0).ToList() ?? [];
                 SetFocus(window, (bool?)message["focused"] ?? false);
-                Log.Write($"vscode: {window.Name} connected ({string.Join(", ", window.Folders)})");
+                // 0.1.0 doesn't say; a window runs the extension it had when it opened, until a reload.
+                var version = (string?)message["version"] is { Length: > 0 } v ? v : "0.1.0";
+                Log.Write($"vscode: {window.Name} connected ({string.Join(", ", window.Folders)}), extension {version}");
                 WindowsChanged?.Invoke();
                 break;
             case "focus":

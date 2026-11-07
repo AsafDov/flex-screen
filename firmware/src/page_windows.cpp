@@ -85,7 +85,10 @@ void onTileTap(lv_event_t *e) {
 void onTileHold(lv_event_t *e) {
   const int i = indexOf(e);
   if (i >= model::windows.count) return;
-  lv_obj_set_style_opa(w.tiles[i].root, LV_OPA_50, 0);  // until it's gone from the list
+  // Gone at once, as an unused slot; the PC's next list (~300 ms) no longer has it, or has
+  // it back after a few seconds if the window stayed open (unsaved work, say).
+  lv_obj_set_style_opa(w.tiles[i].root, LV_OPA_TRANSP, 0);
+  lv_obj_set_clickable(w.tiles[i].root, false);
   pc::closeWindow(model::windows.list[i].id.c_str());
 }
 
@@ -310,7 +313,13 @@ void updateTiles() {
     if (lv_obj_get_style_border_width(t.root, LV_PART_MAIN) != (win.active ? 2 : 0)) lv_obj_set_style_border_width(t.root, win.active ? 2 : 0, 0);
     setText(t.app, win.app.c_str());
     setText(t.title, win.title.c_str());
-    setTextColor(t.title, win.active ? 0xA9B6C4 : kMuted);
+    setTextColor(t.title, win.active ? kHighlightText : kMuted);
+    // A minimized window keeps its tile, its icon dimmed; a tap brings it back.
+    const lv_opa_t icon_opa = win.minimized ? LV_OPA_40 : LV_OPA_COVER;
+    if (lv_obj_get_style_opa(t.icon, LV_PART_MAIN) != icon_opa) {
+      lv_obj_set_style_opa(t.icon, icon_opa, 0);
+      lv_obj_set_style_opa(t.initials, icon_opa, 0);
+    }
     const lv_image_dsc_t *icon = icons::get(win.icon);
     if (!icon && win.icon.length()) requestIcon(win.icon);
     setHidden(t.icon, icon == nullptr);
@@ -410,7 +419,7 @@ void updateZones() {
     setText(w.zone_apps[i], app.c_str());
     setBgColor(w.zones[i], here ? kSelected : kRaised);
     if (lv_obj_get_style_border_width(w.zones[i], LV_PART_MAIN) != (here ? 2 : 0)) lv_obj_set_style_border_width(w.zones[i], here ? 2 : 0, 0);
-    setTextColor(w.zone_apps[i], here ? 0xA9B6C4 : kMuted);
+    setTextColor(w.zone_apps[i], here ? kHighlightText : kMuted);
   }
 
   for (int i = 0; i < kLayoutCount; i++) {

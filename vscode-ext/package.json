@@ -2,7 +2,7 @@
   "name": "flex-screen",
   "displayName": "flex-screen deck",
   "description": "Reports terminal commands, tasks and the open workspace to the flex-screen companion app, and runs commands sent from the deck.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "flex-screen",
   "private": true,
   "license": "UNLICENSED",

@@ -12,6 +12,7 @@ Claude claude;
 Term term;
 Build build;
 Recent recent;
+Actions actions;
 Git git;
 Toast toast;
 Settings settings;

@@ -44,6 +44,7 @@ String rx;
 bool port_open = false;
 bool heard = false;
 uint32_t last_rx_ms = 0;
+int seen_count = 0;  // state topics remembered (seen_state, below handle())
 volatile uint32_t rx_dropped = 0;  // bytes lost to a full receive buffer (USB task)
 
 // An album-art image being reassembled from "img" parts.
@@ -104,6 +105,7 @@ void sendShot() {
 // Sent only in reply to "sync". Saying hello when DTR rises raced the companion's
 // handshake, which toggles DTR/RTS faster than the loop samples them.
 void sendHello() {
+  seen_count = 0;  // the companion sends everything after this: take it all
   JsonDocument doc;
   doc["t"] = "hello";
   doc["fw"] = kFirmwareVersion;
@@ -274,6 +276,7 @@ void handleWindows(JsonObjectConst d) {
     win.title = item["title"] | "";
     win.icon = item["icon"] | "";
     win.active = item["active"] | false;
+    win.minimized = item["min"] | false;
   }
   w.version++;
 }
@@ -382,6 +385,19 @@ void handleState(const char *topic, JsonObjectConst d) {
     }
     r.at_ms = millis();
     r.version++;
+  } else if (!strcmp(topic, "actions")) {
+    model::Actions &a = model::actions;
+    a.count = 0;
+    for (JsonObjectConst x : d["list"].as<JsonArrayConst>()) {
+      if (a.count == model::Actions::kMax) break;
+      model::RecentAction &out = a.list[a.count++];
+      out.id = x["id"] | "";
+      out.kind = x["kind"] | "";
+      out.name = x["name"] | "";
+      out.title = x["title"] | "";
+      out.icon = x["icon"] | "";
+    }
+    a.version++;
   } else if (!strcmp(topic, "git")) {
     handleGit(d);
   } else if (!strcmp(topic, "windows")) {
@@ -664,6 +680,38 @@ void handle(const JsonDocument &doc) {
   // "ping" needs no reply; receiving it is the point.
 }
 
+// The last state line per topic, as a hash. When the deck loses part of a burst, the
+// companion sends every topic again; applying an unchanged snapshot is wasted work, and
+// some is slow (a keymap rebuilds the cheat sheet), long enough for the next burst to
+// overflow again. So a repeat is skipped. Forgotten when the port opens again.
+struct SeenState {
+  char topic[16];
+  uint32_t hash;
+};
+constexpr int kSeenTopics = 32;
+SeenState seen_state[kSeenTopics];
+
+uint32_t lineHash(const String &s) {
+  uint32_t h = 2166136261u;  // FNV-1a
+  for (size_t i = 0; i < s.length(); i++) h = (h ^ uint8_t(s[i])) * 16777619u;
+  return h;
+}
+
+// True if this topic's last snapshot was the same; remembers this one either way.
+bool sameAsLast(const char *topic, uint32_t hash) {
+  for (int i = 0; i < seen_count; i++) {
+    if (strcmp(seen_state[i].topic, topic) != 0) continue;
+    const bool same = seen_state[i].hash == hash;
+    seen_state[i].hash = hash;
+    return same;
+  }
+  if (seen_count < kSeenTopics && strlen(topic) < sizeof(SeenState::topic)) {
+    strcpy(seen_state[seen_count].topic, topic);
+    seen_state[seen_count++].hash = hash;
+  }
+  return false;
+}
+
 void handleLine() {
   JsonDocument doc;
   if (deserializeJson(doc, rx) != DeserializationError::Ok) {
@@ -672,6 +720,7 @@ void handleLine() {
   }
   heard = true;
   last_rx_ms = millis();
+  if (!strcmp(doc["t"] | "", "state") && sameAsLast(doc["topic"] | "", lineHash(rx))) return;
   handle(doc);
 }
 
@@ -699,6 +748,7 @@ void poll() {
   if (open && !port_open) {
     rx = "";
     heard = false;
+    seen_count = 0;  // a new companion run: take every snapshot again
   }
   port_open = open;
 
@@ -771,6 +821,7 @@ void selectInput(const char *device) { act("dev.in", "id", device); }
 void toggleMic() { act("mic.mute"); }
 void openClaude(const char *session) { act("claude.open", "id", session); }
 void replayCommand(const char *cmd) { act("term.replay", "cmd", cmd); }
+void runRecent(const char *id) { act("recent.run", "id", id); }
 void interruptCommand() { act("term.interrupt"); }
 void focusTerminal() { act("term.focus"); }
 

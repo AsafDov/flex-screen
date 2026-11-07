@@ -45,8 +45,11 @@ sealed class TrayApp : ApplicationContext
     readonly GoogleSource _google = new();
     readonly CallSource _calls;
     readonly ZoneSource _zones;
+    readonly RecentActions _recent = new();
     readonly HashSet<string> _iconsSent = [];
     readonly object _artGate = new();
+    readonly object _actionsGate = new();
+    string _actionsSent = "";
     DateTime _timeSentAt = DateTime.MinValue;
     string _loggedMedia = "";
     string _loggedClaude = "";
@@ -64,7 +67,7 @@ sealed class TrayApp : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Connect Google Calendar and Tasks…", null, (_, _) => ConnectGoogle());
         var colors = new ToolStripMenuItem("Deck colors");
-        foreach (var (name, label) in new[] { ("base", "Base"), ("vibrant", "Vibrant") })
+        foreach (var (name, label) in Settings.Palettes)
         {
             var item = new ToolStripMenuItem(label) { Tag = name };
             item.Click += (_, _) => Settings.Set("palette", name);  // the next tick sends it; the deck restarts into it
@@ -155,7 +158,9 @@ sealed class TrayApp : ApplicationContext
             if (summary != _loggedWindows) Log.Write($"windows: {summary}");
             _loggedWindows = summary;
             SendWindows(windows);
+            SendRecentActions();  // a window tile shows its window's title as it is now
         };
+        _recent.Changed += () => SendRecentActions();
         _zones.Changed += z =>
         {
             var summary = string.Join(", ", z.Monitors.Select(m =>
@@ -220,26 +225,60 @@ sealed class TrayApp : ApplicationContext
     {
         SendSettings();
         SendTime();
-        if (_media.CurrentArt is { } art) SendArt(art);
-        _link.Send(MediaMessage(_media.Current));
-        _link.Send(VolumeMessage(_volume.Current));
-        _link.Send(MixerMessage(_mixer.Current));
-        _link.Send(DevicesMessage(_devices.Devices));
-        _link.Send(MicMessage(_devices.Mic));
-        _link.Send(ClaudeMessage(_claude.Current));
-        _link.Send(TermMessage(_dev.Term));
-        _link.Send(BuildMessage(_dev.Build));
-        _link.Send(RecentMessage(_dev.Recent));
-        _link.Send(GitMessage(_git.Current));
-        _link.Send(KeymapMessage(_keyboard.Map));
-        _link.Send(KeyboardMessage(_keyboard.Current));
-        _link.Send(ClipsMessage(_clipboard.Shown));
-        _link.Send(ObsidianMessage(_obsidian.Current));
-        _link.Send(GoogleMessage(_google.Current));
-        _link.Send(CallMessage(_calls.Current));
-        lock (_iconsSent) _iconsSent.Clear();
+        SendState();
+        if (_media.CurrentArt is { } art) SendArt(art);  // last: the biggest, and the least missed meanwhile
+    }
+
+    // Every topic in one burst overflowed the deck's 32 KB receive buffer while it was busy
+    // drawing (the keymap and icons are several KB each), and a lost snapshot stayed lost
+    // until that topic next changed. So the burst is paced, and when the deck reports a
+    // loss, everything goes again: each topic is a whole snapshot, so a repeat is harmless.
+    const int BurstGapMs = 15;
+    static readonly TimeSpan ResendWait = TimeSpan.FromSeconds(1.5);
+    static readonly TimeSpan ResendEvery = TimeSpan.FromSeconds(5);
+    int _resendQueued;
+    volatile bool _resendArt;
+    DateTime _resentAt = DateTime.MinValue;
+
+    /// <summary>Every topic's snapshot, a little apart so the deck keeps up. Icons go again only
+    /// with <paramref name="icons"/> (a new hello): otherwise the deck asks for any it lacks.</summary>
+    void SendState(bool icons = true)
+    {
+        object[] messages =
+        [
+            MediaMessage(_media.Current), VolumeMessage(_volume.Current), MixerMessage(_mixer.Current),
+            DevicesMessage(_devices.Devices), MicMessage(_devices.Mic), ClaudeMessage(_claude.Current),
+            TermMessage(_dev.Term), BuildMessage(_dev.Build), RecentMessage(_dev.Recent), GitMessage(_git.Current),
+            KeymapMessage(_keyboard.Map), KeyboardMessage(_keyboard.Current), ClipsMessage(_clipboard.Shown),
+            ObsidianMessage(_obsidian.Current), GoogleMessage(_google.Current), CallMessage(_calls.Current),
+        ];
+        foreach (var message in messages)
+        {
+            _link.Send(message);
+            Thread.Sleep(BurstGapMs);
+        }
+        if (icons) lock (_iconsSent) _iconsSent.Clear();
         SendWindows(_windows.Shown);
+        SendRecentActions(force: true);
         _link.Send(new { t = "state", topic = "zones", d = ZoneSource.Message(_zones.Current) });
+    }
+
+    /// <summary>The deck lost part of what it was sent: everything again, shortly (at most every few seconds).</summary>
+    void ResendSoon(bool art)
+    {
+        if (art) _resendArt = true;
+        if (Interlocked.Exchange(ref _resendQueued, 1) == 1) return;
+        var wait = ResendWait + (_resentAt + ResendEvery - DateTime.UtcNow is { Ticks: > 0 } left ? left : TimeSpan.Zero);
+        _ = Task.Delay(wait).ContinueWith(_ =>
+        {
+            _resentAt = DateTime.UtcNow;
+            var withArt = _resendArt;
+            _resendArt = false;
+            Interlocked.Exchange(ref _resendQueued, 0);
+            Log.Write("link: sending the state again, the deck lost some");
+            SendState(icons: false);
+            if (withArt && _media.CurrentArt is { } current) SendArt(current);
+        });
     }
 
     /// <summary>Icons the deck hasn't been sent yet go first, so the tiles never show a placeholder.</summary>
@@ -257,7 +296,7 @@ sealed class TrayApp : ApplicationContext
             topic = "windows",
             d = new
             {
-                list = windows.Select(w => new { id = w.Id.ToString(), app = w.App, title = w.Title, icon = w.Icon, active = w.Active }),
+                list = windows.Select(w => new { id = w.Id.ToString(), app = w.App, title = w.Title, icon = w.Icon, active = w.Active, min = w.Minimized }),
             },
         });
     }
@@ -650,7 +689,10 @@ sealed class TrayApp : ApplicationContext
                 Act((string?)message["a"] ?? "", message);
                 break;
             case "log":
-                Log.Write($"deck: {(string?)message["msg"]}");
+                var text = (string?)message["msg"] ?? "";
+                Log.Write($"deck: {text}");
+                if (text.StartsWith("receive buffer overflowed") || text.StartsWith("bad line")) ResendSoon(art: false);
+                else if (text.StartsWith("img ") && text.Contains("bad part")) ResendSoon(art: true);
                 break;
             case "shot":
                 _shot.Add(message);
@@ -721,7 +763,7 @@ sealed class TrayApp : ApplicationContext
                 break;
             case "git.fetch" or "git.pull" or "git.push" or "git.stash": _git.Run(action[4..]); break;
             case "win.focus": if (long.TryParse(id, out var focus)) WindowSource.Focus(focus); break;
-            case "win.close": if (long.TryParse(id, out var close)) WindowSource.Close(close); break;
+            case "win.close": if (long.TryParse(id, out var close)) _windows.Close(close); break;
             case "icon.need": if (_windows.FindIcon(id) is { } icon) SendIcon(icon); break;
             case "key.text": KeyInput.Type((string?)message["text"] ?? ""); break;
             case "pc.lock": LockWorkStation(); break;
@@ -743,8 +785,139 @@ sealed class TrayApp : ApplicationContext
             case "mail.open": OpenUrl("https://mail.google.com/"); break;
             case "zone.snap": _zones.Snap((int?)message["mon"] ?? -1, (int?)message["zone"] ?? -1, (long?)message["hwnd"] ?? 0); break;
             case "zone.layout": _zones.SetLayout((int?)message["mon"] ?? -1, (string?)message["id"] ?? (string?)message["type"] ?? ""); break;
+            case "recent.run": RunRecent(id); break;
             default: Log.Write($"act: unknown action {action}"); break;
         }
+        NoteRecent(action, message);
+    }
+
+    // ---- the Today page's Recent card
+
+    /// <summary>Lists a deck action on the Recent card, if it's one worth doing again.</summary>
+    void NoteRecent(string action, JsonNode message)
+    {
+        var id = (string?)message["id"] ?? "";
+        static JsonObject Run(string a, params (string Key, string Value)[] fields)
+        {
+            var o = new JsonObject { ["a"] = a };
+            foreach (var (key, value) in fields) o[key] = value;
+            return o;
+        }
+        switch (action)
+        {
+            case "win.focus":
+                if (!long.TryParse(id, out var hwnd) || _windows.All.FirstOrDefault(w => w.Id == hwnd) is not { } window) return;
+                var exe = WindowSource.ExePath(hwnd);
+                // A closed window of the same app gives up its tile (its app was restarted, say).
+                _recent.Note(new RecentAction($"win:{hwnd}", "window", window.App, window.Title, window.Icon, Run("win.focus", ("id", id), ("exe", exe))),
+                             replaces: r => r.Kind == "window" && (string?)r.Act["exe"] == exe && exe.Length > 0 &&
+                                            !(long.TryParse((string?)r.Act["id"], out var old) && WindowSource.Exists(old)));
+                break;
+            case "obs.today":
+                _recent.Note(new RecentAction("obs:today", "note", "Obsidian", "Today's note", "", Run("obs.today")));
+                break;
+            case "obs.open":
+                var path = (string?)message["path"] ?? "";
+                if (path.Length > 0) _recent.Note(new RecentAction($"obs:{path}", "note", "Obsidian", Path.GetFileNameWithoutExtension(path), "", Run("obs.open", ("path", path))));
+                break;
+            case "term.replay":
+                var cmd = (string?)message["cmd"] ?? "";
+                if (cmd.Length > 0) _recent.Note(new RecentAction($"term:{cmd}", "command", "Terminal", cmd, "", Run("term.replay", ("cmd", cmd))));
+                break;
+            case "cal.join":
+                if (_google.Current.Events.FirstOrDefault(e => e.Id == id) is { Join.Length: > 0 } meeting)
+                    _recent.Note(new RecentAction($"cal:{id}", "meeting", "Meeting", meeting.Title, "", Run("cal.join", ("id", id), ("url", meeting.Join))));
+                break;
+            case "mail.open":
+                _recent.Note(new RecentAction("mail", "mail", "Gmail", "Inbox", "", Run("mail.open")));
+                break;
+            case "claude.open":
+                if (_claude.Current.FirstOrDefault(s => s.Id == id) is { } session)
+                    _recent.Note(new RecentAction($"claude:{id}", "claude", "Claude", session.Project, "", Run("claude.open", ("id", id))));
+                break;
+            case "dev.out":
+                if (_devices.Devices.Outputs.FirstOrDefault(d => d.Id == id) is { } device)
+                    _recent.Note(new RecentAction($"dev.out:{id}", "device", "Sound output", device.Name, "", Run("dev.out", ("id", id))));
+                break;
+        }
+    }
+
+    /// <summary>A Recent tile tapped: the same action again.</summary>
+    void RunRecent(string id)
+    {
+        if (_recent.Find(id) is not { } recent) return;
+        var act = recent.Act;
+        switch ((string?)act["a"])
+        {
+            case "win.focus":
+                // Done again, so first again: the window it brought up, or (started anew) the tile itself.
+                if (FocusOrOpen(recent) is not 0 and var focused) NoteRecent("win.focus", new JsonObject { ["id"] = focused.ToString() });
+                else _recent.Note(recent);
+                break;
+            case "cal.join":
+                OpenUrl((string?)act["url"] ?? "");  // the event may have left the calendar's view
+                break;
+            case { } other:
+                Act(other, act);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The window, or (closed since) another window of its app, or else the app started anew.
+    /// Returns the window brought up, or 0.
+    /// </summary>
+    long FocusOrOpen(RecentAction recent)
+    {
+        if (long.TryParse((string?)recent.Act["id"], out var hwnd) && WindowSource.Exists(hwnd))
+        {
+            WindowSource.Focus(hwnd);
+            return hwnd;
+        }
+        var exe = (string?)recent.Act["exe"] ?? "";
+        if (exe.Length == 0) return 0;
+        if (_windows.All.FirstOrDefault(w => string.Equals(WindowSource.ExePath(w.Id), exe, StringComparison.OrdinalIgnoreCase)) is { } other)
+        {
+            WindowSource.Focus(other.Id);
+            return other.Id;
+        }
+        try
+        {
+            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or FileNotFoundException)
+        {
+            Log.Write($"recent: can't start {exe}: {e.Message}");
+            SendToast(new Toast("error", $"{recent.Name} isn't open"));
+        }
+        return 0;
+    }
+
+    /// <summary>The Recent card, when it changed (or <paramref name="force"/>, on the deck's hello).</summary>
+    void SendRecentActions(bool force = false)
+    {
+        var open = _windows.All;
+        var list = _recent.Current.Select(r =>
+        {
+            // A window that's still open shows its title and icon as they are now.
+            if (r.Kind == "window" && long.TryParse((string?)r.Act["id"], out var hwnd) && open.FirstOrDefault(w => w.Id == hwnd) is { } live)
+                return new { id = r.Id, kind = r.Kind, name = live.App, title = OneLine(live.Title, 120), icon = live.Icon };
+            return new { id = r.Id, kind = r.Kind, name = r.Name, title = OneLine(r.Title, 120), icon = r.Icon };
+        }).ToList();
+        lock (_actionsGate)
+        {
+            var key = System.Text.Json.JsonSerializer.Serialize(list);
+            if (!force && key == _actionsSent) return;
+            _actionsSent = key;
+        }
+        // Icons the deck hasn't been sent go first, as for the Windows page.
+        foreach (var icon in list.Select(a => a.icon).Where(i => i.Length > 0).Distinct())
+        {
+            bool fresh;
+            lock (_iconsSent) fresh = _iconsSent.Add(icon);
+            if (fresh && _windows.FindIcon(icon) is { } pixels) SendIcon(pixels);
+        }
+        _link.Send(new { t = "state", topic = "actions", d = new { list } });
     }
 
     static void OpenLog() =>

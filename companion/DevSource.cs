@@ -68,6 +68,7 @@ sealed class DevSource
                     var cmd = (string?)m["cmd"] ?? "";
                     SetTerm(new TermState(window.Name, true, cmd, now, null, 0, []));
                     if (BuildLike.IsMatch(cmd)) SetBuild(Build with { State = "running", Cmd = cmd, At = now });
+                    Remember(window, new RecentCommand(cmd, true, null, 0, now));
                     break;
                 }
                 case "term.data" when IsCurrentRun(window, m):
@@ -81,6 +82,7 @@ sealed class DevSource
                     Log.Write($"term: {Describe(Term.Cmd, exit, ms)}" +
                               (exit is not null and not 0 && Term.Lines.Count > 0 ? $": {Term.Lines[^1]}" : ""));
                     if (BuildLike.IsMatch(Term.Cmd)) FinishBuild(Term.Cmd, exit, ms, now);
+                    Remember(window, new RecentCommand(Term.Cmd, false, exit, ms, now));
                     if (exit is not null and not 0 || TimeSpan.FromMilliseconds(ms) >= ToastAfter)
                     {
                         Toast?.Invoke(new Toast(exit is null or 0 ? "ok" : "error", Describe(Term.Cmd, exit, ms)));
@@ -139,6 +141,23 @@ sealed class DevSource
             _runWindow = window;
             SetTerm(new TermState(window.Name, false, first.Cmd, first.At - TimeSpan.FromMilliseconds(first.Ms), first.Exit, first.Ms, lines));
         }
+    }
+
+    /// <summary>
+    /// A command starting or ending, put first in the list (each command once) without
+    /// waiting for the window's own history: extension 0.1.0 never sends one, and a VS Code
+    /// window keeps the old extension until it's reloaded. A history that comes after this
+    /// (0.2.0 sends one on every start and end) replaces the list with the window's own.
+    /// </summary>
+    void Remember(VsCodeWindow window, RecentCommand command)
+    {
+        if (command.Cmd.Length == 0) return;
+        var list = RecentWindow == window ? Recent.Where(c => c.Cmd != command.Cmd).ToList() : [];
+        list.Insert(0, command);
+        if (list.Count > HistoryLength) list.RemoveRange(HistoryLength, list.Count - HistoryLength);
+        RecentWindow = window;
+        Recent = list;
+        RecentChanged?.Invoke(list);
     }
 
     bool IsCurrentRun(VsCodeWindow window, JsonNode m) => window == _runWindow && (int?)m["id"] == _runId;

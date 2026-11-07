@@ -16,7 +16,17 @@ sealed class DeckLink
     const string DeckUsbId = "VID_1209&PID_0001";
     const string UsbEnumKey = @"SYSTEM\CurrentControlSet\Enum\USB";
 
+    // The deck reads between frames, and a busy stretch (page builds, the keymap, icons)
+    // let its 32 KB receive buffer overflow when everything came at once at startup:
+    // album art, eight window icons and every topic from several threads. Writes are held
+    // to about 64 KB/s after an 8 KB burst, so the deck can stall for half a second
+    // without losing a byte.
+    const double BytesPerSecond = 64 * 1024;
+    const double BurstBytes = 8 * 1024;
+
     readonly object _writeGate = new();
+    double _budget = BurstBytes;
+    long _budgetAt = System.Diagnostics.Stopwatch.GetTimestamp();
     SerialPort? _port;
 
     /// <summary>Raised on the link thread for every message from the deck.</summary>
@@ -33,6 +43,7 @@ sealed class DeckLink
         var line = JsonSerializer.Serialize(message) + "\n";
         lock (_writeGate)
         {
+            Pace(Encoding.UTF8.GetByteCount(line));
             try
             {
                 port.Write(line);
@@ -42,6 +53,16 @@ sealed class DeckLink
                 Log.Write($"link: write failed: {e.Message}");
             }
         }
+    }
+
+    /// <summary>Waits as long as it takes to stay under <see cref="BytesPerSecond"/> (a token bucket).</summary>
+    void Pace(int bytes)
+    {
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        _budget = Math.Min(BurstBytes, _budget + (now - _budgetAt) * BytesPerSecond / System.Diagnostics.Stopwatch.Frequency);
+        _budgetAt = now;
+        _budget -= bytes;
+        if (_budget < 0) Thread.Sleep((int)Math.Ceiling(-_budget * 1000 / BytesPerSecond));
     }
 
     void Run()

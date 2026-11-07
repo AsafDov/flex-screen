@@ -41,7 +41,11 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Big clock.
 - Now playing: album art, title, artist and app, play/pause, next/previous, volume.
 - Up next: the next calendar event with a **Join** button for Meet, Zoom or Teams links.
-- Later today: the rest of the day's events.
+- Recent: the last five things you did from the deck, as tiles: a window you brought up
+  (with its app icon), a note opened, a command run, a meeting joined, Gmail, a Claude
+  session, a sound output picked. Tap one to do it again; a window that has closed since
+  brings up another window of its app, or starts the app. Most recent on the left; doing
+  something already listed moves it there instead of adding it twice.
 - How many action items are waiting from mail.
 
 ### Audio
@@ -54,14 +58,14 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Git for VS Code's active repo: branch, ahead/behind, changed files; fetch, pull, push,
   stash, and **Commit…** to open VS Code's Source Control.
 - Build card: the last 10 build runs and their results.
-- Terminal: the last four commands run in VS Code's terminal, with ✓/✕ and when they ran.
-  Tap one to run it again in the terminal it came from. Shows the newest command's
-  output, and has **Ctrl+C** and **Focus**. History is kept per workspace, so it survives
-  restarts.
+- Terminal: the last few commands run in VS Code's terminal, each in full (a long one
+  wraps), with ✓/✕ and the time it started. Tap one to run it again in the terminal it
+  came from. History is kept per workspace, so it survives restarts.
 
 ### Windows
 - The 8 most recently used windows with their icons, in taskbar order. Tap to focus (tap
-  again to minimize), hold to close.
+  again to minimize); a minimized window keeps its tile, icon dimmed, and a tap brings it
+  back. Hold to close the window, which takes its tile away at once.
 - Show desktop and Lock PC.
 - FancyZones: switch each monitor's layout (Priority grid, Columns, Rows, Grid or your
   custom layouts), tap a zone on the map to snap the active window into it, tap it again
@@ -95,7 +99,7 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 ### The deck itself
 - Idle: a dim clock after 10 minutes without input on the deck or the PC, screen off
   after 30 (both adjustable). A locked PC shows the clock straight away.
-- Two color palettes, "base" and "vibrant", from the tray menu.
+- Four color themes, Base, Vibrant, Ember (warm, orange) and Violet, from the tray menu.
 - Firmware updates over the same USB cable (`pio run -t upload`).
 - One deck, several PCs: it shows whichever PC it's plugged into. Each PC's companion
   keeps its own settings, Google sign-in, vault and clipboard.
@@ -135,7 +139,7 @@ Optional, per PC, in `%LOCALAPPDATA%\flex-screen\settings.json`:
 
 ```jsonc
 {
-  "palette": "base",                                   // or "vibrant"
+  "palette": "base",                                   // or "vibrant", "ember", "violet"
   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
   "layerNames": ["BASE", "NAV", "SYMBOL"],             // your keyboard's layers
   "obsidianVault": "C:\\path\\to\\vault"                // if it isn't found by itself

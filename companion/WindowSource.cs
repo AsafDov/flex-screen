@@ -32,6 +32,15 @@ sealed class WindowSource
     readonly object _gate = new();
     readonly Dictionary<long, long> _firstSeen = new();  // hwnd → order it first appeared
     long _seen;
+    // hwnd → when it was last in front (polls × 1000). Picking the shown windows by the
+    // screen's front-to-back order dropped a minimized window (Windows sends it to the back),
+    // so tapping the window in front, which minimizes it, made its tile vanish.
+    readonly Dictionary<long, long> _used = new();
+    long _polls;
+    // hwnd → when the deck asked it to close: left off the list meanwhile, so the tile goes at
+    // once; back after a few seconds if it's still open (it asked about unsaved work, say).
+    readonly Dictionary<long, DateTime> _closing = new();
+    static readonly TimeSpan ClosingFor = TimeSpan.FromSeconds(5);
     readonly Dictionary<string, (string App, string[] Suffixes)> _apps = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, WindowIcon?> _iconCache = new();  // exe path + icon handle → icon
     readonly Dictionary<string, WindowIcon> _icons = new();       // icon id → icon
@@ -43,6 +52,14 @@ sealed class WindowSource
 
     /// <summary>Up to <see cref="MaxShown"/> of the most recently used windows, in the taskbar's order.</summary>
     public IReadOnlyList<DeckWindow> Shown { get; private set; } = [];
+
+    /// <summary>Every app window as of the last poll, front to back.</summary>
+    public IReadOnlyList<DeckWindow> All { get; private set; } = [];
+
+    public static bool Exists(long id) => IsWindow((IntPtr)id);
+
+    /// <summary>The exe behind a window ("" if it can't be read).</summary>
+    public static string ExePath(long id) => ProcessPath((IntPtr)id);
 
     /// <summary>Raised on a timer thread when <see cref="Shown"/> changes.</summary>
     public event Action<IReadOnlyList<DeckWindow>>? Changed;
@@ -71,11 +88,16 @@ sealed class WindowSource
         else WindowFocus.Activate(hwnd);
     }
 
-    /// <summary>Asks the window to close, as its X button does (apps still get to ask about unsaved work).</summary>
-    public static void Close(long id)
+    /// <summary>
+    /// Asks the window to close, as its X button does (apps still get to ask about unsaved
+    /// work), and takes its tile off the deck straight away.
+    /// </summary>
+    public void Close(long id)
     {
         var hwnd = (IntPtr)id;
-        if (IsWindow(hwnd)) PostMessage(hwnd, WmClose, IntPtr.Zero, IntPtr.Zero);
+        if (!IsWindow(hwnd)) return;
+        PostMessage(hwnd, WmClose, IntPtr.Zero, IntPtr.Zero);
+        lock (_gate) _closing[id] = DateTime.UtcNow;  // the next poll (≤ 300 ms) drops the tile
     }
 
     /// <summary>The root window of whatever has the foreground.</summary>
@@ -86,6 +108,7 @@ sealed class WindowSource
         try
         {
             var all = Enumerate();
+            All = all;
             var foreground = all.FirstOrDefault(w => w.Active);
             List<DeckWindow> shown;
             lock (_gate)
@@ -93,17 +116,35 @@ sealed class WindowSource
                 var opened = false;
                 foreach (var w in all) opened |= _firstSeen.TryAdd(w.Id, _seen++);
                 var closed = _firstSeen.Keys.Where(id => all.All(w => w.Id != id)).ToList();
-                foreach (var gone in closed) _firstSeen.Remove(gone);
-                // The most recently used windows, in the taskbar's order (a window opened or
-                // closed reads it again), and in the order they opened within an app's button.
+                foreach (var gone in closed)
+                {
+                    _firstSeen.Remove(gone);
+                    _used.Remove(gone);
+                    _closing.Remove(gone);
+                }
+                _polls++;
+                for (var z = 0; z < all.Count; z++)
+                {
+                    // The one in front is the most recent; one seen for the first time ranks by
+                    // its place front to back (at startup, and a new window comes up in front).
+                    if (all[z].Active) _used[all[z].Id] = _polls * 1000;
+                    else _used.TryAdd(all[z].Id, _polls * 1000 - 1 - z);
+                }
+                var utc = DateTime.UtcNow;
+                foreach (var done in _closing.Where(c => utc - c.Value >= ClosingFor).Select(c => c.Key).ToList()) _closing.Remove(done);
+                // The most recently used windows, minimized ones too, in the taskbar's order (a
+                // window opened or closed reads it again), and in the order they opened within an
+                // app's button.
                 _taskbar.Refresh(force: opened || closed.Count > 0);
-                shown = all.Take(MaxShown)
+                shown = all.Where(w => !_closing.ContainsKey(w.Id))
+                    .OrderByDescending(w => _used[w.Id])
+                    .Take(MaxShown)
                     .OrderBy(w => TaskbarIndex(w))
                     .ThenBy(w => _firstSeen[w.Id])
                     .ToList();
             }
             Polled?.Invoke(all, foreground);
-            var layout = string.Join("\n", shown.Select(w => $"{w.Id}|{w.App}|{w.Icon}|{w.Active}"));
+            var layout = string.Join("\n", shown.Select(w => $"{w.Id}|{w.App}|{w.Icon}|{w.Active}|{w.Minimized}"));
             var titles = string.Join("\n", shown.Select(w => w.Title));
             var now = DateTime.UtcNow;
             if (layout != _shownLayout || (titles != _shownTitles && now - _shownAt >= TitleEvery))

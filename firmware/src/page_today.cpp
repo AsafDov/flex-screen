@@ -2,6 +2,7 @@
 
 #include <time.h>
 
+#include "icons.h"
 #include "model.h"
 #include "pc.h"
 #include "ui.h"
@@ -13,9 +14,16 @@ namespace {
 // After the user lets go of the slider, ignore the PC's volume reports for this long so
 // a report sent before the last drag step doesn't snap the knob back.
 constexpr uint32_t kHoldAfterTouchMs = 800;
-constexpr int kLaterRows = 4;
 constexpr int kCapturePage = 4;
 constexpr uint32_t kCalendarTickMs = 15000;  // "in 18 min"
+constexpr uint32_t kIconRetryMs = 3000;      // asking again for a window icon the deck lacks
+
+// A Recent tile: an icon (a window's own, else a glyph on a tinted square), what it is,
+// and which one.
+struct ActionTile {
+  lv_obj_t *root, *badge, *image, *glyph, *name, *title;
+  uint32_t asked_ms;
+};
 
 struct {
   lv_obj_t *clock;
@@ -30,11 +38,14 @@ struct {
   lv_obj_t *vol_slider;
   lv_obj_t *vol_value;
   lv_obj_t *next_title, *next_time, *join;
-  lv_obj_t *later_rows[kLaterRows], *later_times[kLaterRows], *later_titles[kLaterRows], *later_note;
+  lv_obj_t *actions_row, *actions_note;
+  ActionTile tiles[model::Actions::kMax];
   lv_obj_t *mail_text;
 } w;
 
 uint32_t google_seen = UINT32_MAX;
+uint32_t actions_seen = UINT32_MAX, actions_icons_seen = UINT32_MAX, actions_tick_ms = 0;
+int actions_link_seen = -1;
 uint32_t calendar_tick_ms = 0;
 int calendar_link_seen = -1;
 
@@ -143,13 +154,124 @@ void onJoin(lv_event_t *) {
 
 void onMail(lv_event_t *) { showPage(kCapturePage); }
 
+void onAction(lv_event_t *e) {
+  const int i = int(intptr_t(lv_event_get_user_data(e)));
+  if (i < model::actions.count) pc::runRecent(model::actions.list[i].id.c_str());
+}
+
+// The Recent card's tiles, five across, each the same width whether used or not.
+void buildActions(lv_obj_t *right) {
+  lv_obj_t *c = card(right);
+  lv_obj_set_width(c, LV_PCT(100));
+  lv_obj_set_flex_grow(c, 1);
+  flexCol(c, 8);
+  label(c, "RECENT", &lv_font_montserrat_16, kMuted);
+  w.actions_note = label(c, "", &body_font, kMuted);
+  lv_obj_set_width(w.actions_note, LV_PCT(100));
+  lv_label_set_long_mode(w.actions_note, LV_LABEL_LONG_MODE_WRAP);
+
+  w.actions_row = box(c);
+  lv_obj_set_width(w.actions_row, LV_PCT(100));
+  lv_obj_set_flex_grow(w.actions_row, 1);
+  flexRow(w.actions_row, 6);
+  lv_obj_set_flex_align(w.actions_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+  const int line = lv_font_get_line_height(&small_font);
+  for (int i = 0; i < model::Actions::kMax; i++) {
+    ActionTile &t = w.tiles[i];
+    t.asked_ms = 0;
+    t.root = button(w.actions_row, 1, LV_PCT(100), kRaised, onAction, reinterpret_cast<void *>(intptr_t(i)));
+    lv_obj_set_flex_grow(t.root, 1);
+    lv_obj_set_style_radius(t.root, 12, 0);
+    lv_obj_set_style_pad_all(t.root, 6, 0);
+    lv_obj_set_style_pad_top(t.root, 10, 0);
+    flexCol(t.root, 4);
+    lv_obj_set_flex_align(t.root, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    t.badge = card(t.root, kSurface, kSurface);
+    lv_obj_set_size(t.badge, icons::kSize + 4, icons::kSize + 4);
+    lv_obj_set_style_pad_all(t.badge, 0, 0);
+    lv_obj_set_style_radius(t.badge, 9, 0);
+    t.image = lv_image_create(t.badge);
+    lv_obj_set_size(t.image, icons::kSize, icons::kSize);
+    lv_obj_center(t.image);
+    t.glyph = label(t.badge, "", &lv_font_montserrat_16, kText);
+    lv_obj_center(t.glyph);
+
+    t.name = label(t.root, "", &small_font, kText);
+    lv_obj_set_width(t.name, LV_PCT(100));
+    lv_obj_set_style_text_align(t.name, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(t.name, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_height(t.name, line);
+    t.title = label(t.root, "", &small_font, kMuted);
+    lv_obj_set_width(t.title, LV_PCT(100));
+    lv_obj_set_style_text_align(t.title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(t.title, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_height(t.title, line * 3);  // up to three lines, then "…"
+  }
+}
+
+// Each kind's glyph and colors, for everything but a window with its icon.
+struct ActionLook {
+  const char *glyph;
+  uint32_t bg, fg;
+};
+
+ActionLook actionLook(const String &kind) {
+  if (kind == "note") return {LV_SYMBOL_FILE, 0x2B2142, 0xB49CFF};
+  if (kind == "command") return {">_", 0x0A0C0F, kAccent};
+  if (kind == "meeting") return {LV_SYMBOL_CALL, 0x143A2E, kGreen};
+  if (kind == "mail") return {LV_SYMBOL_ENVELOPE, 0x3A2A10, kAmber};
+  if (kind == "claude") return {LV_SYMBOL_EDIT, 0x3A2318, 0xE8936A};
+  if (kind == "device") return {LV_SYMBOL_AUDIO, 0x13202D, kAccent};
+  return {"", 0x2D5C8A, kText};  // a window without its icon: its app's first letter
+}
+
+void updateActions() {
+  const model::Actions &a = model::actions;
+  const bool online = pc::connected();
+  const int count = online ? a.count : 0;
+  setText(w.actions_note, !online ? "PC offline" : "What you do from the deck shows here: windows, notes, commands, meetings. Tap one to do it again.");
+  setHidden(w.actions_note, count > 0);
+  setHidden(w.actions_row, count == 0);
+  for (int i = 0; i < model::Actions::kMax; i++) {
+    ActionTile &t = w.tiles[i];
+    const bool used = i < count;
+    // An unused slot keeps its width, so the others stay where they are.
+    if (lv_obj_is_clickable(t.root) != used) {
+      lv_obj_set_style_opa(t.root, used ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+      lv_obj_set_clickable(t.root, used);
+    }
+    if (!used) continue;
+    const model::RecentAction &x = a.list[i];
+    setText(t.name, x.name.c_str());
+    setText(t.title, x.title.c_str());
+    const lv_image_dsc_t *icon = x.kind == "window" ? icons::get(x.icon) : nullptr;
+    if (!icon && x.icon.length() && millis() - t.asked_ms >= kIconRetryMs) {
+      t.asked_ms = millis();
+      pc::requestIcon(x.icon.c_str());
+    }
+    setHidden(t.image, icon == nullptr);
+    setHidden(t.glyph, icon != nullptr);
+    if (icon) {
+      if (lv_image_get_src(t.image) != icon) lv_image_set_src(t.image, icon);
+      setBgColor(t.badge, kRaised);
+      continue;
+    }
+    const ActionLook look = actionLook(x.kind);
+    char letter[2] = {x.name.length() ? char(toupper(x.name[0])) : '?', 0};
+    setText(t.glyph, look.glyph[0] ? look.glyph : letter);
+    setTextColor(t.glyph, look.fg);
+    setBgColor(t.badge, look.bg);
+  }
+}
+
 void buildRight(lv_obj_t *parent) {
   lv_obj_t *right = box(parent);
   lv_obj_set_flex_grow(right, 1);
   lv_obj_set_height(right, LV_PCT(100));
   flexCol(right, kGap);
 
-  lv_obj_t *next = card(right, 0x13202D, 0x24405C);
+  lv_obj_t *next = card(right, kHighlight, kHighlightLine);
   lv_obj_set_size(next, LV_PCT(100), LV_SIZE_CONTENT);
   flexRow(next, 10);
   lv_obj_t *text = box(next);
@@ -159,29 +281,14 @@ void buildRight(lv_obj_t *parent) {
   label(text, "UP NEXT", &lv_font_montserrat_16, kAccent);
   w.next_title = label(text, "", &title_font, kText);
   ellipsize(w.next_title);
-  w.next_time = label(text, "", &body_font, 0xA9B6C4);
+  w.next_time = label(text, "", &body_font, kHighlightText);
   ellipsize(w.next_time);
   w.join = button(next, 88, 44, kAccent, onJoin);
   lv_obj_set_style_radius(w.join, 12, 0);
   lv_obj_center(label(w.join, LV_SYMBOL_CALL "  Join", &body_font, kOnAccent));
   lv_obj_set_hidden(w.join, true);
 
-  lv_obj_t *later = card(right);
-  lv_obj_set_width(later, LV_PCT(100));
-  lv_obj_set_flex_grow(later, 1);
-  flexCol(later, 8);
-  label(later, "LATER TODAY", &lv_font_montserrat_16, kMuted);
-  for (int i = 0; i < kLaterRows; i++) {
-    lv_obj_t *row = box(later);
-    lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
-    flexRow(row, 10);
-    w.later_times[i] = label(row, "", &body_font, kAccent);
-    lv_obj_set_width(w.later_times[i], 64);
-    w.later_titles[i] = label(row, "", &body_font, kText);
-    fillRow(w.later_titles[i]);
-    w.later_rows[i] = row;
-  }
-  w.later_note = label(later, "", &body_font, kMuted);
+  buildActions(right);
 
   lv_obj_t *mail = button(right, LV_PCT(100), 44, kSurface, onMail);
   lv_obj_set_style_bg_opa(mail, LV_OPA_COVER, 0);
@@ -233,28 +340,6 @@ void updateCalendar() {
     else if (mins < 60) setTextf(w.next_time, "%s-%s · in %d min", from, to, int(mins));
     else setTextf(w.next_time, "%s%s-%s", day, from, to);
   }
-
-  // The rest of today after the next one.
-  int shown = 0;
-  bool after_next = next == nullptr;
-  for (int i = 0; online && g.status == "ok" && i < g.event_count && shown < kLaterRows; i++) {
-    const model::Event &e = g.events[i];
-    if (&e == next) {
-      after_next = true;
-      continue;
-    }
-    if (!after_next && !e.all_day) continue;
-    if (localDay(e.start) != localDay(now) || e.end <= now) continue;
-    char at[8];
-    if (e.all_day) snprintf(at, sizeof(at), "All day");
-    else clockText(e.start, at, sizeof(at));
-    setText(w.later_times[shown], at);
-    setText(w.later_titles[shown], e.title.c_str());
-    setHidden(w.later_rows[shown], false);
-    shown++;
-  }
-  for (int i = shown; i < kLaterRows; i++) setHidden(w.later_rows[i], true);
-  setText(w.later_note, shown || !online || g.status != "ok" ? "" : "Nothing else today");
 
   if (!online) setText(w.mail_text, "Action items from mail");
   else if (g.status != "ok") setText(w.mail_text, "Action items from mail need Google");
@@ -346,6 +431,15 @@ void update() {
     calendar_link_seen = link;
     calendar_tick_ms = millis();
     updateCalendar();
+  }
+  // Icons arrive after the list, and a missing one is asked for again now and then.
+  const bool icon_due = millis() - actions_tick_ms >= kIconRetryMs;
+  if (model::actions.version != actions_seen || link != actions_link_seen || icons::version() != actions_icons_seen || icon_due) {
+    actions_seen = model::actions.version;
+    actions_link_seen = link;
+    actions_icons_seen = icons::version();
+    actions_tick_ms = millis();
+    updateActions();
   }
 }
 

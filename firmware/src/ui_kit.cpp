@@ -19,6 +19,7 @@ lv_font_t small_font;
 
 uint32_t kBg, kSurface, kBorder, kRaised, kSelected, kText, kSoftText, kMuted, kTrack;
 uint32_t kAccent, kOnAccent, kGreen, kAmber, kAmberBg, kArtBg;
+uint32_t kHighlight, kHighlightLine, kHighlightText;
 
 void usePalette(const char *name) {
   if (!strcmp(name, "vibrant")) {
@@ -26,12 +27,32 @@ void usePalette(const char *name) {
     kText = 0xF2F5FF, kSoftText = 0xCAD3F5, kMuted = 0x97A3CF, kTrack = 0x2A3866;
     kAccent = 0x4C8DFF, kOnAccent = 0x050F2E, kGreen = 0x2BE3A0, kAmber = 0xFFB020, kAmberBg = 0x45300A;
     kArtBg = 0x2B3C80;
+    kHighlight = 0x13202D, kHighlightLine = 0x24405C, kHighlightText = 0xA9B6C4;
+    return;
+  }
+  // Warm charcoal with an orange accent.
+  if (!strcmp(name, "ember")) {
+    kBg = 0x110D0B, kSurface = 0x1B1512, kBorder = 0x33261F, kRaised = 0x251C17, kSelected = 0x3A2618;
+    kText = 0xF6EEE8, kSoftText = 0xD9C9BD, kMuted = 0xA8968A, kTrack = 0x3A2D25;
+    kAccent = 0xFF8A3D, kOnAccent = 0x2A1205, kGreen = 0x5FD49A, kAmber = 0xFFC247, kAmberBg = 0x45320F;
+    kArtBg = 0x3D2A1F;
+    kHighlight = 0x2A1A10, kHighlightLine = 0x5A3418, kHighlightText = 0xD6B8A2;
+    return;
+  }
+  // Deep indigo with a violet accent.
+  if (!strcmp(name, "violet")) {
+    kBg = 0x0E0B16, kSurface = 0x171226, kBorder = 0x2C2347, kRaised = 0x201936, kSelected = 0x33275E;
+    kText = 0xF1EDFF, kSoftText = 0xCFC6F0, kMuted = 0x9D93C4, kTrack = 0x2F2650;
+    kAccent = 0xA78BFA, kOnAccent = 0x1A0F3A, kGreen = 0x4ADE9E, kAmber = 0xFBBF24, kAmberBg = 0x45340A;
+    kArtBg = 0x342A63;
+    kHighlight = 0x1E1638, kHighlightLine = 0x4A3A80, kHighlightText = 0xB9AEE0;
     return;
   }
   kBg = 0x0D0F12, kSurface = 0x16191E, kBorder = 0x232830, kRaised = 0x1F242B, kSelected = 0x1F2A36;
   kText = 0xECEEF1, kSoftText = 0xC4CBD3, kMuted = 0x9BA4AF, kTrack = 0x2A3038;
   kAccent = 0x5AB4FF, kOnAccent = 0x0B1520, kGreen = 0x4FD1A5, kAmber = 0xF5A623, kAmberBg = 0x3A2A10;
   kArtBg = 0x263445;
+  kHighlight = 0x13202D, kHighlightLine = 0x24405C, kHighlightText = 0xA9B6C4;
 }
 
 namespace {

@@ -501,6 +501,50 @@ Gotchas found after phase 6:
     decide what the deck shows.
 - Firmware 0.10.1: the layer cheat sheet waits for ten seconds of holding (was one), on
   request; tapping the layer pill still opens it at once.
+- Firmware 0.11.0:
+  - Dev terminal: only the last few commands, each in full (wrapping to two lines; a row
+    that would run past the card is left out) with the time it started, tap to run
+    again. The output box, status, Ctrl+C and Focus went, on request.
+  - Today: "Later today" became **Recent**, the last five things done from the deck
+    that can be done again (window, note, command, meeting, Gmail, Claude session,
+    output device), as tiles. The companion records them as the deck's actions come in
+    (`RecentActions.cs`); doing one already listed doesn't add or move it, so tiles stay
+    under the finger. A window is one tile per window, but a closed window's tile is
+    taken over by a new window of the same exe, so a restarted app doesn't leave a
+    stale twin; tapping a closed window's tile brings up another window of its app or
+    starts the exe. Kept DPAPI-encrypted across restarts. The meeting tile keeps its
+    link, since the event leaves the calendar's view once it's over.
+- Firmware 0.11.1, the startup overflow: on connecting, the companion sent album art,
+  eight window icons and every topic at once (from several threads), the deck's 32 KB
+  receive buffer overflowed while it built its pages, and a lost snapshot stayed lost
+  until that topic next changed (the Recent card and the Claude pill came up empty).
+  Now: `DeckLink` holds writes to ~64 KB/s after an 8 KB burst; the hello burst is
+  paced, art last; when the deck logs an overflow, a bad line or a bad image part, the
+  companion sends every topic again 1.5 s later (at most every 5 s; art again only if a
+  part of it was lost; icons not, the deck asks for those). The deck skips a state line
+  identical to its topic's last one (FNV-1a of the line, forgotten when the port opens
+  or on hello): without that, each resend's keymap rebuilt the cheat sheet, the stall
+  overflowed the next burst, and the resends looped every ~6 s. A loss or two right
+  after the companion starts remains (the deck builds every page at once then), now
+  repaired within seconds. A screenshot (`/deck` shot) stops the deck reading for
+  ~2.5 s, so anything sent meanwhile is lost and resent.
+- Firmware 0.12.0, companion and extension 0.2.1:
+  - Terminal commands didn't reach the deck: the VS Code window still ran extension
+    0.1.0 (installed side by side; a window keeps what it started with until reloaded),
+    which sends each command's start and end but no history, and the list came only
+    from history. The companion now builds the list from starts and ends too, and a
+    history replaces it when one comes. The extension says its version in its hello,
+    and the companion logs it.
+  - Recent: most recent first, on request; doing one already listed moves it to the
+    front (it used to keep its place).
+  - Windows: the shown 8 are the most recently in-front windows, tracked per poll,
+    instead of the first 8 front to back: Windows sends a minimized window to the back,
+    so minimizing (a tap on the window in front) made its tile vanish. A minimized
+    window's icon is dimmed. Hold = close: the deck hides the tile at once and the
+    companion leaves the window out for 5 s, then shows it again if it's still open.
+  - Two more themes, Ember and Violet, from the tray's Deck colors. The Up next card's
+    tint, and the soft text on highlighted tiles, come from the theme now
+    (`kHighlight`, `kHighlightLine`, `kHighlightText`) rather than a fixed blue.
 
 ## Decisions
 
