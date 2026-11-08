@@ -24,6 +24,8 @@ After installing
   - The Dev page lists the last commands run in VS Code's terminal; tap one to run it again.
 
 Google Calendar and Tasks (optional, once)
+  google-setup.md in this folder is the full guide, with screens to look for, how mail
+  items reach the deck, and troubleshooting. In short:
   The Today and Capture pages read your calendar and the todo skill's mail tasks with your
   own Google OAuth client:
   1. In Google Cloud Console (console.cloud.google.com), APIs & Services: enable the

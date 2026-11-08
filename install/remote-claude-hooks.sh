@@ -36,15 +36,16 @@ if os.path.exists(path):
 hooks = root.setdefault("hooks", {})
 
 def ours(entry):
-    return any(url in (h.get("args") or []) for h in entry.get("hooks", []))
+    return any(url in (h.get("args") or []) or url in str(h.get("command", "")) for h in entry.get("hooks", []))
 
 for name in events:
     entries = [e for e in hooks.get(name, []) if not ours(e)]
     if mode != "--remove":
-        # As the Windows companion writes them: curl run directly, in the background.
-        hook = {"type": "command", "command": "curl",
-                "args": ["-s", "-m", "2", "-X", "POST", "-H", "Content-Type: application/json",
-                         "--data-binary", "@-", url],
+        # One command line, run by the shell: every Claude Code version on Linux takes that
+        # (the separate "args" list the Windows companion writes is a newer form). In the
+        # background, giving up after 2 s, so a missing tunnel costs nothing.
+        hook = {"type": "command",
+                "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- " + url,
                 "async": True, "timeout": 5}
         entry = {"matcher": "*"} if name in ("PreToolUse", "PostToolUse") else {}
         entry["hooks"] = [hook]

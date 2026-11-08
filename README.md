@@ -134,6 +134,11 @@ Unzip `dist\flex-screen.zip` on the PC and run `install.cmd`. It installs the co
 removes them. [install/README.txt](install/README.txt) covers the optional parts: Google
 Calendar and Tasks, Teams calls and per-PC settings.
 
+### Google Calendar, Tasks and mail
+[docs/google-setup.md](docs/google-setup.md) walks through it: your own Google sign-in app
+(once), connecting each PC from the tray, how mail action items reach the deck, more than one
+Google account, and troubleshooting.
+
 ### VS Code Remote-SSH
 Working on a Linux server from the deck's PC: the extension runs on the PC even in a
 Remote-SSH window (keep it installed there), so terminal commands reach the deck as
@@ -168,6 +173,7 @@ Optional, per PC, in `%LOCALAPPDATA%\flex-screen\settings.json`:
 | `vscode-ext/` | The VS Code extension |
 | `protocol/` | [v0.md](protocol/v0.md): every message between the parts |
 | `install/` | Install kit builder and install/uninstall scripts |
+| `docs/` | Guides: [connecting Google Calendar, Tasks and mail](docs/google-setup.md) |
 | `backup/` | Factory firmware backup and restore steps |
 | `simulator/` | The deck's UI on the PC, with feature tests and screenshot tours ([README](simulator/README.md)) |
 

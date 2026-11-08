@@ -108,6 +108,7 @@ companion/   C# / .NET 10 tray app; also installs the Claude Code hooks (--insta
 vscode-ext/  TypeScript VS Code extension
 install/     install kit for another PC: build-dist.ps1, install/uninstall scripts
 dist/        build-dist.ps1's output (flex-screen.zip)
+docs/        user guides (google-setup.md: Calendar, Tasks and mail; also in the install kit)
 simulator/   the firmware UI on the PC (MSVC), with a Python driver, feature tests and screenshot tours
 qmk/         (phase 6) Corne keymap addition (layer report) for vial-qmk
 ```
@@ -595,7 +596,11 @@ Gotchas found after phase 6:
     localhost. An SSH reverse tunnel (`RemoteForward 48151 localhost:48151` in the PC's
     ssh config, which Remote-SSH uses) makes the server's localhost:48151 the PC's, and
     `install/remote-claude-hooks.sh` adds the same hooks there with the server's curl
-    (python3 merges the JSON, as ClaudeHooks.cs does on Windows). The hook request then
+    (python3 merges the JSON, as ClaudeHooks.cs does on Windows), as one shell command
+    line rather than Windows' `command` + `args` exec form, which older Claude Code
+    versions may not take. Confirmed working on the work PC (2026-11-08): the extension
+    installed on Windows (installing from a Remote-SSH window puts it on the server), the
+    tunnel, and the hooks added on the server. The hook request then
     arrives from the PC's ssh process, whose parent is VS Code, so the Claude pill brings
     up that window. `.gitattributes` keeps `.sh` files LF in Windows checkouts.
   - Audio: Headphones come right after Speakers among the outputs (on request).
