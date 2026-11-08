@@ -22,6 +22,7 @@ sealed class GitSource
     readonly object _gate = new();
     readonly System.Threading.Timer _poll;
     string? _folder;
+    string _remote = "";
     string? _root;
     string _busy = "";
 
@@ -35,13 +36,30 @@ sealed class GitSource
         _poll = new System.Threading.Timer(_ => Poll(), null, Timeout.Infinite, Timeout.Infinite);
     }
 
-    public void SetFolder(string? folder)
+    /// <param name="remote">The VS Code window's remote ("wsl"…), or "": a remote folder is a
+    /// path on that machine, which the PC's git can't read, so it's named but not polled.</param>
+    public void SetFolder(string? folder, string remote = "")
     {
         lock (_gate)
         {
-            if (folder == _folder) return;
+            if (folder == _folder && remote == _remote) return;
             _folder = folder;
+            _remote = remote;
             _root = null;
+        }
+        if (remote.Length > 0 && folder != null)
+        {
+            _poll.Change(Timeout.Infinite, Timeout.Infinite);
+            var where = remote switch
+            {
+                "wsl" => "WSL",
+                "dev-container" or "attached-container" => "the container",
+                "ssh-remote" => "the SSH host",
+                "codespaces" => "the codespace",
+                _ => remote,
+            };
+            Publish(GitState.None with { Repo = folder.Split('/', '\\').LastOrDefault(p => p.Length > 0) ?? folder, Error = $"Git runs in {where}" });
+            return;
         }
         _poll.Change(0, PollMs);
     }

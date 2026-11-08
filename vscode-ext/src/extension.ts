@@ -57,8 +57,13 @@ function hello() {
     t: 'hello',
     version,
     window: vscode.env.sessionId,
+    // "wsl", "dev-container", "ssh-remote"…, or "" for a local window. In a remote window
+    // this extension still runs on the PC (extensionKind "ui" first, in package.json): run
+    // on the remote, its localhost was the remote's and never reached the companion.
+    remote: vscode.env.remoteName ?? '',
     name: vscode.workspace.name ?? '',
-    folders: (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+    // A remote folder's own path ("/home/me/repo"); fsPath would turn it into a Windows one.
+    folders: (vscode.workspace.workspaceFolders ?? []).map((f) => (f.uri.scheme === 'file' ? f.uri.fsPath : f.uri.path)),
     focused: vscode.window.state.focused,
   };
 }

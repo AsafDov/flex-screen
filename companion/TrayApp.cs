@@ -130,7 +130,7 @@ sealed class TrayApp : ApplicationContext
         _vscode.WindowsChanged += () =>
         {
             // Git follows the VS Code window used last.
-            _git.SetFolder(_vscode.Current?.Root);
+            _git.SetFolder(_vscode.Current?.Root, _vscode.Current?.Remote ?? "");
         };
         _dev.TermChanged += t => _link.Send(TermMessage(t));
         _dev.BuildChanged += b => _link.Send(BuildMessage(b));

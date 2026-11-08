@@ -6,7 +6,8 @@ namespace FlexScreen.Companion;
 /// <summary>
 /// Adds and removes the Claude Code hooks that report session state to the companion, in the
 /// user's ~/.claude/settings.json. Run as `flex-screen-companion.exe --install-hooks` or
-/// `--uninstall-hooks` (the install scripts do).
+/// `--uninstall-hooks` (the install scripts do). Claude Code on a Linux machine reached over
+/// SSH gets the same hooks from install/remote-claude-hooks.sh, run there.
 /// </summary>
 /// <remarks>
 /// Each hook runs curl.exe directly (exec form, no shell, so it works without Git Bash) and

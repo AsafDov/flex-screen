@@ -583,6 +583,22 @@ Gotchas found after phase 6:
     companion sends the art again after any reported loss.
   - Not deck bugs: due dates were a day off in the simulator only (the PC's time zone
     in `mktime()`; the simulator runs in UTC like the deck).
+- Remote-SSH (the work PC works on a Linux server; extension 0.2.2):
+  - Installed on the server, the extension ran there, and its localhost:48151 was the
+    server's: nothing reached the companion. `extensionKind` is `["ui", "workspace"]`
+    now, so VS Code runs the PC's copy even in a remote window; terminal events and
+    sending text work across (the terminal API reaches every extension host). Its hello
+    says `remote`, and a remote folder goes as its own path; the companion names the repo
+    but doesn't run the PC's git on it ("Git runs in the SSH host"). Not yet tried against
+    a real SSH remote.
+  - Claude Code on the server: its hooks need the companion, which is only on the PC's
+    localhost. An SSH reverse tunnel (`RemoteForward 48151 localhost:48151` in the PC's
+    ssh config, which Remote-SSH uses) makes the server's localhost:48151 the PC's, and
+    `install/remote-claude-hooks.sh` adds the same hooks there with the server's curl
+    (python3 merges the JSON, as ClaudeHooks.cs does on Windows). The hook request then
+    arrives from the PC's ssh process, whose parent is VS Code, so the Claude pill brings
+    up that window. `.gitattributes` keeps `.sh` files LF in Windows checkouts.
+  - Audio: Headphones come right after Speakers among the outputs (on request).
 
 ## Decisions
 

@@ -181,8 +181,13 @@ sealed class DeviceSource : IMMNotificationClient
             }
         }
         // Stable order so buttons don't jump when the default changes: the built-in
-        // speakers first, then by name. Never drop the selected device off the end.
-        var shown = all.OrderBy(d => d.Name.StartsWith("Speakers", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+        // speakers first, headphones right after (on request), then by name. Never drop the
+        // selected device off the end.
+        static int Rank(AudioDevice d) =>
+            d.Name.StartsWith("Speakers", StringComparison.OrdinalIgnoreCase) ? 0
+            : d.Name.StartsWith("Headphones", StringComparison.OrdinalIgnoreCase) ? 1
+            : 2;
+        var shown = all.OrderBy(Rank)
                        .ThenBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase)
                        .Take(MaxPerFlow).ToList();
         var chosen = all.FirstOrDefault(d => d.Selected);

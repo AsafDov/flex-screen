@@ -134,6 +134,14 @@ Unzip `dist\flex-screen.zip` on the PC and run `install.cmd`. It installs the co
 removes them. [install/README.txt](install/README.txt) covers the optional parts: Google
 Calendar and Tasks, Teams calls and per-PC settings.
 
+### VS Code Remote-SSH
+Working on a Linux server from the deck's PC: the extension runs on the PC even in a
+Remote-SSH window (keep it installed there), so terminal commands reach the deck as
+they are. For Claude Code running on the server, add `RemoteForward 48151 localhost:48151`
+under the server's Host in the PC's `~/.ssh/config`, reconnect, and run
+`install/remote-claude-hooks.sh` on the server once. Details in
+[install/README.txt](install/README.txt).
+
 ### Simulator
 The deck's UI also runs on the PC, in a window or headless, driven over a local port with
 made-up data: `simulator\build.ps1` builds it (needs Visual Studio's C++ build tools), and

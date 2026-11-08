@@ -42,6 +42,24 @@ Google Calendar and Tasks (optional, once)
   the calendar > Share with specific people > "See all event details"), and accept. For
   that account's mail, forward it to this one (Gmail > Settings > Forwarding and POP/IMAP).
 
+VS Code Remote-SSH (working on a Linux server from this PC)
+  The extension runs on this PC even in a Remote-SSH window, so the deck gets the server's
+  terminal commands with nothing more to do: keep it installed here (install.cmd does), and
+  if you also installed it on the server, that copy can go. The Dev page's git card says
+  "Git runs in the SSH host": git status comes from this PC's git, which can't see the
+  server's files.
+  Claude Code running on the server needs two things, once:
+  1. A tunnel back to this PC. In %USERPROFILE%\.ssh\config, under the server's Host entry:
+         RemoteForward 48151 localhost:48151
+     then reconnect: Ctrl+Shift+P, "Remote-SSH: Kill VS Code Server on Host...", and open
+     the folder again.
+  2. The hooks on the server. Copy remote-claude-hooks.sh there and run it once, from this
+     folder (use the server's name from your SSH config):
+         scp remote-claude-hooks.sh myserver:
+         ssh myserver sh remote-claude-hooks.sh
+     It needs python3 and curl on the server; "sh remote-claude-hooks.sh --remove" undoes it.
+  Restart Claude sessions on the server afterwards.
+
 Calls (Teams, Zoom, Discord)
   When an app uses the microphone, the deck shows a call panel with its controls. Teams
   can do the most (mute, camera, raise hand, leave, reactions) once its API is on: in
@@ -54,7 +72,8 @@ Settings (optional)
       "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },
       "layerNames": ["BASE", "NAV", "SYMBOL"],
       "obsidianVault": "C:\\Users\\me\\Notes\\MyVault" }
-  palette: the deck's colors, "base" or "vibrant" (also in the tray menu, Deck colors).
+  palette: the deck's colors, "base", "vibrant", "ember" or "violet" (also in the tray menu,
+  Deck colors).
   idle: minutes with no touch and no PC input before the clock screen and before the
   screen goes off (0 turns either off); a locked PC shows the clock right away.
   layerNames: the keyboard's layers from 0 (these are the defaults). obsidianVault: only

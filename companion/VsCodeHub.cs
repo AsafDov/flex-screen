@@ -11,6 +11,10 @@ sealed class VsCodeWindow
     public required WebSocket Socket { get; init; }
     public string Name { get; set; } = "";
     public IReadOnlyList<string> Folders { get; set; } = [];
+
+    /// <summary>"wsl", "dev-container", "ssh-remote"…, or "" for a local window: then Folders
+    /// are the remote's own paths, which the PC's git can't open.</summary>
+    public string Remote { get; set; } = "";
     public bool Focused { get; set; }
     public DateTime FocusedAt { get; set; } = DateTime.MinValue;
     public SemaphoreSlim SendGate { get; } = new(1, 1);
@@ -84,10 +88,11 @@ sealed class VsCodeHub
             case "hello":
                 window.Name = (string?)message["name"] ?? "";
                 window.Folders = (message["folders"] as JsonArray)?.Select(f => (string?)f ?? "").Where(f => f.Length > 0).ToList() ?? [];
+                window.Remote = (string?)message["remote"] ?? "";
                 SetFocus(window, (bool?)message["focused"] ?? false);
                 // 0.1.0 doesn't say; a window runs the extension it had when it opened, until a reload.
                 var version = (string?)message["version"] is { Length: > 0 } v ? v : "0.1.0";
-                Log.Write($"vscode: {window.Name} connected ({string.Join(", ", window.Folders)}), extension {version}");
+                Log.Write($"vscode: {window.Name} connected ({string.Join(", ", window.Folders)}){(window.Remote.Length > 0 ? $" in {window.Remote}" : "")}, extension {version}");
                 WindowsChanged?.Invoke();
                 break;
             case "focus":
