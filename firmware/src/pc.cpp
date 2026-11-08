@@ -575,9 +575,15 @@ void handleImage(const JsonDocument &doc) {
   const size_t off = doc["off"] | 0;
   const char *b64 = doc["b64"] | "";
   size_t written = 0;
+  // A part is 3 KB of pixels (the last one what's left). Bytes lost to a full receive
+  // buffer can leave a line that still parses, with a shorter base64 string: that decoded
+  // fine and left a band of noise across the art, so a short part counts as bad too.
+  const size_t left = off < incoming.size ? incoming.size - off : 0;
+  const size_t expected = left < 3072 ? left : 3072;
   if (part < 0 || off >= incoming.size ||
       mbedtls_base64_decode(incoming.pixels + off, incoming.size - off, &written,
-                            reinterpret_cast<const unsigned char *>(b64), strlen(b64)) != 0) {
+                            reinterpret_cast<const unsigned char *>(b64), strlen(b64)) != 0 ||
+      written != expected) {
     log("img %s: bad part %d", id, part);
     return;
   }

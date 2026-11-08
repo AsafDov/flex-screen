@@ -108,6 +108,7 @@ companion/   C# / .NET 10 tray app; also installs the Claude Code hooks (--insta
 vscode-ext/  TypeScript VS Code extension
 install/     install kit for another PC: build-dist.ps1, install/uninstall scripts
 dist/        build-dist.ps1's output (flex-screen.zip)
+simulator/   the firmware UI on the PC (MSVC), with a Python driver, feature tests and screenshot tours
 qmk/         (phase 6) Corne keymap addition (layer report) for vial-qmk
 ```
 
@@ -545,6 +546,43 @@ Gotchas found after phase 6:
   - Two more themes, Ember and Violet, from the tray's Deck colors. The Up next card's
     tint, and the soft text on highlighted tiles, come from the theme now
     (`kHighlight`, `kHighlightLine`, `kHighlightText`) rather than a fixed blue.
+- The simulator (`simulator/`, on request, 2026-11-08): the firmware's UI and protocol
+  code compiled for Windows with MSVC, stand-ins for the board, display, USB, HID,
+  Preferences and heap, a window or headless, and a TCP port in place of USB. A Python
+  driver plays the companion with made-up data (`fixtures.py`), taps and drags, checks
+  what the deck sends (`test_deck.py`, 67 checks) and screenshots every page per data
+  set and theme (`tour.py`). What it found, fixed in firmware 0.12.1 and 0.12.2:
+  - Status bar: a long meeting, Claude needing approval, a failed build and the layer
+    pushed the volume and mic buttons off the screen. The pills now sit in their own
+    clipped area and give way (layer, then build, then a shorter meeting) until they
+    fit; a call's pill coming or going fits them again.
+  - Git strip: a long branch wrapped onto three lines and pushed the buttons out of the
+    card; "Commit" read "Com…"; "Last:…" stood alone when the chips left no room.
+    `setTextUpTo()` keeps a label to one line (it capped the width but let the height
+    grow) and can be given a new limit for the same text.
+  - Mail tasks: five rows ran past the card and pushed Open Gmail off it; rows that
+    don't fit are left out (the badge counts them all).
+  - Audio: output and input buttons were a fixed 124 px ("Headpho…", "Micropho…", the
+    third past the card's edge); they're as wide as their names now. A fader skipped a
+    level from the PC while touched or just after, but still marked it seen, so the
+    level was lost; at boot nothing counted as touched for the first second, so after a
+    theme restart the mixer stayed blank. Skipped levels are tried again next loop.
+  - A tap or drag shown before the PC confirms (mic, volume) stayed on the guess when no
+    report came; it goes back to the PC's word after 1.5 s (mic) or the drag's hold.
+  - No playback device (volume -1) showed "Muted" and the old slider level; it shows
+    "--". Before the companion's first Google report, Today said "Calendar unavailable";
+    it says "Checking the calendar…". Offline, Today kept the last track's art and the
+    meeting pill (for up to 15 s), and the numpad named the last foreground app.
+  - Windows: the FancyZones map showed a stray placeholder until a monitor arrived (its
+    "seen" value started at the "no monitor" value); the hint was cut short.
+  - Themes: the working Claude banner, the build card's running state, the Output tile
+    and the numpad's operator keys were fixed blues; they follow the theme now.
+  - Seen on the board meanwhile: bytes lost in the startup burst could leave an album
+    art part that still parsed, shorter, which decoded fine and left a band of noise
+    across the art. A part that decodes to the wrong length is a bad part now, and the
+    companion sends the art again after any reported loss.
+  - Not deck bugs: due dates were a day off in the simulator only (the PC's time zone
+    in `mktime()`; the simulator runs in UTC like the deck).
 
 ## Decisions
 
@@ -555,7 +593,9 @@ Gotchas found after phase 6:
 - Calendar = Google Calendar. Action items = Google Tasks as filled by the `todo` skill.
 - Keyboard layer = the layers of the Corne (QMK, programmed with Vial). The G915 TKL has
   no layers to show.
-- No simulator: all UI work happens on the real board.
+- Changes are confirmed on the real board. Since 2026-11-08 there is also a simulator
+  (`simulator/`, on request; it was turned down on 2026-11-06), for reaching every state
+  with made-up data and checking layouts in all themes before flashing.
 - Terminals = VS Code's integrated terminal only (no PowerShell profile hook for Windows
   Terminal).
 - Setup = the VS Code extension plus Claude Code hooks in `~/.claude/settings.json`,

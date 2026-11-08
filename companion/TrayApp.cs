@@ -691,8 +691,13 @@ sealed class TrayApp : ApplicationContext
             case "log":
                 var text = (string?)message["msg"] ?? "";
                 Log.Write($"deck: {text}");
-                if (text.StartsWith("receive buffer overflowed") || text.StartsWith("bad line")) ResendSoon(art: false);
-                else if (text.StartsWith("img ") && text.Contains("bad part")) ResendSoon(art: true);
+                // Lost bytes may have been album art: a part that still parsed showed as a band of
+                // noise across it on the deck. So the art goes again whatever was lost.
+                if (text.StartsWith("receive buffer overflowed") || text.StartsWith("bad line") ||
+                    (text.StartsWith("img ") && text.Contains("bad part")))
+                {
+                    ResendSoon(art: true);
+                }
                 break;
             case "shot":
                 _shot.Add(message);
@@ -837,7 +842,7 @@ sealed class TrayApp : ApplicationContext
                 break;
             case "dev.out":
                 if (_devices.Devices.Outputs.FirstOrDefault(d => d.Id == id) is { } device)
-                    _recent.Note(new RecentAction($"dev.out:{id}", "device", "Sound output", device.Name, "", Run("dev.out", ("id", id))));
+                    _recent.Note(new RecentAction($"dev.out:{id}", "device", "Output", device.Name, "", Run("dev.out", ("id", id))));
                 break;
         }
     }

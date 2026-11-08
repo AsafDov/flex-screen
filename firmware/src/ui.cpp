@@ -38,7 +38,15 @@ struct {
   lv_obj_t *layer, *layer_text;
   lv_obj_t *pc;
   lv_obj_t *meeting, *meeting_text;
+  lv_obj_t *pills;  // everything between the date and the volume button
 } bar;
+
+// The bar's pills share its width with the volume and mic buttons, which must stay on
+// screen: in the simulator a long meeting, Claude needing approval, a failed build and the
+// layer pushed both off it. Which pills want showing; fitBar() decides what fits.
+bool want_build = false, want_layer = false;
+String meeting_label;
+bool bar_changed = true;
 
 struct {
   lv_obj_t *root, *icon, *text;
@@ -61,6 +69,11 @@ int connected_seen = -1;
 int64_t clock_seen = -1;
 uint32_t mute_tap_ms = 0;
 uint32_t mic_tap_ms = 0;
+// A tap or drag shows its result before the PC confirms it. If no report comes (the PC
+// didn't change, or the message was lost), the bar went on showing the guess for good
+// (seen in the simulator); this long after, it shows the PC's last word again.
+constexpr uint32_t kRecheckMs = 1500;
+uint32_t mic_recheck_ms = 0;
 uint32_t claude_seen = UINT32_MAX;
 uint32_t build_seen = UINT32_MAX;
 uint32_t layer_seen = UINT32_MAX;
@@ -87,6 +100,7 @@ void onMute(lv_event_t *) {
 void onMic(lv_event_t *) {
   if (!acceptTap(mic_tap_ms)) return;
   showMic(!model::mic.muted);  // flip now; the PC's report follows within milliseconds
+  mic_recheck_ms = millis() + kRecheckMs;  // and if none does, show what it last said
   pc::toggleMic();
 }
 
@@ -126,7 +140,7 @@ void onClaudePill(lv_event_t *) {
 lv_obj_t *barButton(lv_obj_t *parent, lv_event_cb_t cb) {
   lv_obj_t *b = button(parent, LV_SIZE_CONTENT, 34, kRaised, cb);
   lv_obj_set_style_radius(b, 10, 0);
-  lv_obj_set_style_pad_hor(b, 12, 0);
+  lv_obj_set_style_pad_hor(b, 10, 0);
   lv_obj_set_ext_click_area(b, 5);
   flexRow(b, 6);
   return b;
@@ -144,6 +158,13 @@ void buildStatusBar(lv_obj_t *parent) {
   bar.time = label(b, "--:--", &lv_font_montserrat_20, kText);
   bar.date = label(b, "", &lv_font_montserrat_16, kMuted);
   lv_obj_set_style_margin_right(bar.date, 4, 0);
+
+  // The pills take what's left and are cut off at its edge, never the buttons.
+  b = bar.pills = box(b);
+  lv_obj_set_size(b, 1, LV_SIZE_CONTENT);
+  lv_obj_set_flex_grow(b, 1);
+  lv_obj_set_scrollable(b, false);
+  flexRow(b, 6);  // at 8 the layer pill missed by 5 px beside a meeting, Claude and a build
 
   lv_obj_t *pc = bar.pc = pill(b);
   bar.pc_dot = box(pc);
@@ -190,9 +211,7 @@ void buildStatusBar(lv_obj_t *parent) {
   lv_obj_set_clickable(bar.layer, true);  // opens the layer cheat sheet
   lv_obj_add_event_cb(bar.layer, [](lv_event_t *) { cheat::toggle(); }, LV_EVENT_CLICKED, nullptr);
 
-  lv_obj_t *spacer = box(b);
-  lv_obj_set_flex_grow(spacer, 1);
-
+  b = lv_obj_get_parent(bar.pills);
   bar.vol_button = barButton(b, onMute);
   bar.vol = label(bar.vol_button, LV_SYMBOL_VOLUME_MAX "  --", &lv_font_montserrat_16, kText);
 
@@ -265,6 +284,7 @@ void updateCompanion() {
   if (up == connected_seen) return;
   connected_seen = up;
   lv_obj_set_hidden(bar.pc, up);  // only worth the room when the PC is gone
+  bar_changed = true;
   lv_obj_set_style_bg_color(bar.pc_dot, hex(up ? kGreen : 0x5A626C), 0);
   lv_label_set_text(bar.pc_text, up ? "PC" : "PC offline");
   lv_obj_set_style_text_color(bar.pc_text, hex(up ? kText : kMuted), 0);
@@ -277,7 +297,12 @@ void updateVolume() {
   // Mid-drag, the PC's reports trail the finger; let the preview stand until it settles.
   if (millis() - preview_ms < kPreviewHoldMs) return;
   volume_seen = v.version;
-  if (v.level < 0) return;
+  if (v.level < 0) {  // no playback device: neither a level nor muted (it said "Muted" before)
+    lv_label_set_text(bar.vol, LV_SYMBOL_VOLUME_MAX "  --");
+    lv_obj_set_style_text_color(bar.vol, hex(kText), 0);
+    lv_obj_set_style_bg_color(bar.vol_button, hex(kRaised), 0);
+    return;
+  }
   if (v.muted) {
     lv_label_set_text(bar.vol, LV_SYMBOL_MUTE "  Muted");
   } else {
@@ -295,6 +320,10 @@ void showMic(bool muted) {
 
 void updateMic() {
   const model::Mic &m = model::mic;
+  if (mic_recheck_ms && int32_t(millis() - mic_recheck_ms) >= 0) {
+    mic_recheck_ms = 0;
+    mic_seen = UINT32_MAX;
+  }
   if (m.version == mic_seen) return;
   mic_seen = m.version;
   lv_obj_set_hidden(bar.mic, !(pc::connected() && m.available));
@@ -307,6 +336,7 @@ void updateClaude() {
   claude_seen = v;
   const bool show = pc::connected() && model::claude.count > 0;
   lv_obj_set_hidden(bar.claude, !show);
+  bar_changed = true;
   if (!show) return;
   const String &state = model::claude.sessions[0].state;
   uint32_t color = kMuted, bg = kSurface;
@@ -326,7 +356,8 @@ void updateBuild() {
   build_seen = v;
   const String &state = model::build.state;
   const bool show = pc::connected() && state != "none";
-  lv_obj_set_hidden(bar.build, !show);
+  want_build = show;
+  bar_changed = true;
   if (!show) return;
   if (state == "running") {
     lv_label_set_text(bar.build_text, LV_SYMBOL_REFRESH "  Building");
@@ -345,7 +376,8 @@ void updateLayer() {
   if (v == layer_seen) return;
   layer_seen = v;
   const bool show = pc::connected() && model::keyboard.present;
-  lv_obj_set_hidden(bar.layer, !show);
+  want_layer = show;
+  bar_changed = true;
   if (!show) return;
   // Off the base layer it stands out, so a stuck toggle layer gets noticed.
   const bool base = model::keyboard.layer == 0;
@@ -356,8 +388,11 @@ void updateLayer() {
 }
 
 void updateMeeting() {
-  if (model::google.version == meeting_seen && millis() - meeting_tick_ms < kMeetingTickMs) return;
-  meeting_seen = model::google.version;
+  // The link going up or down, or a call starting or ending, counts as a change: the pill
+  // stayed for up to 15 s offline, and beside the call's pill.
+  const uint32_t v = model::google.version + (pc::connected() ? 0 : 0x80000000u) + (model::call.app.length() ? 0x40000000u : 0);
+  if (v == meeting_seen && millis() - meeting_tick_ms < kMeetingTickMs) return;
+  meeting_seen = v;
   meeting_tick_ms = millis();
   const int64_t now = model::utcNow();
   const model::Event *e = pc::connected() && model::google.status == "ok" && now ? model::google.next(now) : nullptr;
@@ -365,17 +400,63 @@ void updateMeeting() {
   const bool show = e && e->start - now < kMeetingAheadSecs && model::call.app.length() == 0;
   lv_obj_set_hidden(bar.meeting, !show);
   lv_obj_set_hidden(bar.date, show);  // room for it; the date is on the Today page anyway
+  bar_changed = true;
   if (!show) return;
   const int64_t mins = (e->start - now + 59) / 60;
   char text[96];
   if (e->start <= now) snprintf(text, sizeof(text), "%s · now", e->title.c_str());
   else if (mins < 60) snprintf(text, sizeof(text), "%s · %dm", e->title.c_str(), int(mins));
   else snprintf(text, sizeof(text), "%s · %dh", e->title.c_str(), int(mins / 60));
-  setTextUpTo(bar.meeting_text, text, 170);
+  meeting_label = text;  // fitBar() sets it, as wide as there's room for
   // Five minutes out it turns amber, like the canvas's "needs you".
   const bool soon = mins <= 5;
   setBgColor(bar.meeting, soon ? kAmberBg : kSurface);
   setTextColor(bar.meeting_text, soon ? 0xF5C36B : kText);
+}
+
+// True if every shown pill ends inside the pills' area.
+bool pillsFit() {
+  lv_obj_update_layout(bar.pills);
+  lv_area_t area;
+  lv_obj_get_coords(bar.pills, &area);
+  for (uint32_t i = 0; i < lv_obj_get_child_count(bar.pills); i++) {
+    lv_obj_t *c = lv_obj_get_child(bar.pills, i);
+    if (lv_obj_is_hidden(c)) continue;
+    lv_area_t a;
+    lv_obj_get_coords(c, &a);
+    if (a.x2 > area.x2) return false;
+  }
+  return true;
+}
+
+// Shows every pill that wants showing, then, while they don't fit, lets the least needed
+// go: the layer, then the build (both are on the Dev page and the cheat sheet anyway), and
+// last the meeting's title gets shorter. Claude and the call stay.
+void fitBar() {
+  // Any pill coming or going (the call pill too, which call.cpp shows) means fitting again:
+  // without this a call's pill clipped "Build passed" to "Build pass".
+  static uint32_t shown_mask = 0;
+  uint32_t mask = 0;
+  for (uint32_t i = 0; i < lv_obj_get_child_count(bar.pills) && i < 32; i++) {
+    if (!lv_obj_is_hidden(lv_obj_get_child(bar.pills, int32_t(i)))) mask |= 1u << i;
+  }
+  if (mask != shown_mask) bar_changed = true;
+  if (!bar_changed) return;
+  bar_changed = false;
+  setHidden(bar.layer, !want_layer);
+  setHidden(bar.build, !want_build);
+  if (meeting_label.length()) setTextUpTo(bar.meeting_text, meeting_label.c_str(), 170);
+  if (!pillsFit()) {
+    setHidden(bar.layer, true);
+    if (!pillsFit()) {
+      setHidden(bar.build, true);
+      if (!pillsFit() && meeting_label.length()) setTextUpTo(bar.meeting_text, meeting_label.c_str(), 90);
+    }
+  }
+  shown_mask = 0;  // what's showing now, so only a later change fits again
+  for (uint32_t i = 0; i < lv_obj_get_child_count(bar.pills) && i < 32; i++) {
+    if (!lv_obj_is_hidden(lv_obj_get_child(bar.pills, int32_t(i)))) shown_mask |= 1u << i;
+  }
 }
 
 void updateToast() {
@@ -502,6 +583,7 @@ void showPage(int index) { lv_tabview_set_active(tabview, index, LV_ANIM_OFF); }
 
 void previewVolume(int level) {
   preview_ms = millis();
+  volume_seen = UINT32_MAX;  // once the hold is over, the PC's level again, even if unchanged
   lv_label_set_text_fmt(bar.vol, LV_SYMBOL_VOLUME_MAX "  %d%%", level);
   lv_obj_set_style_text_color(bar.vol, hex(kText), 0);
   lv_obj_set_style_bg_color(bar.vol_button, hex(kRaised), 0);  // a drag up unmutes
@@ -525,6 +607,7 @@ void update() {
   numpad::update();
   capture::update();
   call::update();
+  fitBar();  // after the call pill too: it sits among the others
   cheat::update();
   idle::update();
   if (model::bench_requests != bench_seen) {

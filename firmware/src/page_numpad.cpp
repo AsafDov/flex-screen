@@ -12,8 +12,10 @@ namespace ui::numpad {
 namespace {
 
 constexpr int kPanelW = 312;
-constexpr uint32_t kOpKey = 0x1A222C;  // operator keys, from the design canvas
-constexpr uint32_t kOpText = 0x8CCBFF;
+// Operator keys: the theme's highlight (they were the design canvas's fixed blues, which
+// stood out in the Ember and Violet themes; seen in the simulator).
+#define kOpKey kHighlight
+#define kOpText kAccent
 constexpr uint32_t kCodeBg = 0x0A0C0F;
 constexpr uint32_t kTypedClearMs = 4000;  // the "typed" readout empties after a pause
 constexpr size_t kMaxExpr = 40;
@@ -317,8 +319,8 @@ void showReadout() {
   }
   if (typed.length() && millis() - typed_ms > kTypedClearMs) typed = "";
   if (typed.length() > 14) typed.remove(0, typed.length() - 14);
-  const String &app = model::zones.app;
-  if (app.length()) setTextf(w.hint, "Typing into %s via USB", app.c_str());
+  const String &app = model::zones.app;  // the foreground app, as of the PC's last word
+  if (app.length() && pc::connected()) setTextf(w.hint, "Typing into %s via USB", app.c_str());
   else setText(w.hint, "Typing via USB");
   setText(w.readout, typed.c_str());
 }

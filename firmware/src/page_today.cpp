@@ -65,6 +65,7 @@ void onVolume(lv_event_t *e) {
   lv_label_set_text_fmt(w.vol_value, "%d", v);
   if (pc::connected()) previewVolume(v);
   vol_touched_ms = millis();
+  volume_seen = UINT32_MAX;  // after the hold, the PC's level again, even if it didn't change
   // Rate-limit while dragging; always send where the finger lifted.
   const bool released = lv_event_get_code(e) == LV_EVENT_RELEASED;
   if (released || millis() - vol_sent_ms > 60) {
@@ -222,7 +223,7 @@ ActionLook actionLook(const String &kind) {
   if (kind == "meeting") return {LV_SYMBOL_CALL, 0x143A2E, kGreen};
   if (kind == "mail") return {LV_SYMBOL_ENVELOPE, 0x3A2A10, kAmber};
   if (kind == "claude") return {LV_SYMBOL_EDIT, 0x3A2318, 0xE8936A};
-  if (kind == "device") return {LV_SYMBOL_AUDIO, 0x13202D, kAccent};
+  if (kind == "device") return {LV_SYMBOL_AUDIO, kHighlight, kAccent};
   return {"", 0x2D5C8A, kText};  // a window without its icon: its app's first letter
 }
 
@@ -327,7 +328,10 @@ void updateCalendar() {
     setText(w.next_title, "Connect Google Calendar");
     setText(w.next_time, "From the companion's tray icon menu");
   } else if (!next) {
-    setText(w.next_title, g.status == "ok" ? "Nothing else today" : "Calendar unavailable");
+    // No status yet: the companion hasn't reported (it said "Calendar unavailable" then).
+    setText(w.next_title, g.status == "ok"   ? "Nothing else today"
+                          : g.status.length() ? "Calendar unavailable"
+                                              : "Checking the calendar…");
     setText(w.next_time, "");
   } else {
     setText(w.next_title, next->title.c_str());
@@ -378,6 +382,7 @@ void updateMedia() {
     lv_label_set_text(w.artist, "Buttons send media keys");
     lv_label_set_text(w.source, "");
     lv_label_set_text(w.play_icon, LV_SYMBOL_PLAY);
+    showArt();  // the placeholder, as on Audio: the last track's art stayed beside "PC offline"
     return;
   }
   if (!m.present) {
@@ -400,7 +405,11 @@ void updateVolume() {
     return;  // try again next loop
   }
   volume_seen = v.version;
-  if (v.level < 0) return;
+  if (v.level < 0) {  // no playback device: not the last level it had
+    lv_slider_set_value(w.vol_slider, 0, LV_ANIM_OFF);
+    lv_label_set_text(w.vol_value, "--");
+    return;
+  }
   lv_slider_set_value(w.vol_slider, v.level, LV_ANIM_OFF);
   lv_label_set_text_fmt(w.vol_value, "%d", v.level);
 }

@@ -26,7 +26,7 @@ struct ClipRow {
 };
 
 struct {
-  lv_obj_t *open_badge, *mail_note;
+  lv_obj_t *open_badge, *mail_note, *mail_header, *open_mail;
   TaskRow tasks[kTaskRows];
   ClipRow clips[model::Clips::kMax];
   lv_obj_t *clip_note, *clip_hint;
@@ -97,7 +97,7 @@ void buildMail(lv_obj_t *row) {
   lv_obj_set_flex_grow(c, 1);
   lv_obj_set_height(c, LV_PCT(100));
   flexCol(c, 4);
-  lv_obj_t *h = header(c, "FROM MAIL");
+  lv_obj_t *h = w.mail_header = header(c, "FROM MAIL");
   w.open_badge = card(h, kAmberBg, kAmberBg);
   lv_obj_set_size(w.open_badge, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
   lv_obj_set_style_pad_hor(w.open_badge, 8, 0);
@@ -135,7 +135,7 @@ void buildMail(lv_obj_t *row) {
 
   lv_obj_t *gap = box(c);
   lv_obj_set_flex_grow(gap, 1);
-  lv_obj_t *open = button(c, LV_PCT(100), 40, kRaised, onOpenMail);
+  lv_obj_t *open = w.open_mail = button(c, LV_PCT(100), 40, kRaised, onOpenMail);
   lv_obj_set_style_radius(open, 12, 0);
   lv_obj_center(label(open, LV_SYMBOL_ENVELOPE "  Open Gmail", &small_font, kText));
 }
@@ -258,6 +258,18 @@ void updateMail() {
     setBgColor(r.mark, t.done ? 0x4A525C : kSurface);
     setBorderColor(r.mark, t.done ? 0x4A525C : kBox);
     setText(lv_obj_get_child(r.mark, 0), t.done ? LV_SYMBOL_OK : "");
+  }
+  // Only the rows that fit above Open Gmail: five ran past the card's bottom and pushed the
+  // button off it (seen in the simulator). The badge still counts them all.
+  lv_obj_t *card = lv_obj_get_parent(w.open_mail);
+  lv_obj_update_layout(card);
+  const int32_t gap = lv_obj_get_style_pad_row(card, LV_PART_MAIN);
+  int32_t room = lv_obj_get_content_height(card) - lv_obj_get_height(w.mail_header) - lv_obj_get_height(w.open_mail) - 2 * gap;
+  if (!lv_obj_is_hidden(w.mail_note)) room -= lv_obj_get_height(w.mail_note) + gap;
+  for (TaskRow &r : w.tasks) {
+    if (lv_obj_is_hidden(r.root)) continue;
+    room -= lv_obj_get_height(r.root) + gap;
+    if (room < 0) setHidden(r.root, true);
   }
 }
 

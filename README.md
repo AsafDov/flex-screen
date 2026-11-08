@@ -134,6 +134,11 @@ Unzip `dist\flex-screen.zip` on the PC and run `install.cmd`. It installs the co
 removes them. [install/README.txt](install/README.txt) covers the optional parts: Google
 Calendar and Tasks, Teams calls and per-PC settings.
 
+### Simulator
+The deck's UI also runs on the PC, in a window or headless, driven over a local port with
+made-up data: `simulator\build.ps1` builds it (needs Visual Studio's C++ build tools), and
+`simulator\test_deck.py` taps through every feature. See [simulator/README.md](simulator/README.md).
+
 ### Settings
 Optional, per PC, in `%LOCALAPPDATA%\flex-screen\settings.json`:
 
@@ -156,6 +161,7 @@ Optional, per PC, in `%LOCALAPPDATA%\flex-screen\settings.json`:
 | `protocol/` | [v0.md](protocol/v0.md): every message between the parts |
 | `install/` | Install kit builder and install/uninstall scripts |
 | `backup/` | Factory firmware backup and restore steps |
+| `simulator/` | The deck's UI on the PC, with feature tests and screenshot tours ([README](simulator/README.md)) |
 
 [DESIGN.md](DESIGN.md) has the architecture, the build history and the decisions behind
 each feature.

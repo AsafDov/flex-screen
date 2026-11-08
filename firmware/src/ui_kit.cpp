@@ -172,13 +172,18 @@ void fillRow(lv_obj_t *l) {
   lv_obj_set_height(l, lv_font_get_line_height(lv_obj_get_style_text_font(l, LV_PART_MAIN)));
 }
 
+// As wide as the text up to `max`, on one line, "…" past it. The limit is a max-width
+// style rather than a width set after measuring: a label capped that way kept its old
+// width when only the limit changed (the status bar shortens the meeting to fit), and with
+// its height left free a long text wrapped instead of ending in "…" (the git branch).
 void setTextUpTo(lv_obj_t *l, const char *text, int32_t max) {
-  if (strcmp(lv_label_get_text(l), text) == 0) return;
-  lv_obj_set_width(l, LV_SIZE_CONTENT);
-  lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
-  lv_label_set_text(l, text);
-  lv_obj_update_layout(l);
-  if (lv_obj_get_width(l) > max) lv_obj_set_width(l, max);
+  if (lv_obj_get_style_max_width(l, LV_PART_MAIN) != max) {
+    lv_obj_set_width(l, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_width(l, max, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_height(l, lv_font_get_line_height(lv_obj_get_style_text_font(l, LV_PART_MAIN)));
+  }
+  setText(l, text);
 }
 
 void setTextf(lv_obj_t *l, const char *fmt, ...) {

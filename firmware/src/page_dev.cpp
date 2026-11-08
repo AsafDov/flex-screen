@@ -25,7 +25,7 @@ struct BannerStyle {
 BannerStyle bannerStyle(const model::ClaudeSession *s) {
   if (!s) return {kSurface, kBorder, kRaised, kMuted, kMuted, kMuted, LV_SYMBOL_EDIT, "No Claude sessions"};
   if (s->state == "input") return {0x2A2112, 0x4A3A1C, kAmber, 0x2A2112, 0xF5C36B, 0xD8C9A8, LV_SYMBOL_WARNING, "Claude needs your approval"};
-  if (s->state == "working") return {0x13202D, 0x24405C, kAccent, kOnAccent, kText, 0xA9B6C4, LV_SYMBOL_REFRESH, "Claude is working"};
+  if (s->state == "working") return {kHighlight, kHighlightLine, kAccent, kOnAccent, kText, kHighlightText, LV_SYMBOL_REFRESH, "Claude is working"};
   if (s->state == "done") return {0x10241D, 0x1F4A3A, kGreen, 0x0B1F18, kText, 0xA9C4B8, LV_SYMBOL_OK, "Claude finished"};
   return {kSurface, kBorder, kRaised, kMuted, kText, kMuted, LV_SYMBOL_EDIT, "Claude is ready"};
 }
@@ -209,6 +209,7 @@ void buildGit(lv_obj_t *row) {
   for (const auto &op : ops) {
     lv_obj_t *b = textButton(w.git_buttons, 0, 32, kRaised, op[0], kText, onGit, const_cast<char *>(op[1]));
     lv_obj_set_flex_grow(b, 1);
+    lv_obj_set_style_pad_hor(b, 3, 0);  // five share ~430 px: at 8 px a side "Commit" read "Com…"
     if (!strcmp(op[1], "push")) {
       w.push_badge = card(b, kAccent, kAccent);
       lv_obj_set_size(w.push_badge, LV_SIZE_CONTENT, 16);
@@ -319,6 +320,11 @@ void updateGit() {
     if (g.last.length()) setTextf(w.git_last, "Last: %s · %s", g.last.c_str(), ago);
     else setText(w.git_last, "No commits yet");
   }
+  // The last commit gets what the branch and change chips leave; with a few chips that was
+  // nothing but "Last:…", so then it isn't shown at all.
+  setHidden(w.git_last, false);
+  lv_obj_update_layout(w.git_last);
+  setHidden(w.git_last, lv_obj_get_width(w.git_last) < 80);
   setHidden(w.push_badge, !usable || g.ahead == 0);
   setTextf(lv_obj_get_child(w.push_badge, 0), "%d", g.ahead);
   const bool enabled = usable && !g.busy.length();
@@ -336,7 +342,7 @@ void updateBuild() {
   const char *state = "No builds yet";
   uint32_t bg = kRaised, fg = kMuted, text = kMuted;
   if (b.state == "running") {
-    icon = LV_SYMBOL_REFRESH, state = "Building", bg = 0x13202D, fg = kAccent, text = kAccent;
+    icon = LV_SYMBOL_REFRESH, state = "Building", bg = kHighlight, fg = kAccent, text = kAccent;
   } else if (b.state == "passed") {
     icon = LV_SYMBOL_OK, state = "Passed", bg = 0x143A2E, fg = kGreen, text = kGreen;
   } else if (b.state == "failed") {
@@ -419,7 +425,7 @@ void updateRecent() {
   const int32_t room = lv_obj_get_content_height(w.recent_list);
   bool full = false;
   for (auto &row : w.recent) {
-    if (lv_obj_has_flag(row.root, LV_OBJ_FLAG_HIDDEN)) continue;
+    if (lv_obj_is_hidden(row.root)) continue;
     full = full || lv_obj_get_y(row.root) + lv_obj_get_height(row.root) > room;
     if (full) setHidden(row.root, true);
   }

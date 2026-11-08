@@ -248,12 +248,15 @@ void fillDevices(lv_obj_t *row, const model::Device *list, int count, lv_event_c
   }
   for (int i = 0; i < count; i++) {
     const model::Device &d = list[i];
-    lv_obj_t *b = button(row, 124, 40, kRaised, cb, reinterpret_cast<void *>(intptr_t(i)));
+    // As wide as the name (up to a limit, then "…"): at a fixed 124 px "Headphones" and
+    // "Microphone Array" were cut short and three outputs ran past the card's edge, while
+    // "Speakers" had room to spare (seen in the simulator).
+    lv_obj_t *b = button(row, LV_SIZE_CONTENT, 40, kRaised, cb, reinterpret_cast<void *>(intptr_t(i)));
+    lv_obj_set_style_min_width(b, 84, 0);
     lv_obj_set_style_radius(b, 10, 0);
-    lv_obj_set_style_pad_hor(b, 10, 0);
-    lv_obj_t *l = label(b, d.name.c_str(), &body_font, kSoftText);
-    ellipsize(l);
-    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_pad_hor(b, 12, 0);
+    lv_obj_t *l = label(b, "", &body_font, kSoftText);
+    setTextUpTo(l, d.name.c_str(), 150);
     lv_obj_center(l);
     styleDevice(b, d.selected);
     if (d.selected) shown = i;
@@ -305,15 +308,24 @@ void buildChannel(int index, const char *name, bool master) {
   lv_obj_set_style_radius(lv_obj_get_parent(ch.mute_icon), 10, 0);
 }
 
-void setChannel(Channel &ch, int level, bool muted) {
-  const bool touched = lv_obj_has_state(ch.slider, LV_STATE_PRESSED) || millis() - ch.touched_ms < kHoldAfterTouchMs;
-  if (!touched && level >= 0) {
-    lv_slider_set_value(ch.slider, level, LV_ANIM_OFF);
-    lv_label_set_text_fmt(ch.value, "%d", level);
+// False while the finger is on the fader or has just left it (a report from the PC can
+// predate the drag and would snap it back): the caller tries again until it's taken.
+// Before any touch there's nothing to wait out: at boot, millis() is below the hold too,
+// and the first mixer report used to be dropped for good (seen in the simulator).
+bool setChannel(Channel &ch, int level, bool muted) {
+  setText(ch.mute_icon, muted ? LV_SYMBOL_MUTE : LV_SYMBOL_VOLUME_MAX);
+  setTextColor(ch.mute_icon, muted ? kAmber : kText);
+  setBgColor(lv_obj_get_parent(ch.mute_icon), muted ? kAmberBg : kRaised);
+  const bool touched = lv_obj_has_state(ch.slider, LV_STATE_PRESSED) ||
+                       (ch.touched_ms != 0 && millis() - ch.touched_ms < kHoldAfterTouchMs);
+  if (touched) return false;
+  if (level >= 0) {
+    if (lv_slider_get_value(ch.slider) != level) lv_slider_set_value(ch.slider, level, LV_ANIM_OFF);
+    char text[8];
+    snprintf(text, sizeof(text), "%d", level);
+    setText(ch.value, text);
   }
-  lv_label_set_text(ch.mute_icon, muted ? LV_SYMBOL_MUTE : LV_SYMBOL_VOLUME_MAX);
-  lv_obj_set_style_text_color(ch.mute_icon, hex(muted ? kAmber : kText), 0);
-  lv_obj_set_style_bg_color(lv_obj_get_parent(ch.mute_icon), hex(muted ? kAmberBg : kRaised), 0);
+  return true;
 }
 
 void updateMixer() {
@@ -338,8 +350,11 @@ void updateMixer() {
     }
     channel_count = 1 + mx.count;
   }
-  setChannel(channels[0], vol.level, vol.muted);
-  for (int i = 0; i < mx.count; i++) setChannel(channels[i + 1], mx.apps[i].level, mx.apps[i].muted);
+  bool taken = setChannel(channels[0], vol.level, vol.muted);
+  for (int i = 0; i < mx.count; i++) taken &= setChannel(channels[i + 1], mx.apps[i].level, mx.apps[i].muted);
+  // A fader still under (or just off) the finger didn't take its level: again next loop,
+  // so a change made meanwhile isn't lost until the next report.
+  if (!taken) mixer_seen = UINT32_MAX;
 }
 
 void updateDevices() {

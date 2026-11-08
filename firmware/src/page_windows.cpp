@@ -45,7 +45,7 @@ struct {
 uint32_t windows_seen = UINT32_MAX, zones_seen = UINT32_MAX, icons_seen = UINT32_MAX;
 int connected_seen = -1;
 int shown_seen = -2;
-uint32_t geometry_seen = 0;
+uint32_t geometry_seen = UINT32_MAX;  // 0 is "no monitor": starting there left the empty map's placeholder showing
 int picked = -1;
 uint32_t picked_ms = 0;
 
@@ -165,7 +165,7 @@ void buildWindows(lv_obj_t *row) {
   lv_obj_set_size(head, LV_PCT(100), LV_SIZE_CONTENT);
   flexRow(head, 8);
   label(head, "OPEN WINDOWS", &small_font, kMuted);
-  lv_obj_t *hint = label(head, "Tap: focus or minimize · hold: close", &small_font, kMuted);
+  lv_obj_t *hint = label(head, "Tap: focus · hold: close", &small_font, kMuted);  // the longer one was cut
   fillRow(hint);
   lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_RIGHT, 0);
   lv_obj_t *lock = button(head, LV_SIZE_CONTENT, 28, kRaised, onLock);
