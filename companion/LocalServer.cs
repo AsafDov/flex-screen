@@ -84,7 +84,13 @@ sealed class LocalServer
                     using (var reader = new StreamReader(request.InputStream, Encoding.UTF8))
                     {
                         var body = await reader.ReadToEndAsync();
-                        if (JsonNode.Parse(body) is { } hook) ClaudeEvent?.Invoke(hook, request.RemoteEndPoint);  // before replying: the connection names the caller
+                        if (JsonNode.Parse(body) is { } hook)
+                        {
+                            // A server's hooks (install/remote-claude-hooks.sh) send the model of
+                            // Claude's last reply, read from a transcript the PC can't open.
+                            if (request.Headers["X-Claude-Model"] is { Length: > 0 } model && hook is JsonObject fields) fields["flex_reply_model"] = model;
+                            ClaudeEvent?.Invoke(hook, request.RemoteEndPoint);  // before replying: the connection names the caller
+                        }
                     }
                     response.StatusCode = 204;
                     response.Close();

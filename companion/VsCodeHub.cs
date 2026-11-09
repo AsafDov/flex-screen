@@ -17,7 +17,10 @@ sealed class VsCodeWindow
     public string Remote { get; set; } = "";
     public bool Focused { get; set; }
 
-    /// <summary>The extension's version ("0.3.0"); 0.3 and later run commands for the deck.</summary>
+    /// <summary>Claude Code's chat tab is the one in front (extension 0.4 and later say so).</summary>
+    public bool ClaudeInFront { get; set; }
+
+    /// <summary>The extension's version ("0.4.0"); 0.3 and later run commands for the deck.</summary>
     public Version Version { get; set; } = new(0, 1, 0);
     public DateTime FocusedAt { get; set; } = DateTime.MinValue;
     public SemaphoreSlim SendGate { get; } = new(1, 1);
@@ -92,6 +95,7 @@ sealed class VsCodeHub
                 window.Name = (string?)message["name"] ?? "";
                 window.Folders = (message["folders"] as JsonArray)?.Select(f => (string?)f ?? "").Where(f => f.Length > 0).ToList() ?? [];
                 window.Remote = (string?)message["remote"] ?? "";
+                window.ClaudeInFront = (bool?)message["claude"] ?? false;
                 SetFocus(window, (bool?)message["focused"] ?? false);
                 // 0.1.0 doesn't say; a window runs the extension it had when it opened, until a reload.
                 var version = (string?)message["version"] is { Length: > 0 } v ? v : "0.1.0";
@@ -101,6 +105,10 @@ sealed class VsCodeHub
                 break;
             case "focus":
                 SetFocus(window, (bool?)message["focused"] ?? false);
+                WindowsChanged?.Invoke();
+                break;
+            case "claude":
+                window.ClaudeInFront = (bool?)message["front"] ?? false;
                 WindowsChanged?.Invoke();
                 break;
             default:
@@ -125,6 +133,26 @@ sealed class VsCodeHub
         if (window == null || window.Version < new Version(0, 3, 0)) return false;
         Send(window, new { t = "command", id = command });
         return true;
+    }
+
+    /// <summary>
+    /// Some VS Code window has this folder open, or a folder it's in: a local one, or a server's
+    /// ("/home/me/repo") in a Remote-SSH window, where a Claude session's hooks come through
+    /// the SSH tunnel and the connection doesn't lead to the window.
+    /// </summary>
+    public bool HasFolder(string path)
+    {
+        if (path.Length == 0) return false;
+        lock (_gate) return _windows.Any(w => w.Folders.Any(f => Within(path, f)));
+    }
+
+    internal static bool Within(string path, string folder)
+    {
+        var posix = folder.StartsWith('/');
+        var compare = posix ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var root = folder.TrimEnd('/', '\\');
+        if (root.Length == 0) return posix && path.StartsWith('/');
+        return path.Equals(root, compare) || path.StartsWith(root + (posix ? "/" : "\\"), compare);
     }
 
     public bool IsOpen(VsCodeWindow window)

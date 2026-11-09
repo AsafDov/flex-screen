@@ -39,15 +39,19 @@ hooks = root.setdefault("hooks", {})
 def ours(entry):
     return any(url in (h.get("args") or []) or url in str(h.get("command", "")) for h in entry.get("hooks", []))
 
+# The event as Claude sends it, plus the model of Claude's last reply in the session, read
+# from its transcript here (the PC can't open it): the deck's Model key shows it.
+POST = (r"""j=$(cat); t=$(printf '%s' "$j" | sed -n 's/.*"transcript_path" *: *"\([^"]*\)".*/\1/p' | head -n 1); """
+        r"""m=$([ -f "$t" ] && tail -c 262144 "$t" | grep '"type":"assistant"' | grep -v '"isSidechain":true' | tail -n 1 | grep -o '"model":"claude-[^"]*"' | head -n 1 | cut -d'"' -f4); """
+        r"""printf '%s' "$j" | curl -s -m 2 -X POST -H 'Content-Type: application/json' -H "X-Claude-Model: $m" --data-binary @- """)
+
 for name in events:
     entries = [e for e in hooks.get(name, []) if not ours(e)]
     if mode != "--remove":
         # One command line, run by the shell: every Claude Code version on Linux takes that
         # (the separate "args" list the Windows companion writes is a newer form). In the
         # background, giving up after 2 s, so a missing tunnel costs nothing.
-        hook = {"type": "command",
-                "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- " + url,
-                "async": True, "timeout": 5}
+        hook = {"type": "command", "command": POST + url, "async": True, "timeout": 5}
         if name == "PermissionRequest":
             # Waits for Approve or Deny on the deck while Claude's own prompt shows as usual;
             # whichever answers first wins. No tunnel: curl fails at once, and "|| true"

@@ -123,6 +123,26 @@ sealed class ContextBar
         ], ["prev-period", "today", "next-period", "day", "week", "month", "new-event"])),
     ];
 
+    /// <summary>
+    /// VS Code with Claude Code's chat tab in front (the flex-screen extension says so, 0.4 and
+    /// later): Claude's keys, in Claude's color, as in the Claude app; VS Code's after them.
+    /// </summary>
+    static readonly (string Site, string Name, Func<string, bool> Match, AppSet Set)[] CodeSites =
+    [
+        ("claude", "Claude Code", _ => false, new(0xD97757,
+        [
+            .. ClaudeItems,
+            K("claude-new", "New chat", "plus", "", "claude-vscode.newConversation"),
+            K("claude-stop", "Stop", "stop", "Esc"),
+            K("claude-input", "Claude's input", "chat", "", "claude-vscode.focus"),
+            K("claude-accept", "Accept changes", "check", "", "claude-vscode.acceptProposedDiff"),
+            K("claude-reject", "Reject changes", "close", "", "claude-vscode.rejectProposedDiff"),
+            K("claude-new-tab", "Another chat", "window", "", "claude-vscode.editor.open"),
+            K("claude-reopen", "Reopen chat", "history", "", "claude-vscode.reopenClosedSession"),
+            K("claude-focus-view", "Focus view", "eye", "", "claude-vscode.toggleFocusView"),
+        ], ["claude-approve", "claude-deny", "claude-model", "claude-effort", "claude-usage", "claude-new"])),
+    ];
+
     // ---- Teams
 
     static readonly Item[] TeamsItems =
@@ -262,6 +282,7 @@ sealed class ContextBar
     readonly Func<long, (string Model, string Effort)> _claude;  // a window → its Claude session's model and effort
     readonly Func<string, bool> _vscode;                          // runs a VS Code command; false without an extension that can
     readonly Func<string> _usage;                                 // "5h 42%", or "" while unknown
+    readonly Func<bool> _claudeInCode;                            // VS Code shows Claude Code's chat tab
     readonly object _gate = new();
     readonly Dictionary<string, List<string>> _layouts;  // app key → action ids, as arranged on the deck
     DeckWindow? _front;  // the app window in front last (kept while the desktop or the taskbar has it)
@@ -272,9 +293,11 @@ sealed class ContextBar
     Bar _bar = Bar.None;
 
     public ContextBar(WindowSource windows, Func<CallState> call, Action<string> act,
-                      Func<long, (string Model, string Effort)> claude, Func<string, bool> vscode, Func<string> usage)
+                      Func<long, (string Model, string Effort)> claude, Func<string, bool> vscode, Func<string> usage,
+                      Func<bool> claudeInCode)
     {
         _usage = usage;
+        _claudeInCode = claudeInCode;
         _windows = windows;
         _call = call;
         _act = act;
@@ -316,10 +339,15 @@ sealed class ContextBar
 
     static string Exe(DeckWindow window) => Path.GetFileNameWithoutExtension(WindowSource.ExePath(window.Id)).ToLowerInvariant();
 
-    static string SiteOf(string exe, string title) =>
-        exe is "chrome" or "msedge" ? Sites.FirstOrDefault(s => s.Match(title)).Site ?? "" : "";
+    /// <summary>A site with keys of its own: Gmail in Chrome by the tab's title; Claude's tab in VS Code.</summary>
+    string SiteOf(string exe, string title) => exe switch
+    {
+        "chrome" or "msedge" => Sites.FirstOrDefault(s => s.Match(title)).Site ?? "",
+        "code" => _claudeInCode() ? "claude" : "",
+        _ => "",
+    };
 
-    /// <summary>Settings, a call or a Claude session changed: the same window's keys again, sent only if they differ.</summary>
+    /// <summary>Settings, a call, a Claude session or VS Code's tab changed: the same window's keys again, sent only if they differ.</summary>
     public void Refresh()
     {
         var config = Settings.ContextBar?.ToJsonString() ?? "";
@@ -333,6 +361,7 @@ sealed class ContextBar
         lock (_gate)
         {
             _inCall = _call().Active;
+            if (_front != null && _exe == "code") _site = SiteOf(_exe, _front.Title);  // VS Code says, not the poll
             bar = _front == null ? Bar.None : Make(_front, _exe, _site);
             if (Same(bar, _bar)) return;
             _bar = bar;
@@ -347,7 +376,7 @@ sealed class ContextBar
         var key = exe;
         var app = front.App;
         AppSet? builtIn;
-        if (Sites.FirstOrDefault(s => s.Site == site) is { Set: { } siteSet } match)
+        if (site.Length > 0 && (exe == "code" ? CodeSites : Sites).FirstOrDefault(s => s.Site == site) is { Set: { } siteSet } match)
         {
             key = $"{exe}:{site}";
             app = match.Name;

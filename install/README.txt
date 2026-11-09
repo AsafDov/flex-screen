@@ -63,7 +63,12 @@ VS Code Remote-SSH (working on a Linux server from this PC)
          scp remote-claude-hooks.sh myserver:
          ssh myserver sh remote-claude-hooks.sh
      It needs python3 and curl on the server; "sh remote-claude-hooks.sh --remove" undoes it.
+     Run it again after updating from a kit older than 0.16.2: the hooks now also send the
+     model of Claude's last reply (read from the session's transcript on the server), so the
+     deck's Model key can show it.
   Restart Claude sessions on the server afterwards.
+  With Claude Code's chat tab in front in VS Code, the deck's bar turns into Claude's. That
+  needs Claude in an editor tab (its default, "Open in New Tab"), not in the side bar.
 
 Calls (Teams, Zoom, Discord)
   When an app uses the microphone, the deck shows a call panel with its controls. Teams

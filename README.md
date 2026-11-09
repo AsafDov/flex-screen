@@ -53,6 +53,11 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
     has Build, Debug and stepping, Definition, Rename, Format, Comment, Quick fix, Source
     control, and Claude's own: open Claude, New Claude chat, Accept or Reject changes,
     Mention file.
+  - **Claude Code in VS Code:** while Claude's chat tab is the one in front, the bar turns
+    into Claude's, in Claude's color: Approve, Deny, Model, Effort, Usage, New chat (its
+    list also has Stop, Another chat, Reopen chat and VS Code's keys). This needs Claude in
+    an editor tab (Claude's "Open in New Tab", its default), not the side bar, which VS Code
+    doesn't let the deck's extension see. Local and Remote-SSH windows alike.
   - **Claude app:** Approve, Deny, Model, Effort, Usage, New chat.
   - **Chrome and Edge:** Back, Reload, Prev tab, Next tab, New tab, Reopen, Find. On
     **Gmail**, **YouTube** and **Google Calendar** the bar has that site's keys (Compose,
@@ -207,7 +212,9 @@ Working on a Linux server from the deck's PC: the extension runs on the PC even 
 Remote-SSH window (keep it installed there), so terminal commands reach the deck as
 they are. For Claude Code running on the server, add `RemoteForward 48151 localhost:48151`
 under the server's Host in the PC's `~/.ssh/config`, reconnect, and run
-`install/remote-claude-hooks.sh` on the server once. Details in
+`install/remote-claude-hooks.sh` on the server once (again after an update that changes
+it: 0.16.2's sends the model of Claude's last reply, for the Model key). A session there is
+matched to the VS Code window that has its folder open. Details in
 [install/README.txt](install/README.txt).
 
 ### Simulator

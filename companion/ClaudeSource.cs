@@ -21,12 +21,15 @@ sealed class ClaudeSource
     readonly Dictionary<string, int> _windowOf = new();  // session → the app it runs in (its window's process)
     readonly Dictionary<string, (string Model, string Effort)> _info = new();  // session → its model id and effort level
     readonly Dictionary<string, DateTime> _switchedAt = new();  // session → when a hook last named its model
-    readonly Dictionary<string, string> _transcripts = new();   // session → its transcript file
+    readonly Dictionary<string, (string Model, DateTime At)> _replied = new();  // session → its last reply's model, and since when
     readonly Dictionary<string, (long Length, string Model)> _transcriptModels = new();  // file → the model of its last reply
     readonly Dictionary<string, string> _asking = new();  // session → a question its turn ends with
     readonly System.Threading.Timer _sweep;
 
     public IReadOnlyList<ClaudeSession> Current { get; private set; } = [];
+
+    /// <summary>The process of the VS Code window with this folder open (a server's path in Remote-SSH), or 0.</summary>
+    public Func<string, int>? WindowForFolder { get; set; }
 
     /// <summary>Raised on a server or timer thread when any session changes.</summary>
     public event Action<IReadOnlyList<ClaudeSession>>? Changed;
@@ -45,29 +48,55 @@ sealed class ClaudeSource
     /// <summary>
     /// The model id ("claude-opus-5-5") and effort level ("high") of the session used last in
     /// that process's windows; "" for what isn't known. The model is the one Claude's last
-    /// reply in the session's transcript came from (hooks name it only when a session starts,
-    /// and not always, or when it's switched), or a switch a hook reported since that reply.
+    /// reply came from (hooks name it only when a session starts, and not always, or when it's
+    /// switched), or a switch a hook reported since that reply's model was first seen.
     /// </summary>
     public (string Model, string Effort) InfoIn(int process)
     {
-        string? transcript;
-        (string Model, string Effort) info;
-        DateTime switched;
         lock (_gate)
         {
             var session = _sessions.Values.Where(s => _windowOf.GetValueOrDefault(s.Id) == process)
                                    .OrderByDescending(s => s.Since).FirstOrDefault();
             if (session == null) return ("", "");
-            info = _info.GetValueOrDefault(session.Id, ("", ""));
-            switched = _switchedAt.GetValueOrDefault(session.Id, DateTime.MinValue);
-            transcript = _transcripts.GetValueOrDefault(session.Id);
+            (string Model, string Effort) info = _info.GetValueOrDefault(session.Id, ("", ""));
+            if (_replied.TryGetValue(session.Id, out var replied) &&
+                !(info.Model.Length > 0 && _switchedAt.GetValueOrDefault(session.Id, DateTime.MinValue) > replied.At))
+            {
+                info.Model = replied.Model;
+            }
+            return info;
         }
-        if (transcript != null && TranscriptModel(transcript) is { Length: > 0 } replied &&
-            !(info.Model.Length > 0 && switched > File.GetLastWriteTimeUtc(transcript)))
+    }
+
+    /// <summary>
+    /// The model of the session's last reply, as of this hook: from its transcript, or, for a
+    /// session on a server (a transcript the PC can't open), the model the server's hook read
+    /// there and sent along (install/remote-claude-hooks.sh). "" if there's no reply yet.
+    /// </summary>
+    string RepliedModel(JsonNode hook)
+    {
+        if ((string?)hook["flex_reply_model"] is { Length: > 0 } heard &&
+            System.Text.RegularExpressions.Regex.IsMatch(heard, @"^claude-[\w.\-\[\]]{1,60}$"))
         {
-            info.Model = replied;
+            return heard;
         }
-        return info;
+        return (string?)hook["transcript_path"] is { Length: > 0 } path && !path.StartsWith('/') ? TranscriptModel(path) : "";
+    }
+
+    /// <summary>
+    /// The app a session runs in, by the process behind its hook's connection (curl's parents:
+    /// VS Code, the Claude app, a terminal). A session on a server (VS Code's Remote-SSH) posts
+    /// through the SSH tunnel, whose connection may lead nowhere useful: the VS Code window with
+    /// its folder open is the one. Then by folder for a local session the connection didn't place.
+    /// </summary>
+    int WindowOf(JsonNode hook, System.Net.IPEndPoint? client)
+    {
+        var cwd = (string?)hook["cwd"] ?? "";
+        var remote = cwd.StartsWith('/');
+        var owner = remote ? WindowForFolder?.Invoke(cwd) ?? 0 : 0;
+        if (owner == 0 && client != null) owner = ProcessTree.WindowOwnerOf(client);
+        if (owner == 0 && !remote) owner = WindowForFolder?.Invoke(cwd) ?? 0;
+        return owner;
     }
 
     /// <summary>The model of the last reply in a transcript (its main conversation, not a subagent's); "" if none.</summary>
@@ -140,11 +169,12 @@ sealed class ClaudeSource
         var now = DateTime.UtcNow;
         bool known;
         lock (_gate) known = _windowOf.ContainsKey(id);
-        if (!known && client != null && ProcessTree.WindowOwnerOf(client) is var owner and > 0)
+        if (!known && WindowOf(hook, client) is var owner and > 0)
         {
             lock (_gate) _windowOf[id] = owner;
             try { Log.Write($"claude: session {id[..Math.Min(8, id.Length)]} runs in {System.Diagnostics.Process.GetProcessById(owner).ProcessName}"); } catch (ArgumentException) { }
         }
+        var replied = RepliedModel(hook);
         lock (_gate)
         {
             // The model comes with SessionStart (sometimes) and every switch; the effort level with tool events.
@@ -154,7 +184,12 @@ sealed class ClaudeSource
                 info.Model = model;
                 _switchedAt[id] = now;
             }
-            if ((string?)hook["transcript_path"] is { Length: > 0 } transcript) _transcripts[id] = transcript;
+            // A reply's model counts from when it's first seen, so a switch after it wins until Claude replies again.
+            if (replied.Length > 0 && (!_replied.TryGetValue(id, out var before) || before.Model != replied))
+            {
+                _replied[id] = (replied, now);
+                Log.Write($"claude: session {id[..Math.Min(8, id.Length)]} replies with {replied}");
+            }
             if ((string?)hook["effort"]?["level"] is { Length: > 0 } effort) info.Effort = effort;
             _info[id] = info;
             _sessions.TryGetValue(id, out var s);
@@ -186,7 +221,7 @@ sealed class ClaudeSource
                 _windowOf.Remove(id);
                 _info.Remove(id);
                 _switchedAt.Remove(id);
-                _transcripts.Remove(id);
+                _replied.Remove(id);
                 _asking.Remove(id);
             }
             else _sessions[id] = next;
@@ -252,7 +287,7 @@ sealed class ClaudeSource
                 _sessions.Remove(id);
                 _info.Remove(id);
                 _switchedAt.Remove(id);
-                _transcripts.Remove(id);
+                _replied.Remove(id);
             }
             removed = stale.Count > 0;
         }

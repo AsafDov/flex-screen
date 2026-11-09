@@ -151,7 +151,9 @@ sealed class TrayApp : ApplicationContext
         {
             // Git follows the VS Code window used last.
             _git.SetFolder(_vscode.Current?.Root, _vscode.Current?.Remote ?? "");
+            _context?.Refresh();  // Claude's tab in front, or not
         };
+        _claude.WindowForFolder = cwd => _vscode.HasFolder(cwd) ? VsCodeProcess() : 0;
         _dev.TermChanged += t => _link.Send(TermMessage(t));
         _dev.BuildChanged += b => _link.Send(BuildMessage(b));
         _dev.RecentChanged += r => _link.Send(RecentMessage(r));
@@ -170,7 +172,8 @@ sealed class TrayApp : ApplicationContext
         _calls.Changed += c => _link.Send(CallMessage(c));
         _calls.Toast += SendToast;
         _mixer.Changed += _ => { if (_calls.Current.Active) _link.Send(CallMessage(_calls.Current)); };
-        _context = new ContextBar(_windows, () => _calls.Current, RunContextAction, ClaudeInWindow, _vscode.RunCommand, () => _usage.Label);
+        _context = new ContextBar(_windows, () => _calls.Current, RunContextAction, ClaudeInWindow, _vscode.RunCommand, () => _usage.Label,
+                                  () => _vscode.Current?.ClaudeInFront == true);
         _usage.Changed += () => _context.Refresh();
         _context.Changed += _ => SendContext();
         _context.Toast += SendToast;
@@ -1017,6 +1020,19 @@ sealed class TrayApp : ApplicationContext
 
     [DllImport("user32.dll")]
     static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+
+    /// <summary>VS Code's main process, which owns all its windows (what the context bar's window resolves to); 0 if it isn't running.</summary>
+    static int VsCodeProcess()
+    {
+        foreach (var process in System.Diagnostics.Process.GetProcessesByName("Code"))
+        {
+            using (process)
+            {
+                if (process.MainWindowHandle != IntPtr.Zero) return process.Id;
+            }
+        }
+        return 0;
+    }
 
     /// <summary>Claude went on without the deck: a tool that ran, or the turn ending, settles what it had asked.</summary>
     void SettleApprovals(JsonNode hook)

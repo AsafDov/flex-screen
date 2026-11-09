@@ -1,6 +1,6 @@
 // flex-screen deck: connects this VS Code window to the companion app on this PC.
 //
-// Reports the open workspace, whether the window has focus, every command run in an
+// Reports the open workspace, whether the window has focus (and Claude Code's tab), every command run in an
 // integrated terminal (text, last lines of output, exit code, duration), the last few
 // commands (kept per workspace, so the deck has them after a restart) and task results.
 // Runs what the deck asks for: one of those commands again, Ctrl+C, the terminal, Source
@@ -37,6 +37,8 @@ export function activate(context: vscode.ExtensionContext): void {
   connect();
   context.subscriptions.push(
     vscode.window.onDidChangeWindowState((s) => send({ t: 'focus', focused: s.focused })),
+    vscode.window.tabGroups.onDidChangeTabGroups(reportClaude),
+    vscode.window.tabGroups.onDidChangeTabs(reportClaude),
     vscode.workspace.onDidChangeWorkspaceFolders(() => send(hello())),
     vscode.window.onDidStartTerminalShellExecution(onCommandStart),
     vscode.window.onDidEndTerminalShellExecution(onCommandEnd),
@@ -65,7 +67,29 @@ function hello() {
     // A remote folder's own path ("/home/me/repo"); fsPath would turn it into a Windows one.
     folders: (vscode.workspace.workspaceFolders ?? []).map((f) => (f.uri.scheme === 'file' ? f.uri.fsPath : f.uri.path)),
     focused: vscode.window.state.focused,
+    claude: (claudeShown = claudeInFront()),
   };
+}
+
+let claudeShown = false;
+
+/**
+ * Whether Claude Code's chat is the tab in front: its panel in an editor group ("Open in New
+ * Tab", Claude's default), as the active tab of the active group. The deck's bar turns into
+ * Claude's then. Claude in the side bar can't be seen: VS Code doesn't tell one extension
+ * which other extension's view has focus. Works in Remote-SSH windows too: Claude Code runs
+ * on the server there, but its tab is in this window.
+ */
+function claudeInFront(): boolean {
+  const input = vscode.window.tabGroups.activeTabGroup?.activeTab?.input;
+  return input instanceof vscode.TabInputWebview && input.viewType.includes('claudeVSCodePanel');
+}
+
+function reportClaude(): void {
+  const front = claudeInFront();
+  if (front === claudeShown) return;
+  claudeShown = front;
+  send({ t: 'claude', front });
 }
 
 function connect(): void {
