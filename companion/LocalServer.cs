@@ -18,6 +18,9 @@ sealed class LocalServer
     /// <summary>A Claude Code hook event (the JSON the hook received on stdin) and where the request came from.</summary>
     public event Action<JsonNode, IPEndPoint?>? ClaudeEvent;
 
+    /// <summary>A PermissionRequest hook waiting for a decision: the JSON to answer with, or null for none.</summary>
+    public event Func<JsonNode, Task<string?>>? ClaudePermission;
+
     /// <summary>A VS Code window connected; the handler owns the socket until it closes.</summary>
     public event Func<WebSocket, Task>? VsCodeConnected;
 
@@ -86,6 +89,36 @@ sealed class LocalServer
                     response.StatusCode = 204;
                     response.Close();
                     return;
+
+                // Held open until the deck answers, Claude moves on, or the hook gives up.
+                case "/claude/permission" when request.HttpMethod == "POST" && FromLocalTool(request, needsTestHeader: false):
+                {
+                    string? answer = null;
+                    using (var reader = new StreamReader(request.InputStream, Encoding.UTF8))
+                    {
+                        if (JsonNode.Parse(await reader.ReadToEndAsync()) is { } hook)
+                        {
+                            // The request is waiting before the session's state says so, so the
+                            // "needs your approval" toast knows the deck's banner has it.
+                            var waiting = ClaudePermission?.Invoke(hook);
+                            ClaudeEvent?.Invoke(hook, request.RemoteEndPoint);
+                            if (waiting != null) answer = await waiting;
+                        }
+                    }
+                    if (answer == null)
+                    {
+                        response.StatusCode = 204;
+                    }
+                    else
+                    {
+                        var bytes = Encoding.UTF8.GetBytes(answer);
+                        response.ContentType = "application/json";
+                        response.ContentLength64 = bytes.Length;
+                        await response.OutputStream.WriteAsync(bytes);
+                    }
+                    response.Close();
+                    return;
+                }
 
                 case "/test" when request.HttpMethod == "POST" && FromLocalTool(request, needsTestHeader: true):
                     using (var reader = new StreamReader(request.InputStream, Encoding.UTF8))

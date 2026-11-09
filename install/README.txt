@@ -14,8 +14,11 @@ What install.cmd does (no admin rights needed; run it again to update):
     Start menu shortcut, so it runs at every sign-in
   - installs the VS Code extension "flex-screen deck" from flex-screen.vsix
   - adds Claude Code hooks to %USERPROFILE%\.claude\settings.json so Claude sessions (the
-    CLI and the Claude extension in VS Code) report to the deck; the original file is kept as
-    settings.json.before-flex-screen, and nothing else in it changes
+    CLI, the Claude app and the Claude extension in VS Code) report to the deck, and ask the
+    deck too when they need a permission (Claude's own prompt still shows; whichever you
+    answer first wins; "Approve Claude from the deck" in the tray menu turns it off); the
+    original file is kept as settings.json.before-flex-screen, and nothing else in it
+    changes
   - starts the companion
 
 After installing

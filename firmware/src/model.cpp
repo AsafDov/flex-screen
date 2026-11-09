@@ -15,6 +15,8 @@ Recent recent;
 Actions actions;
 Shortcuts shortcuts;
 Context context;
+Approval approval;
+Picker picker;
 Git git;
 Toast toast;
 Settings settings;

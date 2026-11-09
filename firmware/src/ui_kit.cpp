@@ -1,5 +1,7 @@
 #include "ui_kit.h"
 
+#include "fonts/font_icons.h"
+
 #include <stdarg.h>
 
 #include "esp_heap_caps.h"
@@ -163,6 +165,13 @@ void ellipsize(lv_obj_t *l) {
 
 void setText(lv_obj_t *l, const char *text) {
   if (strcmp(lv_label_get_text(l), text) != 0) lv_label_set_text(l, text);
+}
+
+const char *glyphOf(const char *name) {
+  for (int i = 0; i < font_icon_count; i++) {
+    if (!strcmp(name, font_icon_names[i].name)) return font_icon_names[i].text;
+  }
+  return "";
 }
 
 void fillRow(lv_obj_t *l) {

@@ -51,6 +51,10 @@ void setText(lv_obj_t *label, const char *text);
 // content-sized never shortens its text, so it ran out of its row.) Anything else just
 // takes the rest of the row.
 void fillRow(lv_obj_t *label);
+
+// An icon of fonts/font_icons.h by name ("search"), as text for a label in font_icons_15;
+// "" for a name it doesn't have.
+const char *glyphOf(const char *name);
 // Sets a label's text and makes it as wide as the text, up to `max`, then "…".
 void setTextUpTo(lv_obj_t *label, const char *text, int32_t max);
 void setTextf(lv_obj_t *label, const char *fmt, ...) __attribute__((format(printf, 2, 3)));

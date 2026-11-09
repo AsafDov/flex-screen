@@ -694,6 +694,41 @@ Gotchas found after phase 6:
   - Checked: the placement rules and the saved file from the companion's own code against
     the real window in front; 15 new simulator checks (115).
 
+- Firmware 0.16.0, companion and extension 0.3.0: Claude on the deck, and better keys per
+  app (on request: "claude should have an approve button, model and effort buttons, 5hr
+  usage status… think of other things that are relevant for each app, as well as the
+  explorer one", and "all of the claude features to work on the claude in the vs code
+  extension as well"):
+  - Approvals through Claude Code's PermissionRequest hook, the one way to answer a
+    prompt from outside that works the same in the terminal, the Claude app and VS Code.
+    The hook (sync, through `cmd /c curl … || exit /b 0` so a stopped companion ends it
+    quietly) posts to `/claude/permission`, which the companion holds open until the deck
+    answers, Claude moves on (the tool's PostToolUse, the turn ending) or 575 s pass.
+    Claude's own prompt shows meanwhile: two remote-approval tools and a Claude Code
+    feature request describe exactly that ("whichever answers first"), which the docs don't
+    say outright. "Always" sends Claude's own `permission_suggestions` back as
+    `updatedPermissions`. A banner on every page, under the status bar; the old "needs your
+    approval" toast only for requests the deck can't answer. Checked end to end with a
+    made-up request against the real companion and deck (allow with the rule, and deny).
+  - Model and effort: hooks report effort on tool events (`effort.level`) and the model at
+    SessionStart and in the new PostModelSwitch hook (`to_model`); the bar's Model and
+    Effort keys show the session's in the front window's app, and open a list whose choice
+    is typed as `/model …` or `/effort …`. In VS Code, Ctrl+Esc toggles between the editor
+    and Claude, which could have typed into code, so the extension runs
+    `claude-vscode.focus` first.
+  - Usage: Claude Code gives the 5-hour figure only to terminal status lines, not to hooks,
+    the app or VS Code; the key opens the usage page instead of showing it. Reading it
+    from Claude's sign-in files is out of bounds.
+  - VS Code's keys run VS Code commands through the extension (0.3.0, `command` messages,
+    limited to workbench, editor, Claude Code and Markdown commands), so they work with any
+    keybindings and in Remote-SSH windows; an older extension gets the keys.
+  - Explorer: the open folder, from the shell's window list (the tab whose name starts its
+    window title), for Terminal here, VS Code here, Claude here and Copy folder.
+  - Browsers: Gmail, YouTube and Google Calendar get their own keys and color by the tab's
+    title (a layout of their own, "chrome:gmail").
+  - New key kinds: `text` (typed, "\n" for Enter) and sequences ("g, i").
+  - 15 new simulator checks (130).
+
 ## Decisions
 
 - Touch version of the board (confirmed).

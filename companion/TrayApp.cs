@@ -48,12 +48,14 @@ sealed class TrayApp : ApplicationContext
     readonly RecentActions _recent = new();
     readonly Shortcuts _shortcuts;
     readonly ContextBar _context;
+    readonly ClaudeApprovals _approvals = new();
     readonly HashSet<string> _iconsSent = [];
     readonly object _artGate = new();
     readonly object _actionsGate = new();
     string _actionsSent = "";
     string _shortcutsSent = "";
     string _contextSent = "";
+    string _approvalSent = "";
     DateTime _timeSentAt = DateTime.MinValue;
     string _loggedMedia = "";
     string _loggedClaude = "";
@@ -71,6 +73,10 @@ sealed class TrayApp : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Connect Google Calendar and Tasks…", null, (_, _) => ConnectGoogle());
         menu.Items.Add("Shortcuts…", null, (_, _) => Shortcuts.Edit());
+        var approve = new ToolStripMenuItem("Approve Claude from the deck");
+        approve.Click += (_, _) => Settings.Set("approveFromDeck", !Settings.ApproveFromDeck);
+        menu.Opening += (_, _) => approve.Checked = Settings.ApproveFromDeck;
+        menu.Items.Add(approve);
         var colors = new ToolStripMenuItem("Deck colors");
         foreach (var (name, label) in Settings.Palettes)
         {
@@ -115,6 +121,10 @@ sealed class TrayApp : ApplicationContext
             _link.Send(MicMessage(m));
         };
         _server.ClaudeEvent += _claude.Handle;
+        _server.ClaudeEvent += (hook, _) => SettleApprovals(hook);
+        _server.ClaudePermission += hook => _approvals.Ask(hook, _claude.ProjectFor((string?)hook["session_id"] ?? "", (string?)hook["cwd"] ?? ""),
+                                                           ClaudeSource.ToolDetail(hook), _link.PortName != null);
+        _approvals.Changed += SendApproval;
         _claude.Changed += sessions =>
         {
             // Tool calls arrive constantly while Claude works; log only state changes.
@@ -126,7 +136,10 @@ sealed class TrayApp : ApplicationContext
             var waiting = sessions.Where(s => s.State == "input").ToList();
             var fresh = waiting.Where(s => !_claudeWaiting.Contains(s.Id)).ToList();
             _claudeWaiting = waiting.Select(s => s.Id).ToHashSet();
-            foreach (var s in fresh) SendToast(new Toast("attention", $"Claude needs your approval · {s.Project}", "claude.open", s.Id));
+            // A request the deck can answer shows its own Approve and Deny instead.
+            foreach (var s in fresh.Where(s => _approvals.Pending.All(r => r.Session != s.Id)))
+                SendToast(new Toast("attention", $"Claude needs your approval · {s.Project}", "claude.open", s.Id));
+            _context?.Refresh();  // Claude's model and effort on the context bar
         };
         _server.VsCodeConnected += _vscode.Serve;
         _server.TestMessage += OnTestMessage;
@@ -155,8 +168,11 @@ sealed class TrayApp : ApplicationContext
         _calls.Changed += c => _link.Send(CallMessage(c));
         _calls.Toast += SendToast;
         _mixer.Changed += _ => { if (_calls.Current.Active) _link.Send(CallMessage(_calls.Current)); };
-        _context = new ContextBar(_windows, () => _calls.Current, action => Act(action, new JsonObject()));
+        _context = new ContextBar(_windows, () => _calls.Current, RunContextAction, ClaudeInWindow, _vscode.RunCommand);
         _context.Changed += _ => SendContext();
+        _context.Toast += SendToast;
+        _context.Pick += (id, title, choices, current) =>
+            _link.Send(new { t = "pick", id, title, current, choices = choices.Select(c => new { id = c.Id, name = c.Name }) });
         _windows.Polled += _context.OnPolled;
         _calls.Changed += _ => _context.Refresh();  // Teams' keys change during a meeting
         _google.Toast += SendToast;
@@ -278,6 +294,7 @@ sealed class TrayApp : ApplicationContext
         SendRecentActions(force: true);
         SendShortcuts(force: true);
         SendContext(force: true);
+        SendApproval(force: true);
         _link.Send(new { t = "state", topic = "zones", d = ZoneSource.Message(_zones.Current) });
     }
 
@@ -724,7 +741,7 @@ sealed class TrayApp : ApplicationContext
     }
 
     // Deck actions a test may trigger: none of them runs anything.
-    static readonly HashSet<string> TestActions = ["win.focus", "win.close", "icon.need", "zone.snap", "zone.layout"];
+    static readonly HashSet<string> TestActions = ["win.focus", "win.close", "icon.need", "zone.snap", "zone.layout", "claude.approve", "claude.deny"];
 
     /// <summary>For testing without touching the deck: a deck action, or "bench" passed on to the deck.</summary>
     void OnTestMessage(JsonNode message)
@@ -814,6 +831,13 @@ sealed class TrayApp : ApplicationContext
             case "ctx.set": _context.Set((string?)message["app"] ?? "", (int?)message["slot"] ?? -1, id); break;
             case "ctx.remove": _context.Remove((string?)message["app"] ?? "", (int?)message["slot"] ?? -1); break;
             case "ctx.reset": _context.Reset((string?)message["app"] ?? ""); break;
+            case "ctx.pick": _context.Choose(id, (string?)message["choice"] ?? ""); break;
+            case "claude.approve" or "claude.deny":
+                // From the deck's banner (its request), or a context bar key (the newest).
+                if ((id.Length > 0 ? id : _approvals.Pending.LastOrDefault()?.Id) is { } request)
+                    _approvals.Answer(request, action == "claude.approve", (bool?)message["always"] ?? false);
+                else SendToast(new Toast("ok", "Nothing from Claude waiting for approval"));
+                break;
             case "desktop.show": KeyInput.Combo("Win+D"); break;
             default: Log.Write($"act: unknown action {action}"); break;
         }
@@ -966,6 +990,62 @@ sealed class TrayApp : ApplicationContext
             if (fresh && _windows.FindIcon(icon) is { } pixels) SendIcon(pixels);
         }
         _link.Send(new { t = "state", topic = "shortcuts", d = new { list } });
+    }
+
+    /// <summary>A context bar action: a deck action, or one with a type ("call.react:like").</summary>
+    void RunContextAction(string action)
+    {
+        var message = new JsonObject();
+        if (action.Split(':', 2) is [var name, var type])
+        {
+            action = name;
+            message["type"] = type;
+        }
+        Act(action, message);
+    }
+
+    /// <summary>The model and effort of the Claude session used last in that window's app.</summary>
+    (string Model, string Effort) ClaudeInWindow(long hwnd)
+    {
+        GetWindowThreadProcessId((IntPtr)hwnd, out var pid);
+        return _claude.InfoIn((int)pid);
+    }
+
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+
+    /// <summary>Claude went on without the deck: a tool that ran, or the turn ending, settles what it had asked.</summary>
+    void SettleApprovals(JsonNode hook)
+    {
+        var session = (string?)hook["session_id"] ?? "";
+        switch ((string?)hook["hook_event_name"])
+        {
+            case "PostToolUse":
+                _approvals.Settled(session, (string?)hook["tool_name"], hook["tool_input"]);
+                break;
+            case "UserPromptSubmit" or "Stop" or "SessionEnd":
+                _approvals.Settled(session);
+                break;
+        }
+    }
+
+    /// <summary>The newest permission request waiting for the deck (an empty id: none).</summary>
+    void SendApproval() => SendApproval(force: false);
+
+    void SendApproval(bool force)
+    {
+        var pending = _approvals.Pending;
+        var newest = pending.LastOrDefault();
+        var d = newest == null
+            ? new { id = "", project = "", tool = "", detail = "", always = false, count = 0 }
+            : new { id = newest.Id, project = newest.Project, tool = newest.Tool, detail = newest.Detail, always = newest.Suggestions != null, count = pending.Count };
+        lock (_actionsGate)
+        {
+            var key = System.Text.Json.JsonSerializer.Serialize(d);
+            if (!force && key == _approvalSent) return;
+            _approvalSent = key;
+        }
+        _link.Send(new { t = "state", topic = "approval", d });
     }
 
     /// <summary>The context bar, when it changed (or <paramref name="force"/>, on the deck's hello).</summary>

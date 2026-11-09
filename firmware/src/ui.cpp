@@ -9,6 +9,7 @@
 #include "call.h"
 #include "cheat.h"
 #include "idle.h"
+#include "approval.h"
 #include "ctxbar.h"
 #include "launcher.h"
 
@@ -577,6 +578,7 @@ void begin() {
   call::build();
   cheat::build();
   launcher::build(lv_tabview_get_tab_bar(tv));  // its button ends the tab bar; its panel goes over the pages
+  approval::build();
   buildToast();
   idle::build();
 
@@ -617,6 +619,7 @@ void update() {
   fitBar();  // after the call pill too: it sits among the others
   cheat::update();
   launcher::update();
+  approval::update();
   idle::update();
   if (model::bench_requests != bench_seen) {
     bench_seen = model::bench_requests;

@@ -494,6 +494,57 @@ def test_context_menu(d: Deck) -> None:
     d.settle()
 
 
+def test_approval(d: Deck) -> None:
+    d.page(2)
+    d.state('approval', fixtures.approval())
+    d.settle()
+    check('approval: Claude asking shows on any page', on_screen(d, 'Bash: npm run build') and on_screen(d, 'Approve', exact=True))
+    title = label(d, 'Claude · flex-screen wants to')
+    check('approval: under the status bar', title is not None and title['y'] > 44, str(title))
+    d.shot(os.path.join(OUT, 'approval.png'))
+    expect_act(d, 'approval: Approve answers it', 'Approve', 'claude.approve', exact=True, id='p1', always=False)
+    check('approval: and the banner goes at once', not on_screen(d, 'Bash: npm run build'))
+
+    d.state('approval', fixtures.approval('p2', 'Edit: page_dev.cpp'))
+    d.settle()
+    expect_act(d, 'approval: Always also keeps the rule', 'Always', 'claude.approve', exact=True, id='p2', always=True)
+
+    d.state('approval', fixtures.approval('p3', 'WebFetch', always=False, count=2))
+    d.settle()
+    check('approval: no Always when Claude has no rule to suggest', not on_screen(d, 'Always', exact=True))
+    check('approval: says when more are waiting', on_screen(d, 'more waiting'))
+    expect_act(d, 'approval: Deny', 'Deny', 'claude.deny', exact=True, id='p3')
+
+    d.state('approval', fixtures.approval('p4', 'Bash: ' + fixtures.LONG))
+    d.settle()
+    detail = label(d, 'Bash: A very long')
+    check('approval: a long command stays on one line', detail is not None and detail['h'] <= 22, str(detail))
+    d.offline()
+    check('approval: offline it goes', not on_screen(d, 'Bash: A very long'))
+    d.online()
+    d.state('approval', fixtures.NO_APPROVAL)
+    d.settle()
+    check('approval: answered at the PC, it goes', not on_screen(d, 'Bash: A very long'))
+
+
+def test_picker(d: Deck) -> None:
+    d.page(0)
+    d.send({'t': 'pick', 'id': 'claude-model', 'title': 'Model', 'current': 'opus', 'choices': [
+        {'id': c, 'name': n} for c, n in [('default', 'Default'), ('opus', 'Opus'), ('sonnet', 'Sonnet'), ('haiku', 'Haiku'),
+                                          ('fable', 'Fable'), ('opusplan', 'Opus plan')]]})
+    d.settle()
+    check("picker: a key's list opens above the bar", on_screen(d, 'Model', exact=True) and menu_item(d, 'Sonnet') is not None)
+    check('picker: no Remove or Reset there', not on_screen(d, 'Remove', exact=True) and not on_screen(d, 'Reset', exact=True))
+    d.shot(os.path.join(OUT, 'picker.png'))
+    item = menu_item(d, 'Sonnet')
+    mark = d.mark()
+    if item:
+        d.tap(item['x'] + item['w'] // 2, item['y'] + item['h'] // 2)
+    check('picker: a choice goes to the companion', did(d, mark, 'ctx.pick', id='claude-model', choice='sonnet') is not None,
+          str(d.acts(mark)))
+    check('picker: and the list closes', menu_item(d, 'Sonnet') is None)
+
+
 def test_offline(d: Deck) -> None:
     d.page(0)
     d.offline()
@@ -515,7 +566,7 @@ def main() -> int:
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
         for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_numpad,
-                     test_toast, test_call, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_idle, test_offline):
+                     test_toast, test_call, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_picker, test_idle, test_offline):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)

@@ -193,6 +193,30 @@ struct Context {
   uint32_t version = 0;
 };
 
+// The newest Claude permission request the deck can answer (Approve, Always, Deny).
+struct Approval {
+  String id;       // "" for none
+  String project;  // "flex-screen"
+  String tool;     // "Bash"
+  String detail;   // "Bash: npm run build"
+  bool always = false;  // Claude suggests a "don't ask again" rule to go with an approval
+  int count = 0;        // requests waiting, this one included
+  uint32_t version = 0;
+};
+
+// A list a context bar key opened (Claude's model or effort): pick one.
+struct Picker {
+  static constexpr int kMax = 8;
+  String id;       // the key's
+  String title;    // "Model"
+  String current;  // the choice in effect
+  struct Choice {
+    String id, name;
+  } choices[kMax];
+  int count = 0;
+  uint32_t version = 0;
+};
+
 struct Git {
   String repo;
   String branch;
@@ -422,6 +446,8 @@ extern Recent recent;
 extern Actions actions;
 extern Shortcuts shortcuts;
 extern Context context;
+extern Approval approval;
+extern Picker picker;
 extern Git git;
 extern Toast toast;
 extern Settings settings;

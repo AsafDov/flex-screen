@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.15.0";
+constexpr const char *kFirmwareVersion = "0.16.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -42,6 +42,12 @@ void runContextKey(const char *id);   // a context bar key: into the app in fron
 void contextSet(const char *app, int slot, const char *id);
 void contextRemove(const char *app, int slot);
 void contextReset(const char *app);
+void contextPick(const char *key, const char *choice);  // from a key's list (model::picker)
+
+// Answers a Claude permission request (model::approval). `always` also applies Claude's own
+// "don't ask again" suggestion.
+void approveClaude(const char *id, bool always);
+void denyClaude(const char *id);
 void interruptCommand();               // Ctrl+C
 void focusTerminal();
 void git(const char *operation);       // "fetch", "pull", "push", "stash", "commit"

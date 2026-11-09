@@ -12,12 +12,19 @@ namespace FlexScreen.Companion;
 /// <remarks>
 /// Each hook runs curl.exe directly (exec form, no shell, so it works without Git Bash) and
 /// asynchronously, so it never slows Claude down and a stopped companion costs nothing.
+/// PermissionRequest is the exception: it waits for an answer from the deck (Approve or
+/// Deny) while Claude's own prompt shows as usual; whichever answers first wins. It runs
+/// through cmd.exe so a stopped companion ends it at once without an error.
 /// Everything else in the settings file is left exactly as it was.
 /// </remarks>
 static class ClaudeHooks
 {
     static readonly string[] Events =
-        ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "SessionEnd"];
+        ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "SessionEnd",
+         "PermissionRequest", "PostModelSwitch"];
+
+    /// <summary>How long a permission request waits for the deck (Claude's own prompt shows meanwhile).</summary>
+    public const int PermissionSeconds = 590;
 
     static string Url => $"http://localhost:{LocalServer.Port}/claude";
 
@@ -60,7 +67,14 @@ static class ClaudeHooks
 
     static JsonObject Entry(string name)
     {
-        var hook = new JsonObject
+        var hook = name == "PermissionRequest" ? new JsonObject
+        {
+            ["type"] = "command",
+            ["command"] = "cmd.exe",
+            ["args"] = new JsonArray("/c", $"curl.exe -s -m {PermissionSeconds} -X POST -H Content-Type:application/json " +
+                                           $"--data-binary @- {Url}/permission || exit /b 0"),
+            ["timeout"] = PermissionSeconds + 10,
+        } : new JsonObject
         {
             ["type"] = "command",
             ["command"] = "curl.exe",
@@ -80,7 +94,7 @@ static class ClaudeHooks
         for (var i = list.Count - 1; i >= 0; i--)
         {
             if (list[i]?["hooks"] is JsonArray hs &&
-                hs.Any(h => h?["args"] is JsonArray a && a.Any(x => x?.GetValue<string>() == Url)))
+                hs.Any(h => h?["args"] is JsonArray a && a.Any(x => x?.GetValue<string>().Contains(Url) == true)))
             {
                 list.RemoveAt(i);
             }

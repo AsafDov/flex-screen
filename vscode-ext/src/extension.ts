@@ -191,8 +191,16 @@ function cleanLine(raw: string): string {
   return trimmed.length > MAX_LINE ? trimmed.slice(0, MAX_LINE - 1) + '…' : trimmed;
 }
 
-function handle(message: { t?: string; cmd?: string }): void {
+// Commands the deck's context bar may run (VS Code's own, Claude Code's, Markdown's), by name.
+const DECK_COMMANDS = /^(workbench|editor|claude-vscode|claude-code|markdown)\.[\w.]+$/;
+
+function handle(message: { t?: string; cmd?: string; id?: string }): void {
   switch (message.t) {
+    case 'command':
+      if (message.id && DECK_COMMANDS.test(message.id)) {
+        void Promise.resolve(vscode.commands.executeCommand(message.id)).catch((e: unknown) => console.warn(`flex-screen: ${message.id}: ${e}`));
+      }
+      break;
     case 'replay': {
       // In the terminal it ran in, if that's still open and idle; else the deck's own.
       const cmd = message.cmd || last?.commandLine;

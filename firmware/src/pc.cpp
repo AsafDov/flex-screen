@@ -410,6 +410,15 @@ void handleState(const char *topic, JsonObjectConst d) {
       out.glyph = x["glyph"] | "";
     }
     s.version++;
+  } else if (!strcmp(topic, "approval")) {
+    model::Approval &a = model::approval;
+    a.id = d["id"] | "";
+    a.project = d["project"] | "";
+    a.tool = d["tool"] | "";
+    a.detail = d["detail"] | "";
+    a.always = d["always"] | false;
+    a.count = d["count"] | 0;
+    a.version++;
   } else if (!strcmp(topic, "context")) {
     model::Context &c = model::context;
     c.app = d["app"] | "";
@@ -702,6 +711,19 @@ void handle(const JsonDocument &doc) {
     model::toast.action = doc["action"] | "";
     model::toast.id = doc["id"] | "";
     model::toast.version++;
+  } else if (!strcmp(t, "pick")) {
+    model::Picker &p = model::picker;
+    p.id = doc["id"] | "";
+    p.title = doc["title"] | "";
+    p.current = doc["current"] | "";
+    p.count = 0;
+    for (JsonObjectConst c : doc["choices"].as<JsonArrayConst>()) {
+      if (p.count == model::Picker::kMax) break;
+      p.choices[p.count].id = c["id"] | "";
+      p.choices[p.count].name = c["name"] | "";
+      p.count++;
+    }
+    p.version++;
   } else if (!strcmp(t, "settings")) {
     handleSettings(doc);
   } else if (!strcmp(t, "time")) {
@@ -887,6 +909,26 @@ void contextRemove(const char *app, int slot) {
 }
 
 void contextReset(const char *app) { act("ctx.reset", "app", app); }
+
+void contextPick(const char *key, const char *choice) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "ctx.pick";
+  doc["id"] = key;
+  doc["choice"] = choice;
+  send(doc);
+}
+
+void approveClaude(const char *id, bool always) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "claude.approve";
+  doc["id"] = id;
+  doc["always"] = always;
+  send(doc);
+}
+
+void denyClaude(const char *id) { act("claude.deny", "id", id); }
 void interruptCommand() { act("term.interrupt"); }
 void focusTerminal() { act("term.focus"); }
 

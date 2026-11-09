@@ -16,6 +16,9 @@ sealed class VsCodeWindow
     /// are the remote's own paths, which the PC's git can't open.</summary>
     public string Remote { get; set; } = "";
     public bool Focused { get; set; }
+
+    /// <summary>The extension's version ("0.3.0"); 0.3 and later run commands for the deck.</summary>
+    public Version Version { get; set; } = new(0, 1, 0);
     public DateTime FocusedAt { get; set; } = DateTime.MinValue;
     public SemaphoreSlim SendGate { get; } = new(1, 1);
 
@@ -92,6 +95,7 @@ sealed class VsCodeHub
                 SetFocus(window, (bool?)message["focused"] ?? false);
                 // 0.1.0 doesn't say; a window runs the extension it had when it opened, until a reload.
                 var version = (string?)message["version"] is { Length: > 0 } v ? v : "0.1.0";
+                window.Version = Version.TryParse(version, out var parsed) ? parsed : new Version(0, 1, 0);
                 Log.Write($"vscode: {window.Name} connected ({string.Join(", ", window.Folders)}){(window.Remote.Length > 0 ? $" in {window.Remote}" : "")}, extension {version}");
                 WindowsChanged?.Invoke();
                 break;
@@ -109,6 +113,18 @@ sealed class VsCodeHub
     {
         window.Focused = focused;
         if (focused) window.FocusedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Runs a VS Code command in the current window (the deck's context bar keys: Build, Go to
+    /// symbol, Claude's input…). False if no window's extension can (before 0.3).
+    /// </summary>
+    public bool RunCommand(string command)
+    {
+        var window = Current;
+        if (window == null || window.Version < new Version(0, 3, 0)) return false;
+        Send(window, new { t = "command", id = command });
+        return true;
     }
 
     public bool IsOpen(VsCodeWindow window)

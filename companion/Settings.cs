@@ -33,6 +33,9 @@ static class Settings
     /// <summary>The launcher's tiles as written (see <see cref="FlexScreen.Companion.Shortcuts"/>); null when the file has none.</summary>
     public static JsonArray? Shortcuts => Get("shortcuts") as JsonArray;
 
+    /// <summary>Whether a Claude permission request waits for Approve or Deny on the deck (on unless set false).</summary>
+    public static bool ApproveFromDeck => Get("approveFromDeck") is JsonValue v && v.TryGetValue(out bool on) ? on : true;
+
     /// <summary>The context bar's own key sets, or false (see <see cref="FlexScreen.Companion.ContextBar"/>); null when the file says nothing.</summary>
     public static JsonNode? ContextBar => Get("contextBar");
 

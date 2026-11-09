@@ -89,6 +89,45 @@ static class ShellApps
         }
     }
 
+    /// <summary>
+    /// The folder an Explorer window shows, or null (a search, "This PC", a closed window).
+    /// Its tabs share the window, so the one whose name is the window's title is the one in front.
+    /// </summary>
+    public static string? ExplorerFolder(long hwnd, string title = "")
+    {
+        var type = Type.GetTypeFromProgID("Shell.Application");
+        if (type == null) return null;
+        dynamic shell = Activator.CreateInstance(type)!;
+        try
+        {
+            dynamic windows = shell.Windows();
+            int count = windows.Count;
+            string? first = null;
+            for (var i = 0; i < count; i++)
+            {
+                try
+                {
+                    dynamic window = windows.Item(i);
+                    if (window is null || Convert.ToInt64(window.HWND) != hwnd) continue;
+                    string? path = window!.Document?.Folder?.Self?.Path;
+                    if (string.IsNullOrEmpty(path)) continue;
+                    string? name = window.LocationName;
+                    if (title.Length > 0 && name is { Length: > 0 } && (title == name || title.StartsWith(name + " - "))) return path;  // "dist - File Explorer"
+                    first ??= path;
+                }
+                catch (Exception e) when (e is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
+                {
+                    // A window closing meanwhile, or not a folder view.
+                }
+            }
+            return first;
+        }
+        finally
+        {
+            Marshal.FinalReleaseComObject(shell);
+        }
+    }
+
     /// <summary>Runs <paramref name="work"/> on a new STA thread and waits for it.</summary>
     public static T OnSta<T>(Func<T> work)
     {

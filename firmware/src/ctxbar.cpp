@@ -60,6 +60,9 @@ uint32_t context_seen = UINT32_MAX, icons_seen = UINT32_MAX, asked_ms = 0;
 int menu_slot = -1;  // the key the menu changes (the key count: a new one); -1 while it's closed
 String menu_key;     // the app whose bar it changes
 uint32_t menu_seen = UINT32_MAX;
+// The same menu as a list a key opened (Claude's model or effort): its choices instead.
+bool picking = false;
+uint32_t picker_seen = 0;
 
 // `part` 0–255 of `color` over `base`.
 lv_color_t mix(uint32_t color, uint32_t base, uint8_t part) { return lv_color_mix(hex(color), hex(base), part); }
@@ -72,12 +75,7 @@ int textWidth(const char *text, const lv_font_t *font) {
   return size.x;
 }
 
-const char *glyph(const String &name) {
-  for (int i = 0; i < font_icon_count; i++) {
-    if (name == font_icon_names[i].name) return font_icon_names[i].text;
-  }
-  return "";
-}
+const char *glyph(const String &name) { return glyphOf(name.c_str()); }
 
 int indexOf(lv_event_t *e) { return int(intptr_t(lv_event_get_user_data(e))); }
 
@@ -85,8 +83,19 @@ int indexOf(lv_event_t *e) { return int(intptr_t(lv_event_get_user_data(e))); }
 
 void closeMenu() {
   menu_slot = -1;
+  picking = false;
   lv_obj_set_hidden(m.scrim, true);
   lv_obj_set_hidden(m.panel, true);
+}
+
+// The menu's height for `rows` rows of items under `labels` section labels.
+void sizeMenu(int rows, int labels) {
+  const int line = lv_font_get_line_height(&small_font);
+  const int list_h = labels * (line + kItemGap) + rows * (kItemH + kItemGap);
+  const int h = min(kMenuMaxH, 2 * (kMenuPad + kMenuBorder) + kMenuHeadH + 8 + list_h);
+  lv_obj_set_height(m.panel, h);
+  lv_obj_set_y(m.panel, kMenuBottom - h);
+  lv_obj_scroll_to_y(m.list, 0, LV_ANIM_OFF);
 }
 
 void fillMenu() {
@@ -97,6 +106,7 @@ void fillMenu() {
   if (adding) setText(m.title, "Add a key");
   else setTextf(m.title, "Instead of %s", c.keys[menu_slot].name.c_str());
   setHidden(m.remove, adding);
+  setHidden(m.reset, false);
 
   String app = c.app;
   app.toUpperCase();
@@ -125,17 +135,40 @@ void fillMenu() {
   }
 
   // As tall as its rows, up to just below the status bar; past that it scrolls.
-  const int line = lv_font_get_line_height(&small_font);
   const int every = c.bank_count - c.own;
-  const int row = kItemH + kItemGap;
-  int list_h = 0;
-  if (c.own) list_h += line + kItemGap + (c.own + kMenuCols - 1) / kMenuCols * row;
-  if (every) list_h += line + kItemGap + (every + kMenuCols - 1) / kMenuCols * row;
-  const int h = min(kMenuMaxH, 2 * (kMenuPad + kMenuBorder) + kMenuHeadH + 8 + list_h);
-  lv_obj_set_height(m.panel, h);
-  lv_obj_set_y(m.panel, kMenuBottom - h);
-  lv_obj_scroll_to_y(m.list, 0, LV_ANIM_OFF);
+  sizeMenu((c.own + kMenuCols - 1) / kMenuCols + (every + kMenuCols - 1) / kMenuCols, (c.own > 0) + (every > 0));
   menu_seen = c.version;
+}
+
+// A key's list: its choices, the one in effect filled in.
+void fillPicker() {
+  const model::Picker &p = model::picker;
+  const uint32_t color = barColor();
+  setText(m.title, p.title.c_str());
+  setHidden(m.remove, true);
+  setHidden(m.reset, true);
+  setHidden(m.own_label, true);
+  setHidden(m.every_label, true);
+  for (int i = 0; i < model::Context::kBankMax; i++) {
+    KeyView &v = m.items[i];
+    setHidden(v.root, i >= p.count);
+    if (i >= p.count) continue;
+    const bool here = p.choices[i].id == p.current;
+    lv_obj_set_style_bg_color(v.root, here ? mix(color, kSurface, 115) : hex(kRaised), 0);
+    lv_obj_set_style_border_width(v.root, 0, 0);
+    setHidden(v.icon, true);
+    setTextUpTo(v.name, p.choices[i].name.c_str(), kItemW - 16);
+  }
+  sizeMenu((p.count + kMenuCols - 1) / kMenuCols, 0);
+}
+
+void openPicker() {
+  if (model::picker.count == 0) return;
+  closeMenu();
+  picking = true;
+  fillPicker();
+  lv_obj_set_hidden(m.scrim, false);
+  lv_obj_set_hidden(m.panel, false);
 }
 
 void openMenu(int slot) {
@@ -150,6 +183,12 @@ void openMenu(int slot) {
 
 void onItem(lv_event_t *e) {
   const int i = indexOf(e);
+  if (picking) {
+    const model::Picker &p = model::picker;
+    if (i < p.count) pc::contextPick(p.id.c_str(), p.choices[i].id.c_str());
+    closeMenu();
+    return;
+  }
   const model::Context &c = model::context;
   if (menu_slot >= 0 && i < c.bank_count && c.key == menu_key) pc::contextSet(menu_key.c_str(), menu_slot, c.bank[i].id.c_str());
   closeMenu();
@@ -408,6 +447,11 @@ void update() {
     lv_obj_set_style_pad_bottom(w.pages, want ? kSlot : 0, 0);  // the pages make room, or take it back
     if (want) context_seen = UINT32_MAX;
   }
+  if (model::picker.version != picker_seen) {  // a key's list came from the companion
+    picker_seen = model::picker.version;
+    if (shown) openPicker();
+  }
+  if (picking && (!shown || idle::asleep())) closeMenu();
   if (menu_slot >= 0) {
     // Gone with the bar, the screen going dark, or another app coming to the front.
     if (!shown || idle::asleep() || model::context.key != menu_key) closeMenu();

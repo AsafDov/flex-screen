@@ -26,7 +26,8 @@ python3 - "$settings" "$url" "${1:-}" <<'EOF'
 import json, os, shutil, sys
 
 path, url, mode = sys.argv[1], sys.argv[2], sys.argv[3]
-events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "SessionEnd"]
+events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "SessionEnd",
+          "PermissionRequest", "PostModelSwitch"]
 
 root = {}
 if os.path.exists(path):
@@ -47,6 +48,14 @@ for name in events:
         hook = {"type": "command",
                 "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- " + url,
                 "async": True, "timeout": 5}
+        if name == "PermissionRequest":
+            # Waits for Approve or Deny on the deck while Claude's own prompt shows as usual;
+            # whichever answers first wins. No tunnel: curl fails at once, and "|| true"
+            # keeps that from showing as a hook error.
+            hook = {"type": "command",
+                    "command": "curl -s -m 590 -X POST -H 'Content-Type: application/json' --data-binary @- "
+                               + url + "/permission || true",
+                    "timeout": 600}
         entry = {"matcher": "*"} if name in ("PreToolUse", "PostToolUse") else {}
         entry["hooks"] = [hook]
         entries.append(entry)

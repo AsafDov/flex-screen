@@ -44,6 +44,13 @@ EVERYDAY_BANK = [
 ]
 
 
+NO_APPROVAL = {'id': '', 'project': '', 'tool': '', 'detail': '', 'always': False, 'count': 0}
+
+
+def approval(id: str = 'p1', detail: str = 'Bash: npm run build', always: bool = True, count: int = 1) -> dict:
+    return {'id': id, 'project': 'flex-screen', 'tool': detail.split(':')[0], 'detail': detail, 'always': always, 'count': count}
+
+
 def bank(items: list[tuple[str, str, str]]) -> list[dict]:
     return [{'id': i, 'name': n, 'glyph': g} for i, n, g in items]
 
@@ -144,6 +151,7 @@ def day() -> dict[str, dict]:
             {'id': 'search', 'name': 'Search', 'glyph': 'search'},
             {'id': 'split', 'name': 'Split', 'glyph': 'split-right'},
         ], 'bank': bank(VSCODE_BANK + EVERYDAY_BANK), 'own': len(VSCODE_BANK)},
+        'approval': NO_APPROVAL,
         'git': {'repo': 'flex-screen', 'branch': 'master', 'ahead': 2, 'behind': 0, 'm': 3, 'a': 1, 'del': 0, 'u': 2,
                 'last': 'Recent actions on Today, full-command terminal card', 'last_secs': HOUR, 'busy': '', 'error': ''},
         'windows': {'list': [

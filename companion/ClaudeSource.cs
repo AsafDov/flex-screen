@@ -19,6 +19,7 @@ sealed class ClaudeSource
     readonly object _gate = new();
     readonly Dictionary<string, ClaudeSession> _sessions = new();
     readonly Dictionary<string, int> _windowOf = new();  // session → the app it runs in (its window's process)
+    readonly Dictionary<string, (string Model, string Effort)> _info = new();  // session → its model id and effort level
     readonly System.Threading.Timer _sweep;
 
     public IReadOnlyList<ClaudeSession> Current { get; private set; } = [];
@@ -37,6 +38,26 @@ sealed class ClaudeSource
         lock (_gate) return _windowOf.GetValueOrDefault(id);
     }
 
+    /// <summary>
+    /// The model id ("claude-opus-5-5") and effort level ("high") of the session used last in
+    /// that process's windows, as far as its hooks have said; "" where they haven't.
+    /// </summary>
+    public (string Model, string Effort) InfoIn(int process)
+    {
+        lock (_gate)
+        {
+            var session = _sessions.Values.Where(s => _windowOf.GetValueOrDefault(s.Id) == process)
+                                   .OrderByDescending(s => s.Since).FirstOrDefault();
+            return session != null && _info.TryGetValue(session.Id, out var info) ? info : ("", "");
+        }
+    }
+
+    /// <summary>The session's project (its git repo or folder), or the folder's name for one not seen yet.</summary>
+    public string ProjectFor(string id, string cwd)
+    {
+        lock (_gate) return _sessions.TryGetValue(id, out var s) ? s.Project : ProjectOf(cwd).Project;
+    }
+
     public void Handle(JsonNode hook, System.Net.IPEndPoint? client)
     {
         var id = (string?)hook["session_id"];
@@ -51,6 +72,12 @@ sealed class ClaudeSource
         }
         lock (_gate)
         {
+            // The model comes with SessionStart (sometimes) and every switch; the effort level with tool events.
+            (string Model, string Effort) info = _info.GetValueOrDefault(id, ("", ""));
+            if ((string?)hook["model"] is { Length: > 0 } model) info.Model = model;
+            if ((string?)hook["to_model"] is { Length: > 0 } to) info.Model = to;
+            if ((string?)hook["effort"]?["level"] is { Length: > 0 } effort) info.Effort = effort;
+            _info[id] = info;
             _sessions.TryGetValue(id, out var s);
             // The hook reports the session's current folder, which moves when Claude changes
             // directory; keep the project a session started in.
@@ -64,6 +91,7 @@ sealed class ClaudeSource
                 "PostToolUse" => s is { State: "working" } ? s
                     : new ClaudeSession(id, project, cwd, "working", s?.Detail ?? "", now),  // an approval went through
                 "Notification" => FromNotification(s, id, project, cwd, (string?)hook["message"] ?? "", now),
+                "PermissionRequest" => new ClaudeSession(id, project, cwd, "input", ToolDetail(hook), now),
                 "Stop" => new ClaudeSession(id, project, cwd, "done", "Finished", now),
                 "SessionEnd" => null,
                 _ => s,
@@ -72,6 +100,7 @@ sealed class ClaudeSource
             {
                 _sessions.Remove(id);
                 _windowOf.Remove(id);
+                _info.Remove(id);
             }
             else _sessions[id] = next;
         }
@@ -101,7 +130,7 @@ sealed class ClaudeSource
         return (Path.GetFileName(folder), folder);
     }
 
-    static string ToolDetail(JsonNode hook)
+    public static string ToolDetail(JsonNode hook)
     {
         var tool = (string?)hook["tool_name"] ?? "tool";
         var input = hook["tool_input"];
@@ -131,7 +160,11 @@ sealed class ClaudeSource
             var stale = _sessions.Values
                 .Where(s => now - s.Since > (s.State is "working" or "input" ? StaleBusy : StaleQuiet))
                 .Select(s => s.Id).ToList();
-            foreach (var id in stale) _sessions.Remove(id);
+            foreach (var id in stale)
+            {
+                _sessions.Remove(id);
+                _info.Remove(id);
+            }
             removed = stale.Count > 0;
         }
         if (removed) Publish();

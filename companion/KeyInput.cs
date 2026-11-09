@@ -43,6 +43,45 @@ static class KeyInput
         return true;
     }
 
+    /// <summary>
+    /// Combinations one after another, comma-separated: "g, i" (Gmail's go to inbox),
+    /// "Ctrl+K, Z". A comma key itself is "comma". False if any part can't be read; then
+    /// nothing is pressed.
+    /// </summary>
+    public static bool Sequence(string keys)
+    {
+        var parts = keys.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0 || parts.Any(p => Parse(p) == null)) return false;
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (i > 0) Thread.Sleep(40);
+            Combo(parts[i]);
+        }
+        return true;
+    }
+
+    /// <summary>Whether <see cref="Sequence"/> can read the keys.</summary>
+    public static bool CanPress(string keys)
+    {
+        var parts = keys.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 0 && parts.All(p => Parse(p) != null);
+    }
+
+    /// <summary>Text typed as characters, each "\n" pressed as Enter (a command line: "git status\n").</summary>
+    public static void TypeLines(string text)
+    {
+        var lines = text.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].Length > 0) Type(lines[i]);
+            if (i < lines.Length - 1)
+            {
+                Thread.Sleep(30);
+                Combo("Enter");
+            }
+        }
+    }
+
     /// <summary>The key codes of "Ctrl+Shift+Esc", in order; null if a name isn't known.</summary>
     public static List<ushort>? Parse(string keys)
     {

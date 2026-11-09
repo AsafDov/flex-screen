@@ -37,18 +37,44 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Toasts over any page: a long command finished or failed, Claude needs approval, git
   results.
 
+### Claude approvals (on every page)
+- When Claude Code asks for permission (in the Claude app, VS Code or a terminal), a banner
+  under the status bar shows what it wants to run, with **Approve**, **Always** (Claude's
+  own "don't ask again" rule, when it offers one) and **Deny**. Claude's prompt on the PC
+  shows as usual; whichever you answer first wins.
+- Turn it off from the tray icon: **Approve Claude from the deck**.
+
 ### Context bar (on every page but the Numpad)
-- A strip above the tabs with keys for the app in front on the PC, in that app's color:
-  - **VS Code:** Build, Terminal, Commands, Go to file, Search, Split.
-  - **Chrome and Edge:** Back, Reload, Prev tab, Next tab, New tab, Reopen, Find.
-  - **Windows Terminal:** Prev cmd, New tab, Prev tab, Next tab, Split right, Split down.
+- A strip above the tabs with keys for the app in front on the PC, in that app's color. The
+  keys each app starts with (a long press shows the rest of its list):
+  - **VS Code:** Go to file, Go to symbol, Terminal, Search, Approve, Model. Its list also
+    has Build, Debug and stepping, Definition, Rename, Format, Comment, Quick fix, Source
+    control, and Claude's own: open Claude, New Claude chat, Accept or Reject changes,
+    Mention file.
+  - **Claude app:** Approve, Deny, Model, Effort, Usage, New chat.
+  - **Chrome and Edge:** Back, Reload, Prev tab, Next tab, New tab, Reopen, Find. On
+    **Gmail**, **YouTube** and **Google Calendar** the bar has that site's keys (Compose,
+    Reply, Archive…; Play, Back 10 s, Captions…; Today, Week, New event…). Gmail's need its
+    keyboard shortcuts turned on in Gmail's settings.
+  - **Windows Terminal:** Prev cmd, New tab, Prev tab, Next tab, Split right, Split down;
+    its list also has Clear, History, keys that type `git status`, `git pull` or `claude`,
+    and Claude's keys.
+  - **Explorer:** Up, New folder, Rename, Copy path, **Terminal here**, **VS Code here** (and
+    Claude here, Copy folder, Preview pane, views…).
   - **Obsidian:** Daily note, Search, Quick open, Commands, Back, Graph.
+  - **Spotify:** Previous, Play/pause, Next, Like, Shuffle, Search.
   - **Teams:** Activity, Chat, Calendar, New chat, Search; during a meeting Mute, Camera,
-    Raise hand, Share, Leave.
+    Raise hand, Like, Share, Leave (and the other reactions).
   - **Discord:** Switch, Prev channel, Next channel, Unread, Mute, Deafen.
   - **Any other app:** Copy, Paste, Undo, Save, Find, Close, in the color of its icon.
 - A key presses its shortcut in that app's window. If the desktop or a menu took the front
-  meanwhile, the window comes back first.
+  meanwhile, the window comes back first. In VS Code, keys run VS Code's own commands
+  through the flex-screen extension, so your own keybindings don't matter.
+- **Claude's keys** work wherever Claude Code runs, the app, VS Code or a terminal:
+  **Approve** and **Deny** answer the newest request; **Model** and **Effort** show the
+  session's and open a list to change them (typed as `/model` or `/effort` into its
+  prompt); **Usage** opens your usage page. Claude Code gives the 5-hour figure only to
+  terminal status lines, so the key doesn't show it.
 - **Long-press a key** to pick another action for its place from that app's list (VS Code
   also has Go to symbol, Go to line, Run, Rename, Format, Comment, Source control…; every
   app gets an "Everywhere" list: Snap left, Screenshot, Lock PC…). One already on the bar
@@ -223,8 +249,10 @@ that app's list (long-press a key to pick them) and make up its bar until you re
 }
 ```
 
-A key is `keys` (pressed in that app's window), `action` (as for shortcuts), or
-`"action": "close"`. Up to 8 per app. Glyphs: `play`, `pause`, `terminal`, `keyboard`,
+A key is `keys` (pressed in that app's window; `"g, i"` presses one after the other),
+`text` (typed; `\n` for Enter: `{ "name": "Status", "text": "git status\n" }`), `action`
+(as for shortcuts), or `"action": "close"`. Up to 8 per app.
+`"approveFromDeck": false` turns the approval banner off (also in the tray menu). Glyphs: `play`, `pause`, `terminal`, `keyboard`,
 `code`, `file`, `folder`, `search`, `split-right`, `split-down`, `back`, `forward`, `up`,
 `down`, `prev`, `next`, `reload`, `undo`, `redo`, `history`, `plus`, `close`, `copy`,
 `paste`, `save`, `edit`, `calendar`, `graph`, `bell`, `chat`, `mic`, `mic-off`, `video`,
