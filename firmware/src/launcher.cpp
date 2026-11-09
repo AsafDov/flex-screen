@@ -12,19 +12,25 @@
 namespace ui::launcher {
 namespace {
 
-constexpr int kCols = 4;
-constexpr int kW = 788;
-constexpr int kPad = 14, kBorderW = 2;
-constexpr int kHeadH = 28;
+// Square tiles, six to a row: twelve make two rows. The panel is as wide as they need and
+// sits above the launcher button.
+constexpr int kCols = 6;
+constexpr int kTile = 104;
 constexpr int kTileGap = 8;
-constexpr int kTileW = (kW - 2 * (kPad + kBorderW) - (kCols - 1) * kTileGap) / kCols;
+constexpr int kPad = 14, kBorderW = 2;
+constexpr int kW = kCols * kTile + (kCols - 1) * kTileGap + 2 * (kPad + kBorderW);
+constexpr int kHeadH = 28;
 constexpr int kBadge = 40;
 constexpr int kButtonW = 58;
 constexpr uint32_t kIconRetryMs = 3000;  // asking again for an icon the deck lacks
 
+constexpr int kTilePadHor = 5;
+constexpr int kNameW = kTile - 2 * kTilePadHor;
+
 struct Tile {
   lv_obj_t *root, *badge, *image, *glyph, *name;
   uint32_t asked_ms;
+  int lines;  // the name's height, in lines (1 or 2)
 };
 
 struct {
@@ -97,17 +103,17 @@ Look look(const String &glyph) {
 }
 
 void buildTiles() {
-  const int line = lv_font_get_line_height(&body_font);
-  const int tile_h = 8 + kBadge + 6 + 2 * line + 6;
+  const int line = lv_font_get_line_height(&small_font);
   for (int i = 0; i < model::Shortcuts::kMax; i++) {
     Tile &t = w.tiles[i];
     t.asked_ms = 0;
-    t.root = button(w.grid, kTileW, tile_h, kRaised, onTile, reinterpret_cast<void *>(intptr_t(i)));
+    t.root = button(w.grid, kTile, kTile, kRaised, onTile, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_set_style_radius(t.root, 14, 0);
-    lv_obj_set_style_pad_top(t.root, 8, 0);
-    lv_obj_set_style_pad_hor(t.root, 8, 0);
-    flexCol(t.root, 6);
-    lv_obj_set_flex_align(t.root, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_ver(t.root, 6, 0);
+    lv_obj_set_style_pad_hor(t.root, kTilePadHor, 0);
+    flexCol(t.root, 7);
+    // The badge and the name together, in the middle of the square.
+    lv_obj_set_flex_align(t.root, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     t.badge = card(t.root, kSurface, kSurface);
     lv_obj_set_size(t.badge, kBadge, kBadge);
@@ -119,13 +125,22 @@ void buildTiles() {
     t.glyph = label(t.badge, "", &lv_font_montserrat_20, kText);
     lv_obj_center(t.glyph);
 
-    // Two lines of name, then "…"; a fixed height so every badge sits at the same place.
-    t.name = label(t.root, "", &body_font, kText);
-    lv_obj_set_width(t.name, LV_PCT(100));
+    // Up to two lines of name, then "…" (which needs a fixed height: one line or two, set
+    // to what the name takes).
+    t.name = label(t.root, "", &small_font, kText);
+    lv_obj_set_width(t.name, kNameW);
     lv_obj_set_style_text_align(t.name, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(t.name, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_height(t.name, 2 * line);
+    t.lines = 1;
+    lv_obj_set_height(t.name, line);
   }
+}
+
+// How many lines (1 or 2) a name takes in a tile.
+int nameLines(const char *name) {
+  lv_point_t size;
+  lv_text_get_size(&size, name, &small_font, 0, 0, kNameW, LV_TEXT_FLAG_NONE);
+  return size.y > lv_font_get_line_height(&small_font) ? 2 : 1;
 }
 
 void fill() {
@@ -149,6 +164,12 @@ void fill() {
     setHidden(t.root, i >= count);
     if (i >= count) continue;
     const model::Shortcut &x = s.list[i];
+    const int lines = nameLines(x.name.c_str());
+    if (lines != t.lines) {
+      t.lines = lines;
+      lv_obj_set_height(t.name, lines * lv_font_get_line_height(&small_font));
+      lv_label_set_text(t.name, "");  // cut again for the new height
+    }
     setText(t.name, x.name.c_str());
     const lv_image_dsc_t *icon = icons::get(x.icon);
     if (!icon && x.icon.length() && millis() - t.asked_ms >= kIconRetryMs) {
@@ -194,7 +215,7 @@ void build(lv_obj_t *tab_bar) {
 
   w.panel = card(lv_layer_top(), kSurface, kBorder);
   lv_obj_set_size(w.panel, kW, LV_SIZE_CONTENT);
-  lv_obj_align(w.panel, LV_ALIGN_BOTTOM_MID, 0, -(kBarH + 6));  // just above the tab bar
+  lv_obj_align(w.panel, LV_ALIGN_BOTTOM_RIGHT, -6, -(kBarH + 6));  // just above the tab bar's button
   lv_obj_set_style_border_width(w.panel, kBorderW, 0);
   lv_obj_set_style_radius(w.panel, 18, 0);
   lv_obj_set_style_pad_all(w.panel, kPad, 0);

@@ -324,7 +324,7 @@ def test_launcher(d: Deck) -> None:
     check('launcher: twelve tiles at most', on_screen(d, 'Shortcut 12 (git)') and not on_screen(d, 'thirteenth'), f'{len(tiles)} tiles')
     head = label(d, 'Shortcuts', exact=True)
     check('launcher: twelve still fit between the bars', head is not None and head['y'] > 44, str(head))
-    long_name = label(d, 'A shortcut with a name far too long')
+    long_name = label(d, 'A shortcut with a')  # the deck cuts it, so only its start is sure to be there
     check('launcher: a long name stops at two lines', long_name is not None and long_name['h'] <= 40, str(long_name))
     d.shot(os.path.join(OUT, 'launcher-12.png'))
     d.tap(*fixtures.LAUNCHER)

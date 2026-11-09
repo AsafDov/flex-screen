@@ -605,10 +605,11 @@ Gotchas found after phase 6:
     arrives from the PC's ssh process, whose parent is VS Code, so the Claude pill brings
     up that window. `.gitattributes` keeps `.sh` files LF in Windows checkouts.
   - Audio: Headphones come right after Speakers among the outputs (on request).
-- Firmware 0.13.0, the shortcuts launcher (on request):
+- Firmware 0.13.0 and 0.13.1, the shortcuts launcher (on request):
   - A button at the right end of the tab bar, on every page, opens a panel over the page
-    with up to 12 tiles in four columns (an app's or site's icon, else a symbol, and the
-    name on up to two lines). A tap runs one and closes the panel; a tap anywhere else,
+    with up to 12 square tiles, six to a row (an app's or site's icon, else a symbol, and
+    the name on up to two lines; 0.13.1 made them square and smaller, from four wider ones
+    to a row, on request), right above the button. A tap runs one and closes the panel; a tap anywhere else,
     the button included, closes it, through a see-through layer over the screen so the tap
     doesn't also reach the page. The button is a plain object, not an `lv_button`: the
     tabview counts every button in its bar as a tab. The panel grows up from the tab bar
@@ -633,6 +634,11 @@ Gotchas found after phase 6:
   - Simulator: 19 new checks (opening, a tile's action, closing both ways without
     reaching the page, every page, 12 tiles and the 13th left out, a long name cut at two
     lines, the empty list, offline) and launcher shots in every tour.
+  - Flashing: `platformio.ini` named no default environment, so `pio run -t upload` (the
+    README's command) also ran the recovery env after updating the deck. That rebooted
+    the deck into its ROM bootloader and then, having inherited the OTA uploader's
+    `upload_command`, couldn't flash it, so the deck stayed in the bootloader until an
+    esptool reset. `default_envs = deck` now, and `deck-esptool` really uses esptool.
 
 ## Decisions
 
