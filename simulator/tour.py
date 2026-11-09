@@ -18,6 +18,10 @@ def shoot_pages(d: Deck, prefix: str) -> None:
     for i, name in enumerate(PAGES):
         d.page(i)
         d.shot(os.path.join(OUT, f'{prefix}-{name}.png'))
+    d.page(0)
+    d.tap(*fixtures.LAUNCHER)  # open over Today
+    d.shot(os.path.join(OUT, f'{prefix}-launcher.png'))
+    d.tap(400, 20)  # beside it: closed
 
 
 def set_palette(d: Deck, palette: str) -> None:

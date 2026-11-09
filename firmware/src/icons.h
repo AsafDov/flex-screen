@@ -1,5 +1,6 @@
-// App icons for the Windows page: 32×32 RGB565A8 images the companion sends once each,
-// kept in PSRAM by content id. pc.cpp stores them; the page draws them.
+// App icons for the Windows page, the Recent tiles and the shortcuts: 32×32 RGB565A8 images
+// the companion sends once each, kept in PSRAM by content id. pc.cpp stores them; the pages
+// draw them.
 #pragma once
 
 #include <Arduino.h>

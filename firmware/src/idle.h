@@ -9,5 +9,6 @@ namespace ui::idle {
 void build();   // after the pages: the clock screen sits on LVGL's top layer
 void update();  // call every loop
 void wake();    // as if the screen were touched
+bool asleep();  // the clock screen (or a dark screen) covers the pages
 
 }  // namespace ui::idle

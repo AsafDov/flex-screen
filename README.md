@@ -37,6 +37,15 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Toasts over any page: a long command finished or failed, Claude needs approval, git
   results.
 
+### Shortcuts (on every page)
+- A launcher button at the right end of the tab bar opens a panel of up to 12 tiles:
+  apps, links, deck actions and key combinations, each with its real icon (an app's own,
+  a site's) or a symbol. Tap one to run it; tap anywhere else to close.
+- An app that's already open comes to the front instead of starting again. Apps are
+  found by their Start menu name, Store apps (Spotify, Terminal) included.
+- Out of the box: Gmail, Calendar, Today's note, Spotify, VS Code and Terminal. Change
+  them per PC from the tray icon's **Shortcuts…** (see [Settings](#settings)).
+
 ### Today
 - Big clock.
 - Now playing: album art, title, artist and app, play/pause, next/previous, volume.
@@ -160,9 +169,24 @@ Optional, per PC, in `%LOCALAPPDATA%\flex-screen\settings.json`:
   "palette": "base",                                   // or "vibrant", "ember", "violet"
   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
   "layerNames": ["BASE", "NAV", "SYMBOL"],             // your keyboard's layers
-  "obsidianVault": "C:\\path\\to\\vault"                // if it isn't found by itself
+  "obsidianVault": "C:\\path\\to\\vault",               // if it isn't found by itself
+  "shortcuts": [                                       // the launcher's tiles, up to 12
+    { "name": "Gmail", "url": "https://mail.google.com" },
+    { "name": "Spotify", "app": "Spotify" },             // a Start menu app, by its name there
+    { "name": "Projects", "path": "C:\\Projects" },      // a file, folder or program ("args" too)
+    { "name": "Today's note", "action": "obs.today" },   // something the deck does
+    { "name": "Snip", "keys": "Win+Shift+S" }            // keys pressed in the window in front
+  ]
 }
 ```
+
+A shortcut can also have `"glyph"` (the symbol shown without an icon: `mail`, `calendar`,
+`note`, `terminal`, `code`, `music`, `lock`, `desktop`, `folder`, `keys`, `git`, `call`)
+and `"icon"` (a picture or program whose icon to use). Actions: `obs.today`, `mail.open`,
+`pc.lock`, `desktop.show`, `media.toggle`, `media.next`, `media.prev`, `vol.mute`,
+`mic.mute`, `term.focus`, `git.commit`, `git.fetch`, `git.pull`, `git.push`, `git.stash`,
+`call.mic`, `call.camera`, `call.hand`, `call.leave`, `call.focus`. The tray icon's
+**Shortcuts…** opens this file, with the default list written in if it has none.
 
 ## Repository
 

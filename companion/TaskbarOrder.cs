@@ -46,19 +46,29 @@ sealed class TaskbarOrder
     /// <summary>The position of the window's button on the taskbar; int.MaxValue when none matches.</summary>
     public int IndexOf(IntPtr hwnd, uint pid, string exePath)
     {
-        var windowId = WindowAppId(hwnd);
-        var packaged = PackagedAppId(pid);
-        var exe = Path.GetFileNameWithoutExtension(exePath);
         var weak = int.MaxValue;
         for (var i = 0; i < _ids.Count; i++)
         {
-            var id = _ids[i];
-            if (Same(id, windowId) || Same(id, packaged) || Same(KnownFolderPath(id), exePath) || id == $"*PID{pid:x8}") return i;
-            // Apps that set their id on the process ("md.obsidian", "Microsoft.Windows.Explorer"):
-            // the exe's name in it is the best there is.
-            if (weak == int.MaxValue && exe.Length >= 3 && id.Contains(exe, StringComparison.OrdinalIgnoreCase)) weak = i;
+            var match = Match(_ids[i], hwnd, pid, exePath);
+            if (match == 2) return i;
+            if (match == 1 && weak == int.MaxValue) weak = i;
         }
         return weak;
+    }
+
+    /// <summary>
+    /// Whether the window belongs to the app with this id (a taskbar button's, or a Start menu
+    /// app's): 2 for sure (the window's or its package's id, or its exe), 1 probably (the exe's
+    /// name is in the id), 0 not.
+    /// </summary>
+    public int Match(string id, IntPtr hwnd, uint pid, string exePath)
+    {
+        if (id.Length == 0) return 0;
+        if (Same(id, WindowAppId(hwnd)) || Same(id, PackagedAppId(pid)) || Same(KnownFolderPath(id), exePath) || Same(id, exePath) || id == $"*PID{pid:x8}") return 2;
+        // Apps that set their id on the process ("md.obsidian", "Microsoft.Windows.Explorer"):
+        // the exe's name in it is the best there is.
+        var exe = Path.GetFileNameWithoutExtension(exePath);
+        return exe.Length >= 3 && id.Contains(exe, StringComparison.OrdinalIgnoreCase) ? 1 : 0;
     }
 
     static bool Same(string a, string b) => a.Length > 0 && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);

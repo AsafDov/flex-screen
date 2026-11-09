@@ -46,10 +46,12 @@ sealed class TrayApp : ApplicationContext
     readonly CallSource _calls;
     readonly ZoneSource _zones;
     readonly RecentActions _recent = new();
+    readonly Shortcuts _shortcuts;
     readonly HashSet<string> _iconsSent = [];
     readonly object _artGate = new();
     readonly object _actionsGate = new();
     string _actionsSent = "";
+    string _shortcutsSent = "";
     DateTime _timeSentAt = DateTime.MinValue;
     string _loggedMedia = "";
     string _loggedClaude = "";
@@ -66,6 +68,7 @@ sealed class TrayApp : ApplicationContext
         menu.Items.Add(_status);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Connect Google Calendar and Tasks…", null, (_, _) => ConnectGoogle());
+        menu.Items.Add("Shortcuts…", null, (_, _) => Shortcuts.Edit());
         var colors = new ToolStripMenuItem("Deck colors");
         foreach (var (name, label) in Settings.Palettes)
         {
@@ -161,6 +164,9 @@ sealed class TrayApp : ApplicationContext
             SendRecentActions();  // a window tile shows its window's title as it is now
         };
         _recent.Changed += () => SendRecentActions();
+        _shortcuts = new Shortcuts(_windows, action => Act(action, new JsonObject()));
+        _shortcuts.Changed += () => SendShortcuts();
+        _shortcuts.Toast += SendToast;
         _zones.Changed += z =>
         {
             var summary = string.Join(", ", z.Monitors.Select(m =>
@@ -189,6 +195,7 @@ sealed class TrayApp : ApplicationContext
         _obsidian.Start();
         _google.Start();
         _calls.Start();
+        _shortcuts.Refresh();
         _link.Start();
 
         // UI-thread timer: keeps the deck's "companion" light on and the clock in sync.
@@ -214,6 +221,7 @@ sealed class TrayApp : ApplicationContext
         _link.Send(new { t = "ping" });
         _link.Send(PcMessage());
         if (Settings.Version != _settingsSent) SendSettings();
+        _shortcuts.Refresh();
         if (DateTime.UtcNow - _timeSentAt > TimeResync) SendTime();
         var port = _link.PortName;
         var text = port != null ? $"Deck connected on {port}" : "Deck not connected";
@@ -260,6 +268,7 @@ sealed class TrayApp : ApplicationContext
         if (icons) lock (_iconsSent) _iconsSent.Clear();
         SendWindows(_windows.Shown);
         SendRecentActions(force: true);
+        SendShortcuts(force: true);
         _link.Send(new { t = "state", topic = "zones", d = ZoneSource.Message(_zones.Current) });
     }
 
@@ -791,6 +800,8 @@ sealed class TrayApp : ApplicationContext
             case "zone.snap": _zones.Snap((int?)message["mon"] ?? -1, (int?)message["zone"] ?? -1, (long?)message["hwnd"] ?? 0); break;
             case "zone.layout": _zones.SetLayout((int?)message["mon"] ?? -1, (string?)message["id"] ?? (string?)message["type"] ?? ""); break;
             case "recent.run": RunRecent(id); break;
+            case "shortcut.run": _shortcuts.Run(id); break;
+            case "desktop.show": KeyInput.Combo("Win+D"); break;
             default: Log.Write($"act: unknown action {action}"); break;
         }
         NoteRecent(action, message);
@@ -923,6 +934,25 @@ sealed class TrayApp : ApplicationContext
             if (fresh && _windows.FindIcon(icon) is { } pixels) SendIcon(pixels);
         }
         _link.Send(new { t = "state", topic = "actions", d = new { list } });
+    }
+
+    /// <summary>The launcher's tiles, when they changed (or <paramref name="force"/>, on the deck's hello).</summary>
+    void SendShortcuts(bool force = false)
+    {
+        var list = _shortcuts.Current.Select(s => new { id = s.Id, name = s.Name, icon = s.Icon, glyph = s.Look }).ToList();
+        lock (_actionsGate)
+        {
+            var key = System.Text.Json.JsonSerializer.Serialize(list);
+            if (!force && key == _shortcutsSent) return;
+            _shortcutsSent = key;
+        }
+        foreach (var icon in list.Select(s => s.icon).Where(i => i.Length > 0).Distinct())
+        {
+            bool fresh;
+            lock (_iconsSent) fresh = _iconsSent.Add(icon);
+            if (fresh && _windows.FindIcon(icon) is { } pixels) SendIcon(pixels);
+        }
+        _link.Send(new { t = "state", topic = "shortcuts", d = new { list } });
     }
 
     static void OpenLog() =>

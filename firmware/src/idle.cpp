@@ -113,6 +113,8 @@ void build() {
 
 void wake() { woke_ms = millis(); }
 
+bool asleep() { return state != State::Awake; }
+
 void update() {
   const model::Settings &s = model::settings;
   const uint32_t idle = idleSecs();

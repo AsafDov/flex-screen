@@ -19,7 +19,11 @@ ICONS = {
     'ic-claude': (217, 119, 87),
     'ic-spotify': (30, 215, 96),
     'ic-prusa': (250, 100, 30),
+    'ic-gmail': (234, 67, 53),
 }
+
+# Where the launcher's button sits: the right end of the tab bar.
+LAUNCHER = (759, 458)
 
 
 def keymap() -> dict:
@@ -102,6 +106,14 @@ def day() -> dict[str, dict]:
             {'id': 'a4', 'kind': 'meeting', 'name': 'Meeting', 'title': 'Standup', 'icon': ''},
             {'id': 'a5', 'kind': 'device', 'name': 'Output', 'title': 'Headphones', 'icon': ''},
         ]},
+        'shortcuts': {'list': [
+            {'id': 'k1', 'name': 'Gmail', 'icon': 'ic-gmail', 'glyph': 'mail'},
+            {'id': 'k2', 'name': 'Calendar', 'icon': '', 'glyph': 'calendar'},
+            {'id': 'k3', 'name': "Today's note", 'icon': '', 'glyph': 'note'},
+            {'id': 'k4', 'name': 'Spotify', 'icon': 'ic-spotify', 'glyph': ''},
+            {'id': 'k5', 'name': 'VS Code', 'icon': 'ic-vscode', 'glyph': ''},
+            {'id': 'k6', 'name': 'Terminal', 'icon': 'ic-terminal', 'glyph': 'terminal'},
+        ]},
         'git': {'repo': 'flex-screen', 'branch': 'master', 'ahead': 2, 'behind': 0, 'm': 3, 'a': 1, 'del': 0, 'u': 2,
                 'last': 'Recent actions on Today, full-command terminal card', 'last_secs': HOUR, 'busy': '', 'error': ''},
         'windows': {'list': [
@@ -174,6 +186,14 @@ def stress() -> dict[str, dict]:
         {'id': 'a4', 'kind': 'mail', 'name': 'Gmail', 'title': 'Inbox', 'icon': ''},
         {'id': 'a5', 'kind': 'note', 'name': 'Obsidian', 'title': 'Kingkiller reread notes, part two: the Chandrian', 'icon': ''},
     ]}
+    looks = ['mail', 'calendar', 'note', 'terminal', 'code', 'media', 'volume', 'lock', 'desktop', 'folder', 'keys', 'git']
+    d['shortcuts'] = {'list': [{'id': f'k{i + 1}', 'name': f'Shortcut {i + 1} ({look})', 'icon': '', 'glyph': look}
+                               for i, look in enumerate(looks)]}
+    d['shortcuts']['list'][0].update(name='Gmail', icon='ic-gmail')
+    d['shortcuts']['list'][1].update(name='A shortcut with a name far too long for its tile to hold')
+    d['shortcuts']['list'][2].update(name='הפתק של היום')
+    d['shortcuts']['list'][3].update(name='Missing icon', icon='ic-missing', glyph='')
+    d['shortcuts']['list'].append({'id': 'k13', 'name': 'The thirteenth, one too many', 'icon': '', 'glyph': ''})
     d['git'].update(branch='feature/a-very-long-branch-name-for-the-deck', ahead=12, behind=3, m=14, a=7, **{'del': 2}, u=31,
                     last=LONG, busy='pull')
     for w in d['windows']['list']:
@@ -210,6 +230,7 @@ def empty() -> dict[str, dict]:
         'build': {'state': 'none', 'history': ''},
         'recent': {'list': []},
         'actions': {'list': []},
+        'shortcuts': {'list': []},
         'git': {'repo': '', 'error': 'Not a git repository'},
         'windows': {'list': []},
         'zones': {'mons': [], 'layouts': []},

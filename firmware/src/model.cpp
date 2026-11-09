@@ -13,6 +13,7 @@ Term term;
 Build build;
 Recent recent;
 Actions actions;
+Shortcuts shortcuts;
 Git git;
 Toast toast;
 Settings settings;

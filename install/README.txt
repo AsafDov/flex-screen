@@ -68,6 +68,25 @@ Calls (Teams, Zoom, Discord)
   Teams, Settings > Privacy > Manage API > Enable API, then tap any control on the deck
   during a meeting and choose Allow in Teams. Zoom and Discord need nothing.
 
+Shortcuts
+  The grid button at the right end of the deck's tab bar opens up to 12 shortcuts. Out
+  of the box: Gmail, Calendar, Today's note, Spotify, VS Code and Terminal. To change
+  them, tray icon > "Shortcuts...": settings.json opens with the list written in. Each
+  is one of:
+    { "name": "Gmail", "url": "https://mail.google.com" }      a link
+    { "name": "Spotify", "app": "Spotify" }                    a Start menu app, by its name
+                                                               there (brought to the front
+                                                               if it's open)
+    { "name": "Projects", "path": "C:\\Projects" }              a file, folder or program
+                                                               (optional "args")
+    { "name": "Today's note", "action": "obs.today" }          a deck action
+    { "name": "Snip", "keys": "Win+Shift+S" }                  keys, into the window in front
+  Optional on any: "glyph" (the symbol without an icon: mail, calendar, note, terminal,
+  code, music, lock, desktop, folder, keys, git, call) and "icon" (a picture or program
+  whose icon to use). Actions: obs.today, mail.open, pc.lock, desktop.show,
+  media.toggle/next/prev, vol.mute, mic.mute, term.focus, git.commit/fetch/pull/push/stash,
+  call.mic/camera/hand/leave/focus. Save the file and the deck has them within seconds.
+
 Settings (optional)
   %LOCALAPPDATA%\flex-screen\settings.json, for instance:
     { "palette": "vibrant",

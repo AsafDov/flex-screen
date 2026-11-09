@@ -64,6 +64,19 @@ static class WindowFocus
         }
     }
 
+    /// <summary>
+    /// Before starting an app from the background: the same zero-pixel mouse move makes this
+    /// app the one with the last input, which it passes on so the new app's window can come
+    /// to the front.
+    /// </summary>
+    public static void AllowLaunch()
+    {
+        var nudge = new Input { Type = InputMouse, Mouse = new MouseInput { Flags = MouseeventfMove } };
+        SendInput(1, [nudge], Marshal.SizeOf<Input>());
+        AllowSetForegroundWindow(AsfwAny);
+    }
+
+    const uint AsfwAny = 0xFFFFFFFF;
     const int SwRestore = 9;
     const uint InputMouse = 0;
     const uint MouseeventfMove = 0x0001;
@@ -97,4 +110,5 @@ static class WindowFocus
     [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool AttachThreadInput(uint attach, uint attachTo, bool on);
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(uint pid);
 }

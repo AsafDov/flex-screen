@@ -72,6 +72,7 @@ renders under 12px.
 | 15 | Action items from mail | Today, Capture | Companion | Google Tasks, the list the `todo` skill fills from mail triage; tap = mark done |
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
+| 18 | Shortcuts launcher | Every page (tab bar) | Companion | Up to 12 tiles from settings.json: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
 
 Extras on the canvas: **Lock PC** (`LockWorkStation`) and the **Headset** quick switch are
 easy. **Focus mode** and the **Claude usage meter** have no clean data source yet. They're
@@ -604,6 +605,34 @@ Gotchas found after phase 6:
     arrives from the PC's ssh process, whose parent is VS Code, so the Claude pill brings
     up that window. `.gitattributes` keeps `.sh` files LF in Windows checkouts.
   - Audio: Headphones come right after Speakers among the outputs (on request).
+- Firmware 0.13.0, the shortcuts launcher (on request):
+  - A button at the right end of the tab bar, on every page, opens a panel over the page
+    with up to 12 tiles in four columns (an app's or site's icon, else a symbol, and the
+    name on up to two lines). A tap runs one and closes the panel; a tap anywhere else,
+    the button included, closes it, through a see-through layer over the screen so the tap
+    doesn't also reach the page. The button is a plain object, not an `lv_button`: the
+    tabview counts every button in its bar as a tab. The panel grows up from the tab bar
+    with the number of rows; idle closes it.
+  - The list lives in the companion's settings.json (`shortcuts`), so each PC has its
+    own; the tray's **Shortcuts…** opens the file, writing the defaults in first (Gmail,
+    Calendar, Today's note, Spotify, VS Code, Terminal). Kinds: `url`, `app` (a Start
+    menu name, so Store apps such as Spotify and Windows Terminal work without knowing
+    their package ids), `path`, `action` (deck actions that need no arguments) and `keys`.
+  - An app that's open comes to the front instead of starting again: its windows are
+    matched by the same rules the taskbar order uses (the window's or package's
+    AppUserModelID, the exe under a known folder, the exe's name in the id), then by the
+    window list's app name. One started from the background could open behind the window
+    in front, so the companion first takes the "last input" with a zero-pixel mouse move
+    and passes the foreground on (`AllowSetForegroundWindow`), and brings the new window up
+    when it appears (up to 8 s).
+  - Icons: the shell's picture of the Start menu item, file or folder (premultiplied
+    alpha undone), and for links the site's own `/favicon.ico` (the frame nearest 32 px,
+    PNG or bitmap), fetched from the site itself, never a favicon service. Google Calendar
+    has none there, so its tile shows today's date. The deck's icon store grew from 24 to
+    50, and an icon a Recent or shortcut tile shows is kept like a listed window's.
+  - Simulator: 19 new checks (opening, a tile's action, closing both ways without
+    reaching the page, every page, 12 tiles and the 13th left out, a long name cut at two
+    lines, the empty list, offline) and launcher shots in every tour.
 
 ## Decisions
 

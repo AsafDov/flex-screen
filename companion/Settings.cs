@@ -10,7 +10,8 @@ namespace FlexScreen.Companion;
 ///   "palette": "base",                                        // the deck's colors: "base", "vibrant", "ember" or "violet"
 ///   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
 ///   "layerNames": ["BASE", "NAV", "SYMBOL"],                  // the keyboard's layers, from 0
-///   "obsidianVault": "C:\\Users\\me\\Notes\\MyVault"            // if it can't be found by itself
+///   "obsidianVault": "C:\\Users\\me\\Notes\\MyVault",           // if it can't be found by itself
+///   "shortcuts": [ { "name": "Gmail", "url": "https://mail.google.com" }, { "name": "Spotify", "app": "Spotify" } ]
 /// }
 /// </code>
 /// </summary>
@@ -28,6 +29,9 @@ static class Settings
         (Get("layerNames") as JsonArray)?.Select(n => (string?)n ?? "").ToArray() is { Length: > 0 } names ? names : DefaultLayerNames;
 
     public static string? ObsidianVault => (string?)Get("obsidianVault") is { Length: > 0 } path ? path : null;
+
+    /// <summary>The launcher's tiles as written (see <see cref="FlexScreen.Companion.Shortcuts"/>); null when the file has none.</summary>
+    public static JsonArray? Shortcuts => Get("shortcuts") as JsonArray;
 
     /// <summary>The deck's color theme: what the tray's Deck colors menu offers.</summary>
     public static readonly (string Name, string Label)[] Palettes = [("base", "Base"), ("vibrant", "Vibrant"), ("ember", "Ember"), ("violet", "Violet")];

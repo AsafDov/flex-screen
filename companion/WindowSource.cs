@@ -79,6 +79,38 @@ sealed class WindowSource
         lock (_gate) return _icons.GetValueOrDefault(id);
     }
 
+    /// <summary>An icon from elsewhere (a shortcut's), kept so the deck can ask for it like a window's.</summary>
+    public WindowIcon AddIcon(Bitmap image)
+    {
+        var icon = Encode(image);
+        lock (_gate) _icons[icon.Id] = icon;
+        return icon;
+    }
+
+    /// <summary>
+    /// The most recently used open window of a Start menu app (by its id: an AppUserModelID or
+    /// an exe path), or failing that of an app the window list names <paramref name="name"/>; 0 if none.
+    /// </summary>
+    public long FindAppWindow(string appId, string name)
+    {
+        var all = All;
+        lock (_gate)
+        {
+            var recent = all.OrderByDescending(w => _used.GetValueOrDefault(w.Id)).ToList();
+            var best = (Score: 0, Id: 0L);
+            foreach (var w in recent)
+            {
+                var hwnd = (IntPtr)w.Id;
+                GetWindowThreadProcessId(hwnd, out var pid);
+                var score = _taskbar.Match(appId, hwnd, pid, ProcessPath(hwnd));
+                if (score == 0 && name.Length > 0 && string.Equals(w.App, name, StringComparison.OrdinalIgnoreCase)) score = 1;
+                if (score > best.Score) best = (score, w.Id);
+                if (score == 2) break;
+            }
+            return best.Id;
+        }
+    }
+
     /// <summary>Brings the window to the front, or minimizes it if it's there already (like its taskbar button).</summary>
     public static void Focus(long id)
     {
@@ -332,6 +364,11 @@ sealed class WindowSource
     {
         // Icon.ToBitmap keeps 32-bit icons' alpha, which drawing the icon straight into a bitmap loses.
         using var full = icon.ToBitmap();
+        return Encode(full);
+    }
+
+    static WindowIcon Encode(Bitmap full)
+    {
         using var small = new Bitmap(IconSize, IconSize, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(small))
         {

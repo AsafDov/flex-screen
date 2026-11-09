@@ -274,6 +274,79 @@ def test_idle(d: Deck) -> None:
     d.settle()
 
 
+def launcher_open(d: Deck) -> bool:
+    return on_screen(d, 'Change them from the tray icon')
+
+
+def test_launcher(d: Deck) -> None:
+    d.page(0)
+    button = next((n for n in shown(d) if n['y'] >= 436 and n['w'] == 58), None)
+    check('launcher: its button ends the tab bar', button is not None and button['x'] + button['w'] <= 790
+          and abs(button['x'] + button['w'] // 2 - fixtures.LAUNCHER[0]) <= 2, str(button))
+    tabs = [n for n in shown(d) if n['y'] >= 436 and n.get('text', '').strip().endswith(('Today', 'Numpad'))]
+    check('launcher: all six tabs still fit beside it', len(tabs) == 2 and all(t['x'] + t['w'] < 730 for t in tabs), str(tabs))
+    d.tap(*fixtures.LAUNCHER)
+    check('launcher: the button opens it', launcher_open(d))
+    names = ['Gmail', 'Calendar', "Today's note", 'Spotify', 'VS Code', 'Terminal']
+    check('launcher: every shortcut has a tile', all(on_screen(d, n, exact=True) for n in names),
+          str([n for n in names if not on_screen(d, n, exact=True)]))
+    check("launcher: the calendar tile shows today's date", on_screen(d, '8', exact=True))
+    head = label(d, 'Shortcuts', exact=True)
+    check('launcher: it sits between the bars', head is not None and head['y'] > 44, str(head))
+    d.shot(os.path.join(OUT, 'launcher.png'))
+    # The panel's own label: Today's now-playing card says "Spotify" too, under the panel (the
+    # top layer, where the panel is, comes last in the tree).
+    tile = [n for n in shown(d) if n.get('text') == 'Spotify'][-1]
+    mark = d.mark()
+    d.tap(tile['x'] + tile['w'] // 2, tile['y'] + tile['h'] // 2)
+    check('launcher: a tile runs its shortcut', did(d, mark, 'shortcut.run', id='k4') is not None, str(d.acts(mark)))
+    check('launcher: and closes', not launcher_open(d))
+
+    d.tap(*fixtures.LAUNCHER)
+    mark = d.mark()
+    d.tap(400, 100)  # on Today's Up next card, above the panel
+    check('launcher: a tap beside it closes it', not launcher_open(d))
+    check('launcher: and reaches nothing underneath', not d.acts(mark), str(d.acts(mark)))
+    d.tap(*fixtures.LAUNCHER)
+    d.tap(*fixtures.LAUNCHER)
+    check('launcher: the button again closes it', not launcher_open(d))
+
+    tap(d, 'Capture', below=436)
+    check('launcher: the tabs still switch pages', on_screen(d, 'FROM MAIL'))
+    d.tap(*fixtures.LAUNCHER)
+    check('launcher: it opens over any page', launcher_open(d) and on_screen(d, 'Gmail', exact=True))
+    d.tap(*fixtures.LAUNCHER)
+    d.page(0)
+
+    d.state('shortcuts', fixtures.stress()['shortcuts'])
+    d.tap(*fixtures.LAUNCHER)
+    tiles = [n for n in shown(d) if n.get('text', '').startswith('Shortcut ')]
+    check('launcher: twelve tiles at most', on_screen(d, 'Shortcut 12 (git)') and not on_screen(d, 'thirteenth'), f'{len(tiles)} tiles')
+    head = label(d, 'Shortcuts', exact=True)
+    check('launcher: twelve still fit between the bars', head is not None and head['y'] > 44, str(head))
+    long_name = label(d, 'A shortcut with a name far too long')
+    check('launcher: a long name stops at two lines', long_name is not None and long_name['h'] <= 40, str(long_name))
+    d.shot(os.path.join(OUT, 'launcher-12.png'))
+    d.tap(*fixtures.LAUNCHER)
+
+    d.state('shortcuts', {'list': []})
+    d.tap(*fixtures.LAUNCHER)
+    check('launcher: an empty list says how to add some', on_screen(d, 'No shortcuts yet'))
+    d.shot(os.path.join(OUT, 'launcher-empty.png'))
+    d.tap(*fixtures.LAUNCHER)
+
+    d.state('shortcuts', fixtures.day()['shortcuts'])
+    d.offline()
+    d.tap(*fixtures.LAUNCHER)
+    note = label(d, 'PC offline', below=100)
+    check('launcher: offline it says so', note is not None and not on_screen(d, 'Gmail', exact=True))
+    mark = d.mark()
+    d.tap(*fixtures.LAUNCHER)
+    check('launcher: offline the button still closes it', not launcher_open(d))
+    d.online()
+    d.settle()
+
+
 def test_offline(d: Deck) -> None:
     d.page(0)
     d.offline()
@@ -295,7 +368,7 @@ def main() -> int:
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
         for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_numpad,
-                     test_toast, test_call, test_cheat_sheet, test_idle, test_offline):
+                     test_toast, test_call, test_cheat_sheet, test_launcher, test_idle, test_offline):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)

@@ -398,6 +398,18 @@ void handleState(const char *topic, JsonObjectConst d) {
       out.icon = x["icon"] | "";
     }
     a.version++;
+  } else if (!strcmp(topic, "shortcuts")) {
+    model::Shortcuts &s = model::shortcuts;
+    s.count = 0;
+    for (JsonObjectConst x : d["list"].as<JsonArrayConst>()) {
+      if (s.count == model::Shortcuts::kMax) break;
+      model::Shortcut &out = s.list[s.count++];
+      out.id = x["id"] | "";
+      out.name = x["name"] | "";
+      out.icon = x["icon"] | "";
+      out.glyph = x["glyph"] | "";
+    }
+    s.version++;
   } else if (!strcmp(topic, "git")) {
     handleGit(d);
   } else if (!strcmp(topic, "windows")) {
@@ -828,6 +840,7 @@ void toggleMic() { act("mic.mute"); }
 void openClaude(const char *session) { act("claude.open", "id", session); }
 void replayCommand(const char *cmd) { act("term.replay", "cmd", cmd); }
 void runRecent(const char *id) { act("recent.run", "id", id); }
+void runShortcut(const char *id) { act("shortcut.run", "id", id); }
 void interruptCommand() { act("term.interrupt"); }
 void focusTerminal() { act("term.focus"); }
 

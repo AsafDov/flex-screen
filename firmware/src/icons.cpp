@@ -6,9 +6,10 @@
 namespace icons {
 namespace {
 
-// Three times the windows on screen: a slot is only reused for an icon no listed window
-// shows, so the page never draws one that's been freed.
-constexpr int kSlots = 24;
+// Room for everything that can be on screen at once (8 windows, 5 Recent tiles, 12
+// shortcuts) and as many again: a slot is only reused for an icon nothing listed shows, so
+// no page draws one that's been replaced.
+constexpr int kSlots = 50;
 
 struct Slot {
   String id;
@@ -24,6 +25,12 @@ uint32_t changes = 0;
 bool listed(const String &id) {
   for (int i = 0; i < model::windows.count; i++) {
     if (model::windows.list[i].icon == id) return true;
+  }
+  for (int i = 0; i < model::actions.count; i++) {
+    if (model::actions.list[i].icon == id) return true;
+  }
+  for (int i = 0; i < model::shortcuts.count; i++) {
+    if (model::shortcuts.list[i].icon == id) return true;
   }
   return false;
 }
@@ -48,7 +55,7 @@ void put(const char *id, uint8_t *pixels, int w, int h) {
     }
   }
   Slot *s = freeSlot();
-  if (!s) {  // every slot shows a listed window; can't happen with 8 windows and 24 slots
+  if (!s) {  // every slot shows something listed; can't happen with 25 listed and 50 slots
     heap_caps_free(pixels);
     return;
   }

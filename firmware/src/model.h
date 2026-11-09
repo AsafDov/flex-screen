@@ -154,6 +154,21 @@ struct Actions {
   uint32_t version = 0;
 };
 
+// A tile in the shortcuts launcher; the companion runs it.
+struct Shortcut {
+  String id;
+  String name;
+  String icon;   // an app's or site's icon id, else ""
+  String glyph;  // the symbol without an icon: mail, calendar, note, terminal, … or "" (the first letter)
+};
+
+struct Shortcuts {
+  static constexpr int kMax = 12;  // three rows of four
+  Shortcut list[kMax];
+  int count = 0;
+  uint32_t version = 0;
+};
+
 struct Git {
   String repo;
   String branch;
@@ -381,6 +396,7 @@ extern Term term;
 extern Build build;
 extern Recent recent;
 extern Actions actions;
+extern Shortcuts shortcuts;
 extern Git git;
 extern Toast toast;
 extern Settings settings;
