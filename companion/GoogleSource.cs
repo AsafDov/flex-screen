@@ -17,7 +17,7 @@ record CalendarEvent(string Id, string Title, DateTimeOffset Start, DateTimeOffs
 /// <param name="Due">"yyyy-MM-dd", or "".</param>
 record MailTask(string List, string Id, string Title, string From, string Due, bool Done);
 
-/// <param name="Status">"ok", "setup" (no OAuth client file yet), "signin" (not connected) or "error".</param>
+/// <param name="Status">"ok", "setup" (no OAuth client file yet), "signin" (not connected), "error", or "" before the first read.</param>
 record GoogleState(string Status, IReadOnlyList<CalendarEvent> Events, IReadOnlyList<MailTask> Tasks);
 
 /// <summary>
@@ -49,7 +49,9 @@ sealed class GoogleSource
     string? _accessToken;
     DateTime _accessExpires;
 
-    public GoogleState Current { get; private set; } = new("setup", [], []);
+    // Not "setup" until the first read says so: a slow first read (it timed out once, right
+    // after a restart) left the deck asking to connect Google for minutes.
+    public GoogleState Current { get; private set; } = new("", [], []);
 
     /// <summary>Raised on a worker thread after each refresh that changed something.</summary>
     public event Action<GoogleState>? Changed;

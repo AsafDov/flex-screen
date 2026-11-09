@@ -72,7 +72,7 @@ renders under 12px.
 | 15 | Action items from mail | Today, Capture | Companion | Google Tasks, the list the `todo` skill fills from mail triage; tap = mark done |
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
-| 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color; built-in sets plus settings.json's `contextBar`. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
+| 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (long press) and kept per app; settings.json's `contextBar` adds actions. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
 | 18 | Shortcuts launcher | Every page (tab bar) | Companion | Up to 12 tiles from settings.json: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
 
 Extras on the canvas: **Lock PC** (`LockWorkStation`) and the **Headset** quick switch are
@@ -669,6 +669,30 @@ Gotchas found after phase 6:
     plain box (a Windows tile's text column), writing past the box, so the simulator
     crashed now and then at start-up deep in LVGL. `fillRow()` now leaves anything but a
     label alone. 14 new checks (100 in all), including that no page runs into the bar.
+
+- Firmware 0.15.0, the context bar arranged on the deck (on request: "long pressing a
+  button should unroll a small menu above of actions to choose from", rather than editing
+  and rebuilding to reorder VS Code's keys or swap Build for Go to symbol):
+  - Each app has a bank of actions: VS Code 21 (Go to symbol, Go to line, Run, Definition,
+    Rename, Format, Comment, Quick fix, Source control…), the browsers 19, Terminal 18,
+    Obsidian 13, Teams 8 (14 in a meeting), Discord 16; and for every app the everyday 22
+    (cut, redo, select all, snap left/right, maximize, task view, screenshot, emoji, desktop,
+    lock…), less any the app has under the same name. The defaults are the earlier sets.
+  - A long press on a key opens a menu above the bar: the app's actions, then
+    "Everywhere", five across, scrolling past the status bar; this key's action filled in
+    the app's color, the others on the bar outlined. Picking one puts it in that place; one
+    already on the bar swaps places with it, which is how keys are reordered. Remove and
+    Reset (the app's defaults) are in its heading; "+" at the end of the bar adds a key
+    while there are fewer than 8. A tap still runs a key (short click; the long press
+    doesn't).
+  - The companion owns the layouts, per app key (the exe, or "ms-teams:call" in a
+    meeting), in `context-bar.json` beside settings.json, so they survive restarts and
+    belong to that PC. An edit names the app the deck's bar showed and is ignored if the
+    bar has moved on. settings.json's actions join the app's bank and are its default bar.
+  - The list ignored drags that started between items (a `box()` takes no presses, so the
+    press went to the menu, which doesn't scroll); it takes them now.
+  - Checked: the placement rules and the saved file from the companion's own code against
+    the real window in front; 15 new simulator checks (115).
 
 ## Decisions
 

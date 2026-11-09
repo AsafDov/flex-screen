@@ -178,11 +178,18 @@ struct ContextKey {
 
 struct Context {
   static constexpr int kMax = 8;
+  static constexpr int kBankMax = 48;
   String app;          // "Chrome"
+  String key;          // whose layout: "chrome", "ms-teams:call"; sent back with an edit
   String icon;         // its window icon's id
   uint32_t color = 0;  // the bar's color, 0xRRGGBB
   ContextKey keys[kMax];
   int count = 0;       // 0: no bar
+  // Every action a key can be (a long press picks one): the app's own first, then the
+  // everyday ones (copy, paste, snap…).
+  ContextKey bank[kBankMax];
+  int bank_count = 0;
+  int own = 0;
   uint32_t version = 0;
 };
 

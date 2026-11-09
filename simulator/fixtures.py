@@ -25,6 +25,28 @@ ICONS = {
 # Where the launcher's button sits: the right end of the tab bar.
 LAUNCHER = (759, 458)
 
+# VS Code's actions for the context bar, then the everyday ones, as the companion sends them.
+VSCODE_BANK = [
+    ('build', 'Build', 'play'), ('run', 'Run', 'bug'), ('terminal', 'Terminal', 'terminal'), ('commands', 'Commands', 'keyboard'),
+    ('goto-file', 'Go to file', 'file'), ('goto-symbol', 'Go to symbol', 'at'), ('goto-line', 'Go to line', 'line'),
+    ('definition', 'Definition', 'target'), ('search', 'Search', 'search'), ('split', 'Split', 'split-right'),
+    ('sidebar', 'Sidebar', 'bars'), ('format', 'Format', 'format'), ('rename', 'Rename', 'cursor'), ('comment', 'Comment', 'comment'),
+    ('quick-fix', 'Quick fix', 'bolt'), ('git', 'Source control', 'branch'), ('problems', 'Problems', 'bell'),
+    ('back', 'Back', 'back'), ('forward', 'Forward', 'forward'), ('close-tab', 'Close tab', 'close'), ('reopen', 'Reopen tab', 'history'),
+]
+EVERYDAY_BANK = [
+    ('any-copy', 'Copy', 'copy'), ('any-paste', 'Paste', 'paste'), ('any-cut', 'Cut', 'cut'), ('any-undo', 'Undo', 'undo'),
+    ('any-redo', 'Redo', 'redo'), ('any-save', 'Save', 'save'), ('any-find', 'Find', 'search'), ('any-all', 'Select all', 'check'),
+    ('any-new', 'New', 'plus'), ('any-open', 'Open', 'folder'), ('any-print', 'Print', 'print'), ('any-close', 'Close', 'close'),
+    ('any-switch', 'Switch app', 'switch'), ('any-snap-left', 'Snap left', 'back'), ('any-snap-right', 'Snap right', 'forward'),
+    ('any-max', 'Maximize', 'expand'), ('any-min', 'Minimize', 'down'), ('any-tasks', 'Task view', 'window'),
+    ('any-shot', 'Screenshot', 'camera'), ('any-emoji', 'Emoji', 'smile'), ('any-desktop', 'Desktop', 'home'), ('any-lock', 'Lock PC', 'lock'),
+]
+
+
+def bank(items: list[tuple[str, str, str]]) -> list[dict]:
+    return [{'id': i, 'name': n, 'glyph': g} for i, n, g in items]
+
 
 def keymap() -> dict:
     """A small split keyboard (3x5 a side plus 3 thumbs each), three layers."""
@@ -114,14 +136,14 @@ def day() -> dict[str, dict]:
             {'id': 'k5', 'name': 'VS Code', 'icon': 'ic-vscode', 'glyph': ''},
             {'id': 'k6', 'name': 'Terminal', 'icon': 'ic-terminal', 'glyph': 'terminal'},
         ]},
-        'context': {'app': 'VS Code', 'icon': 'ic-vscode', 'color': 0x2F9BF0, 'keys': [
-            {'id': 'x1', 'name': 'Build', 'glyph': 'play'},
-            {'id': 'x2', 'name': 'Terminal', 'glyph': 'terminal'},
-            {'id': 'x3', 'name': 'Commands', 'glyph': 'keyboard'},
-            {'id': 'x4', 'name': 'Go to file', 'glyph': 'file'},
-            {'id': 'x5', 'name': 'Search', 'glyph': 'search'},
-            {'id': 'x6', 'name': 'Split', 'glyph': 'split-right'},
-        ]},
+        'context': {'app': 'VS Code', 'key': 'code', 'icon': 'ic-vscode', 'color': 0x2F9BF0, 'keys': [
+            {'id': 'build', 'name': 'Build', 'glyph': 'play'},
+            {'id': 'terminal', 'name': 'Terminal', 'glyph': 'terminal'},
+            {'id': 'commands', 'name': 'Commands', 'glyph': 'keyboard'},
+            {'id': 'goto-file', 'name': 'Go to file', 'glyph': 'file'},
+            {'id': 'search', 'name': 'Search', 'glyph': 'search'},
+            {'id': 'split', 'name': 'Split', 'glyph': 'split-right'},
+        ], 'bank': bank(VSCODE_BANK + EVERYDAY_BANK), 'own': len(VSCODE_BANK)},
         'git': {'repo': 'flex-screen', 'branch': 'master', 'ahead': 2, 'behind': 0, 'm': 3, 'a': 1, 'del': 0, 'u': 2,
                 'last': 'Recent actions on Today, full-command terminal card', 'last_secs': HOUR, 'busy': '', 'error': ''},
         'windows': {'list': [

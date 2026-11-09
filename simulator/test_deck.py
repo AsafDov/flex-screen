@@ -371,7 +371,7 @@ def test_context_bar(d: Deck) -> None:
     mark = d.mark()
     if key:
         d.tap(key['x'] + key['w'] // 2, key['y'] + key['h'] // 2)
-    check('context bar: a key goes to the companion', did(d, mark, 'ctx.run', id='x3') is not None, str(d.acts(mark)))
+    check('context bar: a key goes to the companion', did(d, mark, 'ctx.run', id='commands') is not None, str(d.acts(mark)))
     for page in range(5):
         d.page(page)
         bad = overlapping_bar(d)
@@ -416,6 +416,84 @@ def test_context_bar(d: Deck) -> None:
     d.settle()
 
 
+def menu_open(d: Deck) -> bool:
+    return on_screen(d, 'Instead of') or on_screen(d, 'Add a key')
+
+
+def hold_key(d: Deck, name: str) -> None:
+    key = bar_key(d, name)
+    if key:
+        d.hold(key['x'] + key['w'] // 2, key['y'] + key['h'] // 2)
+
+
+def menu_item(d: Deck, name: str) -> dict | None:
+    """An item in the long-press menu (above the bar, on the top layer: last in the tree)."""
+    found = [n for n in shown(d) if n.get('text') == name and n['y'] < BAR_TOP]
+    return found[-1] if found else None
+
+
+def test_context_menu(d: Deck) -> None:
+    d.page(0)
+    mark = d.mark()
+    hold_key(d, 'Commands')
+    check('context menu: a long press opens it', on_screen(d, 'Instead of Commands'))
+    check('context menu: a long press runs nothing', not d.took('ctx.run', since=mark), str(d.acts(mark)))
+    title = label(d, 'Instead of Commands')
+    check('context menu: it fits between the status bar and the bar', title is not None and title['y'] > 44, str(title))
+    check("context menu: the app's actions and the everyday ones",
+          menu_item(d, 'Go to symbol') is not None and on_screen(d, 'VS CODE', exact=True), '')
+    d.shot(os.path.join(OUT, 'context-menu.png'))
+    d.drag(400, 300, 400, 100)  # from a gap between items
+    check('context menu: it scrolls to the everyday actions', menu_item(d, 'Screenshot') is not None and menu_open(d))
+    d.shot(os.path.join(OUT, 'context-menu-everyday.png'))
+    d.drag(400, 120, 400, 320)
+    item = menu_item(d, 'Go to symbol')
+    mark = d.mark()
+    if item:
+        d.tap(item['x'] + item['w'] // 2, item['y'] + item['h'] // 2)
+    check('context menu: picking an action puts it in that place',
+          did(d, mark, 'ctx.set', app='code', slot=2, id='goto-symbol') is not None, str(d.acts(mark)))
+    check('context menu: and closes', not menu_open(d))
+
+    hold_key(d, 'Split')
+    mark = d.mark()
+    tap(d, 'Remove', exact=True)
+    check('context menu: Remove takes the key off', did(d, mark, 'ctx.remove', app='code', slot=5) is not None, str(d.acts(mark)))
+
+    hold_key(d, 'Build')
+    mark = d.mark()
+    tap(d, 'Reset', exact=True)
+    check("context menu: Reset puts the app's keys back", did(d, mark, 'ctx.reset', app='code') is not None, str(d.acts(mark)))
+
+    plus = next((n for n in shown(d) if n.get('text') == '\uf067' and n['y'] >= BAR_TOP), None)
+    if plus:
+        d.tap(plus['x'] + plus['w'] // 2, plus['y'] + plus['h'] // 2)
+    check('context menu: + opens it to add a key', on_screen(d, 'Add a key') and not on_screen(d, 'Remove', exact=True))
+    item = menu_item(d, 'Rename')
+    mark = d.mark()
+    if item:
+        d.tap(item['x'] + item['w'] // 2, item['y'] + item['h'] // 2)
+    check('context menu: an added key goes at the end', did(d, mark, 'ctx.set', app='code', slot=6, id='rename') is not None,
+          str(d.acts(mark)))
+
+    hold_key(d, 'Build')
+    mark = d.mark()
+    d.tap(400, 20)  # the status bar, above the menu
+    check('context menu: a tap beside it closes it', not menu_open(d))
+    check('context menu: and reaches nothing underneath', not d.acts(mark), str(d.acts(mark)))
+
+    d.state('context', dict(fixtures.day()['context'], keys=fixtures.day()['context']['keys'][:2] + [
+        {'id': 'goto-symbol', 'name': 'Go to symbol', 'glyph': 'at'}]))
+    d.settle()
+    check('context menu: the bar follows what the companion sends back', bar_key(d, 'Go to symbol') is not None)
+    d.state('context', dict(fixtures.day()['context'], keys=[]))
+    d.settle()
+    plus = next((n for n in shown(d) if n.get('text') == '\uf067' and n['y'] >= BAR_TOP), None)
+    check('context menu: with every key removed, + is still there', plus is not None)
+    d.state('context', fixtures.day()['context'])
+    d.settle()
+
+
 def test_offline(d: Deck) -> None:
     d.page(0)
     d.offline()
@@ -437,7 +515,7 @@ def main() -> int:
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
         for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_numpad,
-                     test_toast, test_call, test_cheat_sheet, test_launcher, test_context_bar, test_idle, test_offline):
+                     test_toast, test_call, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_idle, test_offline):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)

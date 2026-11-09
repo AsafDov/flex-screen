@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.14.0";
+constexpr const char *kFirmwareVersion = "0.15.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -36,6 +36,12 @@ void replayCommand(const char *cmd);  // again, in the VS Code terminal it ran i
 void runRecent(const char *id);       // a Recent tile on Today: the same action again
 void runShortcut(const char *id);     // a launcher tile: opens the app, link, … it stands for
 void runContextKey(const char *id);   // a context bar key: into the app in front
+// The context bar's layout for `app` (model::context.key): action `id` into place `slot`
+// (count: a new key at the end; one already on the bar swaps places), a key off the bar,
+// or all back to the app's defaults. The companion keeps it and sends the bar again.
+void contextSet(const char *app, int slot, const char *id);
+void contextRemove(const char *app, int slot);
+void contextReset(const char *app);
 void interruptCommand();               // Ctrl+C
 void focusTerminal();
 void git(const char *operation);       // "fetch", "pull", "push", "stash", "commit"

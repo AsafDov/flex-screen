@@ -811,6 +811,9 @@ sealed class TrayApp : ApplicationContext
             case "recent.run": RunRecent(id); break;
             case "shortcut.run": _shortcuts.Run(id); break;
             case "ctx.run": _context.Run(id); break;
+            case "ctx.set": _context.Set((string?)message["app"] ?? "", (int?)message["slot"] ?? -1, id); break;
+            case "ctx.remove": _context.Remove((string?)message["app"] ?? "", (int?)message["slot"] ?? -1); break;
+            case "ctx.reset": _context.Reset((string?)message["app"] ?? ""); break;
             case "desktop.show": KeyInput.Combo("Win+D"); break;
             default: Log.Write($"act: unknown action {action}"); break;
         }
@@ -972,9 +975,12 @@ sealed class TrayApp : ApplicationContext
         var d = new
         {
             app = bar.App,
+            key = bar.Key,
             icon = bar.Icon,
             color = bar.Color,
             keys = bar.Keys.Select(k => new { id = k.Id, name = k.Name, glyph = k.Glyph }),
+            bank = bar.Bank.Select(k => new { id = k.Id, name = k.Name, glyph = k.Glyph }),
+            own = bar.Own,
         };
         lock (_actionsGate)
         {

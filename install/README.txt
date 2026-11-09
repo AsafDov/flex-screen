@@ -91,13 +91,17 @@ Context bar
   The strip above the deck's tabs has keys for the app in front, in its color: VS Code,
   Chrome and Edge, Windows Terminal, Obsidian, Teams (another set during a meeting) and
   Discord have their own; any other app gets Copy, Paste, Undo, Save, Find and Close. A key
-  presses its shortcut in that app's window. To change or add sets, in settings.json:
+  presses its shortcut in that app's window. Long-press a key to pick another action for
+  its place from that app's list (one already on the bar swaps places with it), remove
+  it, or reset the app's keys; "+" adds a key. The companion keeps each app's keys in
+  %LOCALAPPDATA%\flex-screen\context-bar.json. To add your own actions to an app's list,
+  in settings.json:
     "contextBar": {
       "Spotify": { "color": "#1DB954", "keys": [
         { "name": "Like", "keys": "Alt+Shift+B", "glyph": "heart" } ] }
     }
-  by exe name ("spotify") or the name the deck shows ("Spotify"), "*" for every other app;
-  a set given replaces the built-in one. Keys are "keys", "action" (as for shortcuts) or
+  by exe name ("spotify") or the name the deck shows ("Spotify"), "*" for apps without a
+  list of their own; they're the app's keys until you rearrange them on the deck. Keys are "keys", "action" (as for shortcuts) or
   "action": "close". "contextBar": false turns the bar off. The README lists the glyphs.
 
 Settings (optional)

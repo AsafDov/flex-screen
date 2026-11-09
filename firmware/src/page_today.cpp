@@ -347,7 +347,7 @@ void updateCalendar() {
     else setTextf(w.next_time, "%s%s-%s", day, from, to);
   }
 
-  if (!online) setText(w.mail_text, "Mail");
+  if (!online || g.status.length() == 0) setText(w.mail_text, "Mail");  // not read yet
   else if (g.status != "ok") setText(w.mail_text, "Mail needs Google");
   else if (g.open == 0) setText(w.mail_text, "Nothing from mail");
   else setTextf(w.mail_text, "%d to do from mail", g.open);

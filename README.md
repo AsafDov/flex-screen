@@ -49,7 +49,13 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   - **Any other app:** Copy, Paste, Undo, Save, Find, Close, in the color of its icon.
 - A key presses its shortcut in that app's window. If the desktop or a menu took the front
   meanwhile, the window comes back first.
-- Change or add sets per app in settings.json's `contextBar` (see [Settings](#settings)).
+- **Long-press a key** to pick another action for its place from that app's list (VS Code
+  also has Go to symbol, Go to line, Run, Rename, Format, Comment, Source control…; every
+  app gets an "Everywhere" list: Snap left, Screenshot, Lock PC…). One already on the bar
+  swaps places with it, which is how you reorder. **Remove** takes the key off, **Reset**
+  puts the app's defaults back, and **+** at the end adds a key. Each app's arrangement is
+  kept by the companion on that PC.
+- Add your own actions to an app's list in settings.json's `contextBar` (see [Settings](#settings)).
 
 ### Shortcuts (on every page)
 - A launcher button at the right end of the tab bar opens a panel of up to 12 tiles:
@@ -202,9 +208,10 @@ and `"icon"` (a picture or program whose icon to use). Actions: `obs.today`, `ma
 `call.mic`, `call.camera`, `call.hand`, `call.leave`, `call.focus`. The tray icon's
 **Shortcuts…** opens this file, with the default list written in if it has none.
 
-The context bar's keys can be changed or added per app, by its exe name (`chrome`,
-`spotify`) or the name the deck shows (`Chrome`), `"*"` for every other app, or turned off
-with `"contextBar": false`:
+Your own actions for the context bar, per app, by its exe name (`chrome`, `spotify`) or
+the name the deck shows (`Chrome`), `"*"` for apps without a list of their own. They join
+that app's list (long-press a key to pick them) and make up its bar until you rearrange it.
+`"contextBar": false` turns the bar off:
 
 ```jsonc
 "contextBar": {
@@ -212,7 +219,7 @@ with `"contextBar": false`:
     { "name": "Like", "keys": "Alt+Shift+B", "glyph": "heart" },
     { "name": "Shuffle", "keys": "Ctrl+S", "glyph": "shuffle" }
   ] },
-  "Chrome": [ { "name": "Back", "keys": "Alt+Left", "glyph": "back" } ]   // replaces the built-in set
+  "Chrome": [ { "name": "Pin tab", "keys": "Alt+Shift+P", "glyph": "pin" } ]
 }
 ```
 

@@ -413,6 +413,7 @@ void handleState(const char *topic, JsonObjectConst d) {
   } else if (!strcmp(topic, "context")) {
     model::Context &c = model::context;
     c.app = d["app"] | "";
+    c.key = d["key"] | "";
     c.icon = d["icon"] | "";
     c.color = uint32_t(d["color"] | 0);
     c.count = 0;
@@ -423,6 +424,15 @@ void handleState(const char *topic, JsonObjectConst d) {
       out.name = k["name"] | "";
       out.glyph = k["glyph"] | "";
     }
+    c.bank_count = 0;
+    for (JsonObjectConst k : d["bank"].as<JsonArrayConst>()) {
+      if (c.bank_count == model::Context::kBankMax) break;
+      model::ContextKey &out = c.bank[c.bank_count++];
+      out.id = k["id"] | "";
+      out.name = k["name"] | "";
+      out.glyph = k["glyph"] | "";
+    }
+    c.own = min(int(d["own"] | 0), c.bank_count);
     c.version++;
   } else if (!strcmp(topic, "git")) {
     handleGit(d);
@@ -856,6 +866,27 @@ void replayCommand(const char *cmd) { act("term.replay", "cmd", cmd); }
 void runRecent(const char *id) { act("recent.run", "id", id); }
 void runShortcut(const char *id) { act("shortcut.run", "id", id); }
 void runContextKey(const char *id) { act("ctx.run", "id", id); }
+
+void contextSet(const char *app, int slot, const char *id) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "ctx.set";
+  doc["app"] = app;
+  doc["slot"] = slot;
+  doc["id"] = id;
+  send(doc);
+}
+
+void contextRemove(const char *app, int slot) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "ctx.remove";
+  doc["app"] = app;
+  doc["slot"] = slot;
+  send(doc);
+}
+
+void contextReset(const char *app) { act("ctx.reset", "app", app); }
 void interruptCommand() { act("term.interrupt"); }
 void focusTerminal() { act("term.focus"); }
 
