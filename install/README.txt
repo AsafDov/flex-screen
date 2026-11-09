@@ -63,9 +63,11 @@ VS Code Remote-SSH (working on a Linux server from this PC)
          scp remote-claude-hooks.sh myserver:
          ssh myserver sh remote-claude-hooks.sh
      It needs python3 and curl on the server; "sh remote-claude-hooks.sh --remove" undoes it.
-     Run it again after updating from a kit older than 0.16.2: the hooks now also send the
-     model of Claude's last reply (read from the session's transcript on the server), so the
-     deck's Model key can show it.
+     Run it again after updating from a kit older than 0.16.3: the hooks now also send the
+     model of Claude's last reply (read from the session's transcript on the server), for
+     the deck's Model key, and run Claude Code's own /usage there after each turn (at most
+     every 3 minutes, in the background, through ~/.claude/flex-screen-usage.sh), for the
+     Usage key's "5h 42%".
   Restart Claude sessions on the server afterwards.
   With Claude Code's chat tab in front in VS Code, the deck's bar turns into Claude's. That
   needs Claude in an editor tab (its default, "Open in New Tab"), not in the side bar.

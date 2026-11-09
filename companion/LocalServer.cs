@@ -21,6 +21,9 @@ sealed class LocalServer
     /// <summary>A PermissionRequest hook waiting for a decision: the JSON to answer with, or null for none.</summary>
     public event Func<JsonNode, Task<string?>>? ClaudePermission;
 
+    /// <summary>The Claude plan's usage, percent of the 5-hour window and of the week, read by a server's hooks.</summary>
+    public event Action<double, double?>? ClaudeUsage;
+
     /// <summary>A VS Code window connected; the handler owns the socket until it closes.</summary>
     public event Func<WebSocket, Task>? VsCodeConnected;
 
@@ -90,6 +93,22 @@ sealed class LocalServer
                             // Claude's last reply, read from a transcript the PC can't open.
                             if (request.Headers["X-Claude-Model"] is { Length: > 0 } model && hook is JsonObject fields) fields["flex_reply_model"] = model;
                             ClaudeEvent?.Invoke(hook, request.RemoteEndPoint);  // before replying: the connection names the caller
+                        }
+                    }
+                    response.StatusCode = 204;
+                    response.Close();
+                    return;
+
+                // From a server's hooks (install/remote-claude-hooks.sh): Claude Code's own /usage
+                // run there, {"five_hour": 42, "seven_day": 17}. Hooks don't carry the figure.
+                case "/claude/usage" when request.HttpMethod == "POST" && FromLocalTool(request, needsTestHeader: false):
+                    using (var reader = new StreamReader(request.InputStream, Encoding.UTF8))
+                    {
+                        if (JsonNode.Parse(await reader.ReadToEndAsync()) is JsonObject usage &&
+                            usage["five_hour"] is JsonValue five && five.TryGetValue(out double fiveHour) && fiveHour is >= 0 and <= 1000)
+                        {
+                            double? week = usage["seven_day"] is JsonValue w && w.TryGetValue(out double sevenDay) ? sevenDay : null;
+                            ClaudeUsage?.Invoke(fiveHour, week);
                         }
                     }
                     response.StatusCode = 204;

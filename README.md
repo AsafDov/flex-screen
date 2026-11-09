@@ -87,7 +87,9 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   signs in on its own and leaves the file alone), the companion runs Claude Code's own
   `claude -p /usage` in the background, at most every 20 minutes, which reads the figure
   and renews the token. That renewal only works while Claude Code's sign-in lasts; when
-  it ends, run `claude auth login` once and the key fills in again.
+  it ends, run `claude auth login` once and the key fills in again. For Claude Code on a
+  Remote-SSH server, the server's hooks run its `/usage` there and send the figure (see
+  VS Code Remote-SSH below).
 - **Long-press a key** to pick another action for its place from that app's list (VS Code
   also has Go to symbol, Go to line, Run, Rename, Format, Comment, Source control…; every
   app gets an "Everywhere" list: Snap left, Screenshot, Lock PC…). One already on the bar
@@ -213,8 +215,10 @@ Remote-SSH window (keep it installed there), so terminal commands reach the deck
 they are. For Claude Code running on the server, add `RemoteForward 48151 localhost:48151`
 under the server's Host in the PC's `~/.ssh/config`, reconnect, and run
 `install/remote-claude-hooks.sh` on the server once (again after an update that changes
-it: 0.16.2's sends the model of Claude's last reply, for the Model key). A session there is
-matched to the VS Code window that has its folder open. Details in
+it: 0.16.2's sends the model of Claude's last reply, for the Model key; 0.16.3's also
+runs Claude Code's own `/usage` there after each turn, at most every 3 minutes, for the
+Usage key). A session there is matched to the VS Code window that has its folder open.
+Details in
 [install/README.txt](install/README.txt).
 
 ### Simulator

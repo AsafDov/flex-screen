@@ -808,6 +808,31 @@ Gotchas found after phase 6:
     subagent's reply and a quoted model in a tool's input; no header without a transcript.
     Not checked in a real VS Code window: VS Code isn't on this PC's screen to test with.
 
+- Companion 0.16.3 (firmware 0.16.0, extension 0.4.0 unchanged): the Usage key for Claude
+  Code on a Remote-SSH server (reported from the work PC: "the usage isnt coming"; the
+  Claude session on the server found that no hook payload carries the figure):
+  - The companion reads usage on the PC, from Claude Code's sign-in there; on the work PC
+    Claude Code runs on the server, so the PC has none, and hooks never carry the figure
+    (only a status line's input has `rate_limits.five_hour`).
+  - A status line was the server Claude's suggestion, but a project's own `statusLine`
+    replaces a user one (that repo has one), so it wouldn't run there.
+  - Instead `remote-claude-hooks.sh` writes `~/.claude/flex-screen-usage.sh`, run by the
+    SessionStart and Stop hooks (async, 120 s): at most every 3 minutes (a stamp file
+    beside it), Claude Code's own `/usage` headless, as the companion does on the PC
+    (`-p /usage --no-session-persistence --settings {"disableAllHooks":true}`, from /tmp,
+    without the session's CLAUDE*/ANTHROPIC* variables except CLAUDE_CONFIG_DIR). The
+    executable: `$CLAUDE_CODE_EXECPATH` (Claude Code sets it for what it runs: the binary
+    running the hook), else `claude` on the PATH, `~/.local/bin/claude`, or the newest in
+    `~/.vscode-server/extensions`. It posts `{"five_hour", "seven_day"}` to
+    `/claude/usage` through the tunnel. No token is read by our code there.
+  - The companion shows a server's reading and holds off its own while they keep coming
+    (15 minutes), so two accounts' figures don't take turns. The label goes back to
+    "Usage" once the last reading is 5 hours old.
+  - Checked: the script installed into a scratch home; its Stop hook's usage command run
+    as Claude Code would, here in Git Bash with this PC's Claude Code: /usage took 3.3 s,
+    the companion logged "usage 5h 90% (from a server's Claude Code)"; run again at once,
+    it stopped at the 3-minute stamp. Not checked on the work server itself.
+
 ## Decisions
 
 - Touch version of the board (confirmed).

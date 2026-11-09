@@ -175,6 +175,7 @@ sealed class TrayApp : ApplicationContext
         _context = new ContextBar(_windows, () => _calls.Current, RunContextAction, ClaudeInWindow, _vscode.RunCommand, () => _usage.Label,
                                   () => _vscode.Current?.ClaudeInFront == true);
         _usage.Changed += () => _context.Refresh();
+        _server.ClaudeUsage += _usage.Report;
         _context.Changed += _ => SendContext();
         _context.Toast += SendToast;
         _context.Pick += (id, title, choices, current) =>

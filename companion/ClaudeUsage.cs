@@ -58,8 +58,27 @@ sealed class ClaudeUsage
         }
     }
 
-    /// <summary>"5h 42%" for the Usage key, or "" before the first reading.</summary>
-    public string Label => Current is { } u ? $"5h {Math.Round(u.FiveHour):0}%" : "";
+    /// <summary>"5h 42%" for the Usage key, or "" before the first reading (or once the last is a 5-hour window old).</summary>
+    public string Label => Current is { } u && DateTime.UtcNow - u.At < TimeSpan.FromHours(5) ? $"5h {Math.Round(u.FiveHour):0}%" : "";
+
+    static readonly TimeSpan ServerFresh = TimeSpan.FromMinutes(15);
+    DateTime _reportedAt = DateTime.MinValue;
+
+    /// <summary>
+    /// A reading from a server's hooks (install/remote-claude-hooks.sh runs Claude Code's own
+    /// /usage there): Claude Code in a Remote-SSH window has no sign-in on this PC to read
+    /// with. While those keep coming (they do while Claude works there), this PC's own
+    /// reading waits, so two accounts' figures don't take turns on the key.
+    /// </summary>
+    public void Report(double fiveHour, double? sevenDay)
+    {
+        lock (_gate) _reportedAt = DateTime.UtcNow;
+        var moved = Current == null || Math.Round(Current.FiveHour) != Math.Round(fiveHour);
+        Current = new Usage(fiveHour, null, sevenDay, DateTime.UtcNow);
+        if (!moved) return;
+        Log.Write($"claude: usage {Label} (from a server's Claude Code)");
+        Changed?.Invoke();
+    }
 
     void Tick()
     {
@@ -76,7 +95,11 @@ sealed class ClaudeUsage
         var wait = Every;
         try
         {
-            lock (_gate) _lastAsked = DateTime.UtcNow;
+            lock (_gate)
+            {
+                _lastAsked = DateTime.UtcNow;
+                if (_lastAsked - _reportedAt < ServerFresh) return;  // a server's reading is the one in use
+            }
             if (ReadToken() is not { } token)
             {
                 // Expired (the Claude app signs in on its own and leaves the file alone): Claude
