@@ -43,6 +43,8 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   own "don't ask again" rule, when it offers one) and **Deny**. Claude's prompt on the PC
   shows as usual; whichever you answer first wins.
 - Turn it off from the tray icon: **Approve Claude from the deck**.
+- The status bar's Claude pill says **needs you** for a question too: Claude's question box,
+  a plan waiting for approval, or a turn that ends asking you something in the Claude app.
 
 ### Context bar (on every page but the Numpad)
 - A strip above the tabs with keys for the app in front on the PC, in that app's color. The
@@ -72,9 +74,15 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   through the flex-screen extension, so your own keybindings don't matter.
 - **Claude's keys** work wherever Claude Code runs, the app, VS Code or a terminal:
   **Approve** and **Deny** answer the newest request; **Model** and **Effort** show the
-  session's and open a list to change them (typed as `/model` or `/effort` into its
-  prompt); **Usage** opens your usage page. Claude Code gives the 5-hour figure only to
-  terminal status lines, so the key doesn't show it.
+  session's (the model from Claude's last reply in the session) and open a list to change
+  them (typed as `/model` or `/effort` into its prompt); **Usage** shows the 5-hour
+  window's use ("5h 42%") and types `/usage` there. The percentage comes from the usage
+  endpoint `/usage` itself reads, with the sign-in token Claude Code keeps in
+  `%USERPROFILE%\.claude\.credentials.json`. When that token has expired (the Claude app
+  signs in on its own and leaves the file alone), the companion runs Claude Code's own
+  `claude -p /usage` in the background, at most every 20 minutes, which reads the figure
+  and renews the token. That renewal only works while Claude Code's sign-in lasts; when
+  it ends, run `claude auth login` once and the key fills in again.
 - **Long-press a key** to pick another action for its place from that app's list (VS Code
   also has Go to symbol, Go to line, Run, Rename, Format, Comment, Source control…; every
   app gets an "Everywhere" list: Snap left, Screenshot, Lock PC…). One already on the bar

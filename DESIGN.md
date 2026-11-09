@@ -729,6 +729,46 @@ Gotchas found after phase 6:
   - New key kinds: `text` (typed, "\n" for Enter) and sequences ("g, i").
   - 15 new simulator checks (130).
 
+- Companion 0.16.1 (firmware 0.16.0 and extension 0.3.0 unchanged): Claude's keys fixed
+  (reported: "The model button doesnt work. it also doesnt show the current model", "The
+  usage button doesnt show the 5hr usage precentage and pressing the button should open
+  claudes "/usage" not the website", and "claude didnt say that claude needed me"):
+  - The model, shown from the start: hooks name it only at SessionStart (not always) and on
+    a switch, so a session started earlier showed "Model", and tapping it crashed on the
+    empty name. The companion now reads it from the session's transcript (every hook gives
+    `transcript_path`): the last 256 KB, the last main-conversation reply's `model`, cached
+    by the file's length; a switch a hook reported after that reply wins until the next
+    one.
+  - Usage on the key: Claude Code gives the 5-hour figure only to terminal status lines,
+    not to hooks, the app or VS Code, and keeps no copy of it. With the user's OK ("Yes,
+    read the token"), the companion reads the sign-in token from
+    `~/.claude/.credentials.json` and asks the endpoint `/usage` reads (`GET
+    api.anthropic.com/api/oauth/usage`, `anthropic-beta: oauth-2025-04-20`; undocumented)
+    every 4 minutes and 20 s after a turn ends: "5h 42%" on the key. The token is never
+    logged, kept or refreshed by the companion: renewing it itself would rotate the refresh
+    token and could sign Claude Code out.
+  - On this PC the file's token had expired two days earlier: the Claude app signs in on
+    its own, and only Claude Code in VS Code or a terminal renews the file, so the key
+    stayed blank (reported: "the usage button doesnt show it"). For an expired token the
+    companion runs Claude Code itself, headless: `claude -p /usage
+    --no-session-persistence --settings {"disableAllHooks":true}`, at most every 20
+    minutes, from the temp folder, without the CLAUDE*/ANTHROPIC* variables of whatever
+    started the companion. It makes no model call, keeps no transcript, shows no session
+    on the deck (hooks off), prints "Current session: 67% used · resets …", and renews the
+    token the way Claude Code always does, so the endpoint works again after it. Its
+    executable: `~/.local/bin/claude.exe`, else the newest one in VS Code's Claude
+    extension, else npm's. When Claude Code's own sign-in ends (the file's
+    refreshTokenExpiresAt; on this PC three days after this change), the log says to run
+    `claude auth login`.
+  - A tap on Usage types `/usage` into the session (like Model and Effort; VS Code focuses
+    Claude's input first) instead of opening the usage web page.
+  - "Claude needs you" for questions too: AskUserQuestion and ExitPlanMode are "input"
+    from their PreToolUse to their PostToolUse; a turn whose end-of-turn wrap-up asks
+    something (the Claude app's tool, seen in PreToolUse) ends as "input", not "done". The
+    toast says "Claude has a question" for those.
+  - Checked: the model and the usage figure against this PC's Claude sessions, on the
+    simulator's bar ("5h 69%"); a made-up question session showed "Claude needs you".
+
 ## Decisions
 
 - Touch version of the board (confirmed).

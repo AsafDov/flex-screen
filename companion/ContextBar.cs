@@ -67,14 +67,12 @@ sealed class ContextBar
 
     // ---- Claude: the same keys wherever Claude Code runs (its app, VS Code, a terminal)
 
-    const string UsageUrl = "https://claude.ai/settings/usage";
-
     /// <summary>Approve and Deny answer the newest permission request; Model and Effort open a list, and show the session's.</summary>
     static readonly Item[] ClaudeItems =
     [
         A("claude-approve", "Approve", "approve", "claude.approve"), A("claude-deny", "Deny", "deny", "claude.deny"),
         new("claude-model", "Model", "brain", "pick", "model"), new("claude-effort", "Effort", "gauge", "pick", "effort"),
-        new("claude-usage", "Usage", "chart", "url", UsageUrl),
+        new("claude-usage", "Usage", "chart", "slash", "/usage"),
     ];
 
     static readonly (string Id, string Name)[] Models =
@@ -263,6 +261,7 @@ sealed class ContextBar
     readonly Action<string> _act;
     readonly Func<long, (string Model, string Effort)> _claude;  // a window → its Claude session's model and effort
     readonly Func<string, bool> _vscode;                          // runs a VS Code command; false without an extension that can
+    readonly Func<string> _usage;                                 // "5h 42%", or "" while unknown
     readonly object _gate = new();
     readonly Dictionary<string, List<string>> _layouts;  // app key → action ids, as arranged on the deck
     DeckWindow? _front;  // the app window in front last (kept while the desktop or the taskbar has it)
@@ -273,8 +272,9 @@ sealed class ContextBar
     Bar _bar = Bar.None;
 
     public ContextBar(WindowSource windows, Func<CallState> call, Action<string> act,
-                      Func<long, (string Model, string Effort)> claude, Func<string, bool> vscode)
+                      Func<long, (string Model, string Effort)> claude, Func<string, bool> vscode, Func<string> usage)
     {
+        _usage = usage;
         _windows = windows;
         _call = call;
         _act = act;
@@ -369,9 +369,10 @@ sealed class ContextBar
         return new Bar(app, key, front.Icon, color, keys, bank, own.Count);
     }
 
-    /// <summary>Model and Effort show the Claude session's own, in the window the bar is for.</summary>
+    /// <summary>Model and Effort show the Claude session's own, in the window the bar is for; Usage the 5-hour window's.</summary>
     Item Live(Item item, DeckWindow front)
     {
+        if (item.Id == "claude-usage") return _usage() is { Length: > 0 } used ? item with { Name = used } : item;
         if (item.Kind != "pick") return item;
         var (model, effort) = _claude(front.Id);
         return item.Target switch
@@ -382,12 +383,13 @@ sealed class ContextBar
         };
     }
 
-    /// <summary>"claude-opus-5-5[1m]" → "Opus 5.5"; "claude-sonnet-4-5-20250929" → "Sonnet 4.5".</summary>
+    /// <summary>"claude-opus-5-5[1m]" → "Opus 5.5"; "claude-sonnet-4-5-20250929" → "Sonnet 4.5"; "" stays "".</summary>
     public static string ModelName(string id)
     {
+        if (string.IsNullOrWhiteSpace(id)) return "";
         var name = id.Replace("[1m]", "", StringComparison.OrdinalIgnoreCase);
         if (name.StartsWith("claude-", StringComparison.OrdinalIgnoreCase)) name = name[7..];
-        var parts = name.Split('-').Where(p => !(p.Length == 8 && p.All(char.IsDigit))).ToList();  // no release date
+        var parts = name.Split('-').Where(p => p.Length > 0 && !(p.Length == 8 && p.All(char.IsDigit))).ToList();  // no release date
         if (parts.Count == 0) return id;
         var family = char.ToUpperInvariant(parts[0][0]) + parts[0][1..];
         return parts.Count > 1 ? $"{family} {string.Join('.', parts.Skip(1))}" : family;
@@ -562,8 +564,13 @@ sealed class ContextBar
                 return;
             case "pick":
                 var (model, effort) = _claude(hwnd);
-                if (key.Target == "model") Pick?.Invoke(key.Id, "Model", Models, Models.FirstOrDefault(m => ModelName(model).StartsWith(m.Name, StringComparison.OrdinalIgnoreCase)).Id ?? "");
+                var shown = ModelName(model);
+                if (key.Target == "model")
+                    Pick?.Invoke(key.Id, "Model", Models, shown.Length > 0 ? Models.FirstOrDefault(m => shown.StartsWith(m.Name, StringComparison.OrdinalIgnoreCase)).Id ?? "" : "");
                 else Pick?.Invoke(key.Id, "Effort", Efforts, effort);
+                return;
+            case "slash":
+                TypeIntoClaude(hwnd, exe, key.Target);
                 return;
         }
         // VS Code runs its own commands (whatever the keybindings, and with no window focus
@@ -618,17 +625,26 @@ sealed class ContextBar
         if (key is not { Kind: "pick" }) return;
         var choices = key.Target == "model" ? Models : Efforts;
         if (choices.All(c => c.Id != choice)) return;
+        TypeIntoClaude(hwnd, exe, key.Target == "model" ? $"/model {choice}" : $"/effort {choice}");
+    }
+
+    /// <summary>
+    /// A slash command typed into the prompt of the Claude session in that window and sent:
+    /// the Claude app's or a terminal's as it is, VS Code's after the extension focuses
+    /// Claude's input (Ctrl+Esc would toggle back to the editor if it already had it).
+    /// </summary>
+    void TypeIntoClaude(long hwnd, string exe, string command)
+    {
         if (!Front(hwnd)) return;
         if (exe == "code")
         {
             if (!_vscode("claude-vscode.focus"))
             {
-                Toast?.Invoke(new Toast("error", "Changing Claude's model in VS Code needs the flex-screen extension 0.3"));
+                Toast?.Invoke(new Toast("error", $"{command} in VS Code needs the flex-screen extension 0.3"));
                 return;
             }
             Thread.Sleep(350);
         }
-        var command = key.Target == "model" ? $"/model {choice}" : $"/effort {choice}";
         Log.Write($"context: {command} in {exe}");
         KeyInput.TypeLines(command + "\n");
     }

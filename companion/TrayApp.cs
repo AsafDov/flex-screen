@@ -49,6 +49,7 @@ sealed class TrayApp : ApplicationContext
     readonly Shortcuts _shortcuts;
     readonly ContextBar _context;
     readonly ClaudeApprovals _approvals = new();
+    readonly ClaudeUsage _usage = new();
     readonly HashSet<string> _iconsSent = [];
     readonly object _artGate = new();
     readonly object _actionsGate = new();
@@ -138,7 +139,8 @@ sealed class TrayApp : ApplicationContext
             _claudeWaiting = waiting.Select(s => s.Id).ToHashSet();
             // A request the deck can answer shows its own Approve and Deny instead.
             foreach (var s in fresh.Where(s => _approvals.Pending.All(r => r.Session != s.Id)))
-                SendToast(new Toast("attention", $"Claude needs your approval · {s.Project}", "claude.open", s.Id));
+                SendToast(new Toast("attention", ClaudeSource.IsQuestion(s) ? $"Claude has a question · {s.Project}" : $"Claude needs your approval · {s.Project}",
+                                    "claude.open", s.Id));
             _context?.Refresh();  // Claude's model and effort on the context bar
         };
         _server.VsCodeConnected += _vscode.Serve;
@@ -168,7 +170,8 @@ sealed class TrayApp : ApplicationContext
         _calls.Changed += c => _link.Send(CallMessage(c));
         _calls.Toast += SendToast;
         _mixer.Changed += _ => { if (_calls.Current.Active) _link.Send(CallMessage(_calls.Current)); };
-        _context = new ContextBar(_windows, () => _calls.Current, RunContextAction, ClaudeInWindow, _vscode.RunCommand);
+        _context = new ContextBar(_windows, () => _calls.Current, RunContextAction, ClaudeInWindow, _vscode.RunCommand, () => _usage.Label);
+        _usage.Changed += () => _context.Refresh();
         _context.Changed += _ => SendContext();
         _context.Toast += SendToast;
         _context.Pick += (id, title, choices, current) =>
@@ -217,6 +220,7 @@ sealed class TrayApp : ApplicationContext
         _obsidian.Start();
         _google.Start();
         _calls.Start();
+        _usage.Start();
         _shortcuts.Refresh();
         _context.Refresh();
         _link.Start();
@@ -1025,6 +1029,7 @@ sealed class TrayApp : ApplicationContext
                 break;
             case "UserPromptSubmit" or "Stop" or "SessionEnd":
                 _approvals.Settled(session);
+                if ((string?)hook["hook_event_name"] == "Stop") _usage.Soon();  // the turn used some
                 break;
         }
     }
