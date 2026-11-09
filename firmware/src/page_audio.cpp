@@ -8,7 +8,8 @@
 namespace ui::audio {
 namespace {
 
-constexpr int kArtSize = 180;  // matches the companion's ArtSize, so no scaling
+// The companion sends 180 px art; it's drawn smaller so the card fits above the context bar.
+constexpr int kArtSize = 128;
 constexpr int kChannels = 1 + model::Mixer::kMax;  // Master + apps
 constexpr uint32_t kHoldAfterTouchMs = 1000;       // the mixer is polled every 750 ms
 constexpr uint32_t kProgressEveryMs = 250;
@@ -138,6 +139,7 @@ void buildNowPlaying(lv_obj_t *parent) {
   lv_obj_center(w.art_icon);
   w.art = lv_image_create(holder);
   lv_obj_set_size(w.art, kArtSize, kArtSize);
+  lv_image_set_inner_align(w.art, LV_IMAGE_ALIGN_STRETCH);
   lv_obj_set_hidden(w.art, true);
 
   lv_obj_t *side = box(top);

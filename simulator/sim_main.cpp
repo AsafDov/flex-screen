@@ -8,6 +8,7 @@
 // --headless skips the window, for tests.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <dbghelp.h>
 
 #include <Arduino.h>
 #include <lvgl.h>
@@ -102,9 +103,46 @@ void openWindow() {
                          r.bottom - r.top, nullptr, nullptr, wc.hInstance, nullptr);
 }
 
+// A crash prints where it happened (function, file, line, from the build's .pdb) on stderr,
+// so a deck bug found by a test says where it is.
+LONG WINAPI onCrash(EXCEPTION_POINTERS *e) {
+  HANDLE process = GetCurrentProcess(), thread = GetCurrentThread();
+  SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
+  SymInitialize(process, nullptr, TRUE);
+  fprintf(stderr, "sim: crashed, exception 0x%08lX at:\n", e->ExceptionRecord->ExceptionCode);
+  CONTEXT context = *e->ContextRecord;
+  STACKFRAME64 frame = {};
+  frame.AddrPC.Offset = context.Rip;
+  frame.AddrPC.Mode = AddrModeFlat;
+  frame.AddrFrame.Offset = context.Rbp;
+  frame.AddrFrame.Mode = AddrModeFlat;
+  frame.AddrStack.Offset = context.Rsp;
+  frame.AddrStack.Mode = AddrModeFlat;
+  for (int depth = 0; depth < 32; depth++) {
+    if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, thread, &frame, &context, nullptr, SymFunctionTableAccess64,
+                     SymGetModuleBase64, nullptr) || frame.AddrPC.Offset == 0) {
+      break;
+    }
+    char buffer[sizeof(SYMBOL_INFO) + 256] = {};
+    auto *symbol = reinterpret_cast<SYMBOL_INFO *>(buffer);
+    symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+    symbol->MaxNameLen = 255;
+    DWORD64 offset = 0;
+    IMAGEHLP_LINE64 line = {sizeof(IMAGEHLP_LINE64)};
+    DWORD column = 0;
+    const bool named = SymFromAddr(process, frame.AddrPC.Offset, &offset, symbol);
+    const bool placed = SymGetLineFromAddr64(process, frame.AddrPC.Offset, &column, &line);
+    fprintf(stderr, "  %s +0x%llx  %s:%lu\n", named ? symbol->Name : "?", (unsigned long long)offset,
+            placed ? line.FileName : "", placed ? line.LineNumber : 0);
+  }
+  fflush(stderr);
+  return EXCEPTION_EXECUTE_HANDLER;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
+  SetUnhandledExceptionFilter(onCrash);
   int port = 48160;
   bool headless = false;
   for (int i = 1; i < argc; i++) {

@@ -47,11 +47,13 @@ sealed class TrayApp : ApplicationContext
     readonly ZoneSource _zones;
     readonly RecentActions _recent = new();
     readonly Shortcuts _shortcuts;
+    readonly ContextBar _context;
     readonly HashSet<string> _iconsSent = [];
     readonly object _artGate = new();
     readonly object _actionsGate = new();
     string _actionsSent = "";
     string _shortcutsSent = "";
+    string _contextSent = "";
     DateTime _timeSentAt = DateTime.MinValue;
     string _loggedMedia = "";
     string _loggedClaude = "";
@@ -153,6 +155,10 @@ sealed class TrayApp : ApplicationContext
         _calls.Changed += c => _link.Send(CallMessage(c));
         _calls.Toast += SendToast;
         _mixer.Changed += _ => { if (_calls.Current.Active) _link.Send(CallMessage(_calls.Current)); };
+        _context = new ContextBar(_windows, () => _calls.Current, action => Act(action, new JsonObject()));
+        _context.Changed += _ => SendContext();
+        _windows.Polled += _context.OnPolled;
+        _calls.Changed += _ => _context.Refresh();  // Teams' keys change during a meeting
         _google.Toast += SendToast;
         _windows.Changed += windows =>
         {
@@ -196,6 +202,7 @@ sealed class TrayApp : ApplicationContext
         _google.Start();
         _calls.Start();
         _shortcuts.Refresh();
+        _context.Refresh();
         _link.Start();
 
         // UI-thread timer: keeps the deck's "companion" light on and the clock in sync.
@@ -222,6 +229,7 @@ sealed class TrayApp : ApplicationContext
         _link.Send(PcMessage());
         if (Settings.Version != _settingsSent) SendSettings();
         _shortcuts.Refresh();
+        _context.Refresh();
         if (DateTime.UtcNow - _timeSentAt > TimeResync) SendTime();
         var port = _link.PortName;
         var text = port != null ? $"Deck connected on {port}" : "Deck not connected";
@@ -269,6 +277,7 @@ sealed class TrayApp : ApplicationContext
         SendWindows(_windows.Shown);
         SendRecentActions(force: true);
         SendShortcuts(force: true);
+        SendContext(force: true);
         _link.Send(new { t = "state", topic = "zones", d = ZoneSource.Message(_zones.Current) });
     }
 
@@ -801,6 +810,7 @@ sealed class TrayApp : ApplicationContext
             case "zone.layout": _zones.SetLayout((int?)message["mon"] ?? -1, (string?)message["id"] ?? (string?)message["type"] ?? ""); break;
             case "recent.run": RunRecent(id); break;
             case "shortcut.run": _shortcuts.Run(id); break;
+            case "ctx.run": _context.Run(id); break;
             case "desktop.show": KeyInput.Combo("Win+D"); break;
             default: Log.Write($"act: unknown action {action}"); break;
         }
@@ -953,6 +963,32 @@ sealed class TrayApp : ApplicationContext
             if (fresh && _windows.FindIcon(icon) is { } pixels) SendIcon(pixels);
         }
         _link.Send(new { t = "state", topic = "shortcuts", d = new { list } });
+    }
+
+    /// <summary>The context bar, when it changed (or <paramref name="force"/>, on the deck's hello).</summary>
+    void SendContext(bool force = false)
+    {
+        var bar = _context.Current;
+        var d = new
+        {
+            app = bar.App,
+            icon = bar.Icon,
+            color = bar.Color,
+            keys = bar.Keys.Select(k => new { id = k.Id, name = k.Name, glyph = k.Glyph }),
+        };
+        lock (_actionsGate)
+        {
+            var key = System.Text.Json.JsonSerializer.Serialize(d);
+            if (!force && key == _contextSent) return;
+            _contextSent = key;
+        }
+        if (bar.Icon.Length > 0)
+        {
+            bool fresh;
+            lock (_iconsSent) fresh = _iconsSent.Add(bar.Icon);
+            if (fresh && _windows.FindIcon(bar.Icon) is { } pixels) SendIcon(pixels);
+        }
+        _link.Send(new { t = "state", topic = "context", d });
     }
 
     static void OpenLog() =>

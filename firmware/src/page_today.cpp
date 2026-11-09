@@ -166,7 +166,21 @@ void buildActions(lv_obj_t *right) {
   lv_obj_set_width(c, LV_PCT(100));
   lv_obj_set_flex_grow(c, 1);
   flexCol(c, 8);
-  label(c, "RECENT", &lv_font_montserrat_16, kMuted);
+  // The heading, and the mail action items as a pill beside it (a line of its own under the
+  // card took the room the context bar needs).
+  lv_obj_t *head = box(c);
+  lv_obj_set_size(head, LV_PCT(100), 26);
+  flexRow(head, 8);
+  label(head, "RECENT", &lv_font_montserrat_16, kMuted);
+  lv_obj_t *gap = box(head);
+  lv_obj_set_size(gap, 1, 1);
+  lv_obj_set_flex_grow(gap, 1);
+  lv_obj_t *mail = button(head, LV_SIZE_CONTENT, 26, kRaised, onMail);
+  lv_obj_set_style_pad_hor(mail, 10, 0);
+  flexRow(mail, 6);
+  label(mail, LV_SYMBOL_ENVELOPE, &lv_font_montserrat_14, kAmber);
+  w.mail_text = label(mail, "", &small_font, kSoftText);
+  label(mail, LV_SYMBOL_RIGHT, &lv_font_montserrat_12, kMuted);
   w.actions_note = label(c, "", &body_font, kMuted);
   lv_obj_set_width(w.actions_note, LV_PCT(100));
   lv_label_set_long_mode(w.actions_note, LV_LABEL_LONG_MODE_WRAP);
@@ -290,18 +304,6 @@ void buildRight(lv_obj_t *parent) {
   lv_obj_set_hidden(w.join, true);
 
   buildActions(right);
-
-  lv_obj_t *mail = button(right, LV_PCT(100), 44, kSurface, onMail);
-  lv_obj_set_style_bg_opa(mail, LV_OPA_COVER, 0);
-  lv_obj_set_style_radius(mail, 12, 0);
-  lv_obj_set_style_border_color(mail, hex(kBorder), 0);
-  lv_obj_set_style_border_width(mail, 1, 0);
-  lv_obj_set_style_pad_hor(mail, 12, 0);
-  flexRow(mail, 10);
-  label(mail, LV_SYMBOL_ENVELOPE, &lv_font_montserrat_16, kAmber);
-  w.mail_text = label(mail, "", &body_font, kSoftText);
-  lv_obj_set_flex_grow(w.mail_text, 1);
-  label(mail, LV_SYMBOL_RIGHT, &lv_font_montserrat_16, kMuted);
 }
 
 // "14:05" in the PC's time zone.
@@ -345,10 +347,10 @@ void updateCalendar() {
     else setTextf(w.next_time, "%s%s-%s", day, from, to);
   }
 
-  if (!online) setText(w.mail_text, "Action items from mail");
-  else if (g.status != "ok") setText(w.mail_text, "Action items from mail need Google");
-  else if (g.open == 0) setText(w.mail_text, "No action items from mail");
-  else setTextf(w.mail_text, "%d action item%s from mail", g.open, g.open == 1 ? "" : "s");
+  if (!online) setText(w.mail_text, "Mail");
+  else if (g.status != "ok") setText(w.mail_text, "Mail needs Google");
+  else if (g.open == 0) setText(w.mail_text, "Nothing from mail");
+  else setTextf(w.mail_text, "%d to do from mail", g.open);
 }
 
 void updateClock() {

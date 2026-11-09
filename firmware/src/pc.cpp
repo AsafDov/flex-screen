@@ -410,6 +410,20 @@ void handleState(const char *topic, JsonObjectConst d) {
       out.glyph = x["glyph"] | "";
     }
     s.version++;
+  } else if (!strcmp(topic, "context")) {
+    model::Context &c = model::context;
+    c.app = d["app"] | "";
+    c.icon = d["icon"] | "";
+    c.color = uint32_t(d["color"] | 0);
+    c.count = 0;
+    for (JsonObjectConst k : d["keys"].as<JsonArrayConst>()) {
+      if (c.count == model::Context::kMax) break;
+      model::ContextKey &out = c.keys[c.count++];
+      out.id = k["id"] | "";
+      out.name = k["name"] | "";
+      out.glyph = k["glyph"] | "";
+    }
+    c.version++;
   } else if (!strcmp(topic, "git")) {
     handleGit(d);
   } else if (!strcmp(topic, "windows")) {
@@ -841,6 +855,7 @@ void openClaude(const char *session) { act("claude.open", "id", session); }
 void replayCommand(const char *cmd) { act("term.replay", "cmd", cmd); }
 void runRecent(const char *id) { act("recent.run", "id", id); }
 void runShortcut(const char *id) { act("shortcut.run", "id", id); }
+void runContextKey(const char *id) { act("ctx.run", "id", id); }
 void interruptCommand() { act("term.interrupt"); }
 void focusTerminal() { act("term.focus"); }
 

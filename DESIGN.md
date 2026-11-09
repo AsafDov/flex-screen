@@ -72,6 +72,7 @@ renders under 12px.
 | 15 | Action items from mail | Today, Capture | Companion | Google Tasks, the list the `todo` skill fills from mail triage; tap = mark done |
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
+| 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color; built-in sets plus settings.json's `contextBar`. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
 | 18 | Shortcuts launcher | Every page (tab bar) | Companion | Up to 12 tiles from settings.json: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
 
 Extras on the canvas: **Lock PC** (`LockWorkStation`) and the **Headset** quick switch are
@@ -639,6 +640,35 @@ Gotchas found after phase 6:
     the deck into its ROM bootloader and then, having inherited the OTA uploader's
     `upload_command`, couldn't flash it, so the deck stayed in the bootloader until an
     esptool reset. `default_envs = deck` now, and `deck-esptool` really uses esptool.
+
+- Firmware 0.14.0, the context bar (on request, after a mockup; "a flex-bar like bar…
+  with actions available on the current window focused"):
+  - A strip above the tab bar on every page but the Numpad, with up to 8 keys for the app
+    in front, in that app's color: strongest behind its icon and name at the left, fading
+    across the bar (option A of two mockups; the other colored each key by its kind). The
+    pages give up 54 px for it (the tabview content's bottom padding), and take it back
+    while there's no bar (offline, the Numpad, `"contextBar": false`).
+  - Built-in sets for VS Code, Chrome and Edge, Windows Terminal, Obsidian, Teams (another
+    set during a meeting, using the call panel's own controls) and Discord (asked for while
+    it was being built); Copy, Paste, Undo, Save, Find and Close for anything else. An app
+    without a color of its own gets its icon's main hue.
+  - A key presses its shortcut in the bar's window: the desktop, the taskbar or a menu
+    taking the front keeps the last app's keys, and a key brings that window back first.
+  - Icons: a 15 px icon font generated from the FontAwesome file LVGL ships
+    (`scripts/gen_font_icons.py`, 72 icons by name), since LVGL's built-in symbols lack
+    search, split, history and the rest. "split-down" is "split-right" turned a quarter.
+  - Keys are as wide as their icon and name plus an even share of the rest, so "Find"
+    makes room for "Commands"; if they can't all fit, their padding tightens, then only the
+    widest are cut ("Mute" had become "M…" when every key was cut evenly).
+  - The pages, 338 px tall with the bar: Today's mail line became a pill in the Recent
+    card's heading; Audio's art is drawn at 128 px; window tiles have the icon beside the
+    name; Obsidian's recent notes, Dev's terminal rows and the zone map refit whenever the
+    page's height changes (they had been laid out for the taller page).
+  - Simulator: on a crash it prints the stack with file and line (DbgHelp and the build's
+    .pdb). That found the one bug of the round: `fillRow()` set a label's long mode on a
+    plain box (a Windows tile's text column), writing past the box, so the simulator
+    crashed now and then at start-up deep in LVGL. `fillRow()` now leaves anything but a
+    label alone. 14 new checks (100 in all), including that no page runs into the bar.
 
 ## Decisions
 

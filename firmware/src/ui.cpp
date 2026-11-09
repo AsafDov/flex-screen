@@ -9,6 +9,7 @@
 #include "call.h"
 #include "cheat.h"
 #include "idle.h"
+#include "ctxbar.h"
 #include "launcher.h"
 
 #include "model.h"
@@ -572,6 +573,7 @@ void begin() {
   capture::build(lv_tabview_add_tab(tv, LV_SYMBOL_COPY "  Capture"));
   numpad::build(lv_tabview_add_tab(tv, LV_SYMBOL_KEYBOARD "  Numpad"));
   styleTabs(tv);
+  ctxbar::build(scr, content);  // over the pages' bottom, above the tab bar
   call::build();
   cheat::build();
   launcher::build(lv_tabview_get_tab_bar(tv));  // its button ends the tab bar; its panel goes over the pages
@@ -582,6 +584,8 @@ void begin() {
 }
 
 void showPage(int index) { lv_tabview_set_active(tabview, index, LV_ANIM_OFF); }
+
+int currentPage() { return int(lv_tabview_get_tab_active(tabview)); }
 
 void previewVolume(int level) {
   preview_ms = millis();
@@ -608,6 +612,7 @@ void update() {
   windows::update();
   numpad::update();
   capture::update();
+  ctxbar::update();
   call::update();
   fitBar();  // after the call pill too: it sits among the others
   cheat::update();

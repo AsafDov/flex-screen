@@ -45,6 +45,7 @@ struct {
 uint32_t windows_seen = UINT32_MAX, zones_seen = UINT32_MAX, icons_seen = UINT32_MAX;
 int connected_seen = -1;
 int shown_seen = -2;
+int32_t map_size_seen = -1;
 uint32_t geometry_seen = UINT32_MAX;  // 0 is "no monitor": starting there left the empty map's placeholder showing
 int picked = -1;
 uint32_t picked_ms = 0;
@@ -129,13 +130,14 @@ void buildTile(lv_obj_t *grid, int i) {
   t.root = button(grid, kTileW, kTileH, kRaised, nullptr);
   lv_obj_set_grid_cell(t.root, LV_GRID_ALIGN_STRETCH, i % 3, 1, LV_GRID_ALIGN_STRETCH, i / 3, 1);
   lv_obj_set_style_radius(t.root, 12, 0);
-  lv_obj_set_style_pad_all(t.root, 10, 0);
+  lv_obj_set_style_pad_all(t.root, 8, 0);
   lv_obj_set_style_border_color(t.root, hex(kAccent), 0);
   lv_obj_set_style_border_width(t.root, 0, 0);
   lv_obj_add_event_cb(t.root, onTileTap, LV_EVENT_SHORT_CLICKED, reinterpret_cast<void *>(intptr_t(i)));
   lv_obj_add_event_cb(t.root, onTileHold, LV_EVENT_LONG_PRESSED, reinterpret_cast<void *>(intptr_t(i)));
-  flexCol(t.root, 0);
-  lv_obj_set_flex_align(t.root, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+  // The icon beside the app and title: stacked, they didn't fit once the context bar took
+  // some of the page's height.
+  flexRow(t.root, 8);
 
   lv_obj_t *top = box(t.root);
   lv_obj_set_size(top, icons::kSize, icons::kSize);
@@ -148,7 +150,8 @@ void buildTile(lv_obj_t *grid, int i) {
   lv_obj_center(label(t.initials, "", &small_font, kText));
 
   lv_obj_t *text = box(t.root);
-  lv_obj_set_size(text, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_size(text, 1, LV_SIZE_CONTENT);  // any width: the tile's row gives it the rest
+  lv_obj_set_flex_grow(text, 1);
   flexCol(text, 0);
   t.app = label(text, "", &body_font, kText);
   ellipsize(t.app);
@@ -201,7 +204,7 @@ void buildWindows(lv_obj_t *row) {
 }
 
 void buildLayoutButton(lv_obj_t *parent, int i) {
-  lv_obj_t *b = button(parent, 134, 48, kRaised, onLayout, reinterpret_cast<void *>(intptr_t(i)));
+  lv_obj_t *b = button(parent, 134, 40, kRaised, onLayout, reinterpret_cast<void *>(intptr_t(i)));
   lv_obj_set_style_radius(b, 12, 0);
   lv_obj_set_style_pad_hor(b, 8, 0);
   lv_obj_set_style_border_color(b, hex(kAccent), 0);
@@ -335,12 +338,15 @@ void updateTiles() {
   setText(w.empty, !online ? "PC offline" : count == 0 ? "No open windows" : "");
 }
 
-// Zones are rebuilt only when the shown monitor's geometry changes.
+// Zones are rebuilt only when the shown monitor's geometry changes, or the map's size
+// (the context bar coming or going): zones placed for the taller map ran past the shorter one.
 uint32_t geometry(int mon) {
   if (mon < 0) return 0;
   const model::Monitor &m = model::zones.mons[mon];
   uint32_t h = 2166136261u ^ uint32_t(mon);
   auto mix = [&h](int v) { h = (h ^ uint32_t(v)) * 16777619u; };
+  mix(lv_obj_get_content_width(w.map));
+  mix(lv_obj_get_content_height(w.map));
   mix(m.w);
   mix(m.h);
   mix(m.zone_count);
@@ -381,11 +387,11 @@ void rebuildZones(int mon) {
     lv_obj_set_flex_align(b, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     char num[4];
     snprintf(num, sizeof(num), "%d", i + 1);
-    label(b, num, zh >= 44 ? &lv_font_montserrat_20 : &lv_font_montserrat_14, kText);
+    label(b, num, zh >= 48 ? &lv_font_montserrat_20 : &lv_font_montserrat_14, kText);
     lv_obj_t *app = label(b, "", &small_font, kMuted);
     ellipsize(app);
     lv_obj_set_style_text_align(app, LV_TEXT_ALIGN_CENTER, 0);
-    setHidden(app, zh < 44);
+    setHidden(app, zh < 48);  // the number and the app need about that much
     w.zones[i] = b;
     w.zone_apps[i] = app;
     w.zone_count++;
@@ -480,9 +486,11 @@ void update() {
     updateTiles();
   }
   const int shown = connected ? shownMonitor() : -1;
-  if (model::zones.version != zones_seen || shown != shown_seen) {
+  const int32_t map_size = lv_obj_get_width(w.map) << 16 | lv_obj_get_height(w.map);  // the context bar changes it
+  if (model::zones.version != zones_seen || shown != shown_seen || map_size != map_size_seen) {
     zones_seen = model::zones.version;
     shown_seen = shown;
+    map_size_seen = map_size;
     updateZones();
   }
 }

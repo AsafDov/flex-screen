@@ -114,6 +114,14 @@ def day() -> dict[str, dict]:
             {'id': 'k5', 'name': 'VS Code', 'icon': 'ic-vscode', 'glyph': ''},
             {'id': 'k6', 'name': 'Terminal', 'icon': 'ic-terminal', 'glyph': 'terminal'},
         ]},
+        'context': {'app': 'VS Code', 'icon': 'ic-vscode', 'color': 0x2F9BF0, 'keys': [
+            {'id': 'x1', 'name': 'Build', 'glyph': 'play'},
+            {'id': 'x2', 'name': 'Terminal', 'glyph': 'terminal'},
+            {'id': 'x3', 'name': 'Commands', 'glyph': 'keyboard'},
+            {'id': 'x4', 'name': 'Go to file', 'glyph': 'file'},
+            {'id': 'x5', 'name': 'Search', 'glyph': 'search'},
+            {'id': 'x6', 'name': 'Split', 'glyph': 'split-right'},
+        ]},
         'git': {'repo': 'flex-screen', 'branch': 'master', 'ahead': 2, 'behind': 0, 'm': 3, 'a': 1, 'del': 0, 'u': 2,
                 'last': 'Recent actions on Today, full-command terminal card', 'last_secs': HOUR, 'busy': '', 'error': ''},
         'windows': {'list': [
@@ -194,6 +202,11 @@ def stress() -> dict[str, dict]:
     d['shortcuts']['list'][2].update(name='הפתק של היום')
     d['shortcuts']['list'][3].update(name='Missing icon', icon='ic-missing', glyph='')
     d['shortcuts']['list'].append({'id': 'k13', 'name': 'The thirteenth, one too many', 'icon': '', 'glyph': ''})
+    d['context'] = {'app': 'Microsoft Teams (work or school)', 'icon': 'ic-missing', 'color': 0x6264A7, 'keys': [
+        {'id': f'x{i + 1}', 'name': name, 'glyph': glyph} for i, (name, glyph) in enumerate([
+            ('Mute', 'mic-off'), ('Camera', 'video'), ('Raise hand', 'hand'), ('Share the whole screen', 'screen'),
+            ('Leave', 'leave'), ('A key with no icon', ''), ('Unknown icon', 'no-such-icon'), ('Eight', 'split-down'),
+            ('Ninth, one too many', 'plus')])]}
     d['git'].update(branch='feature/a-very-long-branch-name-for-the-deck', ahead=12, behind=3, m=14, a=7, **{'del': 2}, u=31,
                     last=LONG, busy='pull')
     for w in d['windows']['list']:
@@ -231,6 +244,7 @@ def empty() -> dict[str, dict]:
         'recent': {'list': []},
         'actions': {'list': []},
         'shortcuts': {'list': []},
+        'context': {'app': '', 'icon': '', 'color': 0, 'keys': []},
         'git': {'repo': '', 'error': 'Not a git repository'},
         'windows': {'list': []},
         'zones': {'mons': [], 'layouts': []},

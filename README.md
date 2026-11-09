@@ -37,6 +37,20 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Toasts over any page: a long command finished or failed, Claude needs approval, git
   results.
 
+### Context bar (on every page but the Numpad)
+- A strip above the tabs with keys for the app in front on the PC, in that app's color:
+  - **VS Code:** Build, Terminal, Commands, Go to file, Search, Split.
+  - **Chrome and Edge:** Back, Reload, Prev tab, Next tab, New tab, Reopen, Find.
+  - **Windows Terminal:** Prev cmd, New tab, Prev tab, Next tab, Split right, Split down.
+  - **Obsidian:** Daily note, Search, Quick open, Commands, Back, Graph.
+  - **Teams:** Activity, Chat, Calendar, New chat, Search; during a meeting Mute, Camera,
+    Raise hand, Share, Leave.
+  - **Discord:** Switch, Prev channel, Next channel, Unread, Mute, Deafen.
+  - **Any other app:** Copy, Paste, Undo, Save, Find, Close, in the color of its icon.
+- A key presses its shortcut in that app's window. If the desktop or a menu took the front
+  meanwhile, the window comes back first.
+- Change or add sets per app in settings.json's `contextBar` (see [Settings](#settings)).
+
 ### Shortcuts (on every page)
 - A launcher button at the right end of the tab bar opens a panel of up to 12 tiles:
   apps, links, deck actions and key combinations, each with its real icon (an app's own,
@@ -187,6 +201,28 @@ and `"icon"` (a picture or program whose icon to use). Actions: `obs.today`, `ma
 `mic.mute`, `term.focus`, `git.commit`, `git.fetch`, `git.pull`, `git.push`, `git.stash`,
 `call.mic`, `call.camera`, `call.hand`, `call.leave`, `call.focus`. The tray icon's
 **Shortcuts…** opens this file, with the default list written in if it has none.
+
+The context bar's keys can be changed or added per app, by its exe name (`chrome`,
+`spotify`) or the name the deck shows (`Chrome`), `"*"` for every other app, or turned off
+with `"contextBar": false`:
+
+```jsonc
+"contextBar": {
+  "Spotify": { "color": "#1DB954", "keys": [
+    { "name": "Like", "keys": "Alt+Shift+B", "glyph": "heart" },
+    { "name": "Shuffle", "keys": "Ctrl+S", "glyph": "shuffle" }
+  ] },
+  "Chrome": [ { "name": "Back", "keys": "Alt+Left", "glyph": "back" } ]   // replaces the built-in set
+}
+```
+
+A key is `keys` (pressed in that app's window), `action` (as for shortcuts), or
+`"action": "close"`. Up to 8 per app. Glyphs: `play`, `pause`, `terminal`, `keyboard`,
+`code`, `file`, `folder`, `search`, `split-right`, `split-down`, `back`, `forward`, `up`,
+`down`, `prev`, `next`, `reload`, `undo`, `redo`, `history`, `plus`, `close`, `copy`,
+`paste`, `save`, `edit`, `calendar`, `graph`, `bell`, `chat`, `mic`, `mic-off`, `video`,
+`hand`, `screen`, `leave`, `headphones`, `hashtag`, `switch`, `unread`, `heart`, `star`,
+`shuffle`, `music`, and more (the list is in `firmware/scripts/gen_font_icons.py`).
 
 ## Repository
 

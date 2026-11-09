@@ -48,7 +48,8 @@ void ellipsize(lv_obj_t *label);  // one line, full width, "…" when too long
 // loop busy and touches waited.
 void setText(lv_obj_t *label, const char *text);
 // A label taking the rest of a flex row, one line, "…" when too long. (A label left
-// content-sized never shortens its text, so it ran out of its row.)
+// content-sized never shortens its text, so it ran out of its row.) Anything else just
+// takes the rest of the row.
 void fillRow(lv_obj_t *label);
 // Sets a label's text and makes it as wide as the text, up to `max`, then "…".
 void setTextUpTo(lv_obj_t *label, const char *text, int32_t max);

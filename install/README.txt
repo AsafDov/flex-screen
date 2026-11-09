@@ -87,6 +87,19 @@ Shortcuts
   media.toggle/next/prev, vol.mute, mic.mute, term.focus, git.commit/fetch/pull/push/stash,
   call.mic/camera/hand/leave/focus. Save the file and the deck has them within seconds.
 
+Context bar
+  The strip above the deck's tabs has keys for the app in front, in its color: VS Code,
+  Chrome and Edge, Windows Terminal, Obsidian, Teams (another set during a meeting) and
+  Discord have their own; any other app gets Copy, Paste, Undo, Save, Find and Close. A key
+  presses its shortcut in that app's window. To change or add sets, in settings.json:
+    "contextBar": {
+      "Spotify": { "color": "#1DB954", "keys": [
+        { "name": "Like", "keys": "Alt+Shift+B", "glyph": "heart" } ] }
+    }
+  by exe name ("spotify") or the name the deck shows ("Spotify"), "*" for every other app;
+  a set given replaces the built-in one. Keys are "keys", "action" (as for shortcuts) or
+  "action": "close". "contextBar": false turns the bar off. The README lists the glyphs.
+
 Settings (optional)
   %LOCALAPPDATA%\flex-screen\settings.json, for instance:
     { "palette": "vibrant",

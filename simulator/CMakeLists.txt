@@ -24,7 +24,7 @@ target_include_directories(lvgl PUBLIC ${SIM} ${LIBDEPS}/lvgl)
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE)
 target_compile_options(lvgl PRIVATE ${COMMON_OPTIONS} /W0)
 
-set(FIRMWARE_SOURCES call cheat icons idle launcher model page_audio page_capture page_dev page_numpad page_today
+set(FIRMWARE_SOURCES call cheat ctxbar icons idle launcher model page_audio page_capture page_dev page_numpad page_today
     page_windows pc ui ui_kit)
 list(TRANSFORM FIRMWARE_SOURCES PREPEND ${FW}/src/)
 list(TRANSFORM FIRMWARE_SOURCES APPEND .cpp)
@@ -32,6 +32,7 @@ list(TRANSFORM FIRMWARE_SOURCES APPEND .cpp)
 add_executable(flex-screen-sim
   ${FIRMWARE_SOURCES}
   ${FW}/src/fonts/font_extra.c
+  ${FW}/src/fonts/font_icons.c
   sim_main.cpp sim_runtime.cpp sim_board.cpp sim_display.cpp)
 # The stand-ins come first, so <Arduino.h> and friends are the simulator's.
 target_include_directories(flex-screen-sim PRIVATE ${SIM}/shim ${SIM} ${FW}/src ${LIBDEPS}/ArduinoJson/src)
@@ -39,4 +40,9 @@ target_compile_options(flex-screen-sim PRIVATE ${COMMON_OPTIONS} /EHsc /W3 /wd42
 # The firmware deserializes from and assigns to Arduino Strings; ArduinoJson only knows them
 # on Arduino unless told (it then includes <Arduino.h>: the stand-in).
 target_compile_definitions(flex-screen-sim PRIVATE ARDUINOJSON_ENABLE_ARDUINO_STRING=1)
-target_link_libraries(flex-screen-sim PRIVATE lvgl ws2_32 user32 gdi32)
+target_link_libraries(flex-screen-sim PRIVATE lvgl ws2_32 user32 gdi32 dbghelp)
+
+# A map file and symbols, for finding where a crash happened (build/flex-screen-sim.map).
+target_link_options(flex-screen-sim PRIVATE /MAP /DEBUG)
+target_compile_options(flex-screen-sim PRIVATE /Zi)
+target_compile_options(lvgl PRIVATE /Zi)

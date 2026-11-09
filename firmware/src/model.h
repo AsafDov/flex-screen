@@ -169,6 +169,23 @@ struct Shortcuts {
   uint32_t version = 0;
 };
 
+// The context bar: keys for the app in front, in its color; the companion runs them.
+struct ContextKey {
+  String id;
+  String name;
+  String glyph;  // an icon name from fonts/font_icons.h ("search"), or ""
+};
+
+struct Context {
+  static constexpr int kMax = 8;
+  String app;          // "Chrome"
+  String icon;         // its window icon's id
+  uint32_t color = 0;  // the bar's color, 0xRRGGBB
+  ContextKey keys[kMax];
+  int count = 0;       // 0: no bar
+  uint32_t version = 0;
+};
+
 struct Git {
   String repo;
   String branch;
@@ -397,6 +414,7 @@ extern Build build;
 extern Recent recent;
 extern Actions actions;
 extern Shortcuts shortcuts;
+extern Context context;
 extern Git git;
 extern Toast toast;
 extern Settings settings;

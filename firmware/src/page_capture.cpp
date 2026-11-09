@@ -37,6 +37,8 @@ struct {
 
 uint32_t google_seen = UINT32_MAX, clips_seen = UINT32_MAX, obsidian_seen = UINT32_MAX;
 int connected_seen = -1;
+int32_t height_seen = -1;  // the page's: the context bar coming or going changes what fits
+lv_obj_t *page_obj;
 uint32_t tick_ms = 0;
 
 int indexOf(lv_event_t *e) { return int(intptr_t(lv_event_get_user_data(e))); }
@@ -194,7 +196,7 @@ void buildObsidian(lv_obj_t *row) {
   w.obsidian_note = note(c);
   label(c, "RECENT", &small_font, kMuted);
   for (int i = 0; i < model::Obsidian::kMaxRecent; i++) {
-    lv_obj_t *b = button(c, LV_PCT(100), 34, kSurface, onRecent, reinterpret_cast<void *>(intptr_t(i)));
+    lv_obj_t *b = button(c, LV_PCT(100), 32, kSurface, onRecent, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_set_style_radius(b, 8, 0);
     lv_obj_set_style_pad_hor(b, 6, 0);
     flexRow(b, 6);
@@ -338,11 +340,25 @@ void updateObsidian() {
     setHidden(w.recent[i], !used);
     if (used) setText(w.recent_text[i], o.recent[i].name.c_str());
   }
+  // Only the notes that fit: with the context bar showing, the fifth ran past the card.
+  lv_obj_t *card = lv_obj_get_parent(w.recent[0]);
+  lv_obj_update_layout(card);
+  lv_area_t inside;
+  lv_obj_get_content_coords(card, &inside);
+  bool past = false;
+  for (lv_obj_t *row : w.recent) {
+    if (lv_obj_is_hidden(row)) continue;
+    lv_area_t a;
+    lv_obj_get_coords(row, &a);
+    past = past || a.y2 > inside.y2;
+    if (past) lv_obj_set_hidden(row, true);
+  }
 }
 
 }  // namespace
 
 void build(lv_obj_t *page) {
+  page_obj = page;
   lv_obj_set_style_pad_all(page, kGap, 0);
   lv_obj_set_scrollable(page, false);
   flexRow(page, kGap);
@@ -359,8 +375,10 @@ void update() {
   const int connected = pc::connected() ? 1 : 0;
   const bool tick = millis() - tick_ms >= kTickMs;
   if (tick) tick_ms = millis();
-  const bool link = connected != connected_seen;
+  const int32_t height = lv_obj_get_height(page_obj);
+  const bool link = connected != connected_seen || height != height_seen;  // either way, everything again
   connected_seen = connected;
+  height_seen = height;
   if (link || tick || model::google.version != google_seen) {
     google_seen = model::google.version;
     updateMail();

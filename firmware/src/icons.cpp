@@ -7,7 +7,7 @@ namespace icons {
 namespace {
 
 // Room for everything that can be on screen at once (8 windows, 5 Recent tiles, 12
-// shortcuts) and as many again: a slot is only reused for an icon nothing listed shows, so
+// shortcuts, the context bar's app) and as many again: a slot is only reused for an icon nothing listed shows, so
 // no page draws one that's been replaced.
 constexpr int kSlots = 50;
 
@@ -32,7 +32,7 @@ bool listed(const String &id) {
   for (int i = 0; i < model::shortcuts.count; i++) {
     if (model::shortcuts.list[i].icon == id) return true;
   }
-  return false;
+  return model::context.icon == id;
 }
 
 Slot *freeSlot() {
@@ -55,7 +55,7 @@ void put(const char *id, uint8_t *pixels, int w, int h) {
     }
   }
   Slot *s = freeSlot();
-  if (!s) {  // every slot shows something listed; can't happen with 25 listed and 50 slots
+  if (!s) {  // every slot shows something listed; can't happen with 26 listed and 50 slots
     heap_caps_free(pixels);
     return;
   }

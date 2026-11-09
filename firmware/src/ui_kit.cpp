@@ -168,6 +168,9 @@ void setText(lv_obj_t *l, const char *text) {
 void fillRow(lv_obj_t *l) {
   lv_obj_set_width(l, 1);  // any fixed width: the row's flex layout gives it the rest
   lv_obj_set_flex_grow(l, 1);
+  // Only a label has a long mode: setting one on a box wrote past the box's memory, and the
+  // simulator crashed now and then on start-up, deep in LVGL (2026-11-09).
+  if (!lv_obj_check_type(l, &lv_label_class)) return;
   lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
   lv_obj_set_height(l, lv_font_get_line_height(lv_obj_get_style_text_font(l, LV_PART_MAIN)));
 }

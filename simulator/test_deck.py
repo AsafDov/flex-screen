@@ -96,7 +96,7 @@ def test_today(d: Deck) -> None:
     mark = d.mark()
     d.drag(60, 336, 200, 336)
     check('today: volume slider sets the volume', did(d, mark, 'vol.set') is not None)
-    tap(d, 'action items from mail')
+    tap(d, 'to do from mail')
     check('today: the mail bar opens Capture', on_screen(d, 'FROM MAIL'))
     d.page(0)
     d.shot(os.path.join(OUT, 'today.png'))
@@ -347,6 +347,75 @@ def test_launcher(d: Deck) -> None:
     d.settle()
 
 
+BAR_TOP = 384  # the context bar's top edge
+
+
+def bar_key(d: Deck, name: str) -> dict | None:
+    """A context bar key's label (the bar is below the pages)."""
+    return next((n for n in shown(d) if n.get('text') == name and n['y'] >= BAR_TOP), None)
+
+
+def overlapping_bar(d: Deck) -> list[str]:
+    """Page content that runs into the context bar."""
+    return [f"{n.get('text') or n['c']}@{n['y']}+{n['h']}" for n in shown(d)
+            if n['c'] in ('label', 'button', 'image', 'slider', 'bar') and n['y'] < BAR_TOP - 2 and n['y'] + n['h'] > BAR_TOP + 2]
+
+
+def test_context_bar(d: Deck) -> None:
+    d.page(0)
+    names = ['Build', 'Terminal', 'Commands', 'Go to file', 'Search', 'Split']
+    missing = [n for n in names if not bar_key(d, n)]
+    check('context bar: shows the app in front and its keys, names in full', not missing and bar_key(d, 'VS Code'), str(missing))
+    d.shot(os.path.join(OUT, 'context-bar.png'))
+    key = bar_key(d, 'Commands')
+    mark = d.mark()
+    if key:
+        d.tap(key['x'] + key['w'] // 2, key['y'] + key['h'] // 2)
+    check('context bar: a key goes to the companion', did(d, mark, 'ctx.run', id='x3') is not None, str(d.acts(mark)))
+    for page in range(5):
+        d.page(page)
+        bad = overlapping_bar(d)
+        check(f'context bar: page {page} fits above it', not bad, str(bad[:5]))
+    d.page(5)
+    check('context bar: not on the Numpad', not bar_key(d, 'Build'))
+    d.page(0)
+    check('context bar: back on the other pages', bar_key(d, 'Build') is not None)
+
+    chrome = {'app': 'Chrome', 'icon': 'ic-chrome', 'color': 0x34A853, 'keys': [
+        {'id': f'c{i}', 'name': name, 'glyph': glyph} for i, (name, glyph) in enumerate([
+            ('Back', 'back'), ('Reload', 'reload'), ('Prev tab', 'prev'), ('Next tab', 'next'), ('New tab', 'plus'),
+            ('Reopen', 'history'), ('Find', 'search')])]}
+    d.state('context', chrome)
+    d.settle()
+    missing = [k['name'] for k in chrome['keys'] if not bar_key(d, k['name'])]
+    check('context bar: follows the app in front, seven keys in full', not missing and bar_key(d, 'Chrome'), str(missing))
+    d.shot(os.path.join(OUT, 'context-bar-chrome.png'))
+
+    stress = fixtures.stress()['context']
+    d.state('context', stress)
+    d.settle()
+    keys = [n for n in shown(d) if n['y'] >= BAR_TOP and n['c'] == 'label' and n.get('text') and n['x'] > 130]
+    check('context bar: eight keys at most', bar_key(d, 'Mute') and not any('Ninth' in n.get('text', '') for n in keys),
+          str([n.get('text') for n in keys]))
+    inside = all(n['x'] + n['w'] <= 790 for n in shown(d) if n['y'] >= BAR_TOP and n['y'] < 436)
+    check('context bar: eight long keys stay inside it', inside)
+    d.shot(os.path.join(OUT, 'context-bar-stress.png'))
+
+    d.page(3)
+    shown_y = (label(d, 'Show desktop') or {}).get('y', 0)
+    d.state('context', {'app': '', 'icon': '', 'color': 0, 'keys': []})
+    d.settle()
+    hidden_y = (label(d, 'Show desktop') or {}).get('y', 0)
+    check('context bar: none to show, and the pages take its room back',
+          not bar_key(d, 'Build') and hidden_y > shown_y, f'{shown_y} -> {hidden_y}')
+    d.state('context', fixtures.day()['context'])
+    d.page(0)
+    d.offline()
+    check('context bar: offline it goes', not bar_key(d, 'Build'))
+    d.online()
+    d.settle()
+
+
 def test_offline(d: Deck) -> None:
     d.page(0)
     d.offline()
@@ -368,7 +437,7 @@ def main() -> int:
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
         for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_numpad,
-                     test_toast, test_call, test_cheat_sheet, test_launcher, test_idle, test_offline):
+                     test_toast, test_call, test_cheat_sheet, test_launcher, test_context_bar, test_idle, test_offline):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)

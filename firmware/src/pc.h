@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.13.1";
+constexpr const char *kFirmwareVersion = "0.14.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -35,6 +35,7 @@ void openClaude(const char *session);  // brings its window (VS Code, Claude) to
 void replayCommand(const char *cmd);  // again, in the VS Code terminal it ran in last
 void runRecent(const char *id);       // a Recent tile on Today: the same action again
 void runShortcut(const char *id);     // a launcher tile: opens the app, link, … it stands for
+void runContextKey(const char *id);   // a context bar key: into the app in front
 void interruptCommand();               // Ctrl+C
 void focusTerminal();
 void git(const char *operation);       // "fetch", "pull", "push", "stash", "commit"

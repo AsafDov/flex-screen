@@ -14,6 +14,7 @@ Build build;
 Recent recent;
 Actions actions;
 Shortcuts shortcuts;
+Context context;
 Git git;
 Toast toast;
 Settings settings;

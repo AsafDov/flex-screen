@@ -48,6 +48,8 @@ struct {
 
 uint32_t claude_seen = UINT32_MAX, git_seen = UINT32_MAX, build_seen = UINT32_MAX;
 uint32_t term_seen = UINT32_MAX, recent_seen = UINT32_MAX;
+int32_t height_seen = -1;  // the page's: the context bar coming or going changes what fits
+lv_obj_t *page_obj;
 int64_t recent_minute = -1;  // the rows' times only change with the date ("Yesterday")
 bool recent_online = false;
 uint32_t tick_ms = 0;
@@ -434,6 +436,7 @@ void updateRecent() {
 }  // namespace
 
 void build(lv_obj_t *page) {
+  page_obj = page;
   lv_obj_set_style_pad_all(page, kGap, 0);
   flexCol(page, kGap);
   lv_obj_set_scrollable(page, false);
@@ -449,7 +452,10 @@ void build(lv_obj_t *page) {
 }
 
 void update() {
-  const bool tick = millis() - tick_ms >= kTickMs;
+  const int32_t height = lv_obj_get_height(page_obj);
+  const bool resized = height != height_seen;
+  height_seen = height;
+  const bool tick = millis() - tick_ms >= kTickMs || resized;
   if (tick) tick_ms = millis();
   if (tick || model::claude.version != claude_seen) {
     claude_seen = model::claude.version;
@@ -469,7 +475,7 @@ void update() {
   }
   const bool online = pc::connected();
   const int64_t minute = model::localNow() / 60;
-  if (model::recent.version != recent_seen || online != recent_online || minute != recent_minute) {
+  if (model::recent.version != recent_seen || online != recent_online || minute != recent_minute || resized) {
     recent_seen = model::recent.version;
     recent_online = online;
     recent_minute = minute;

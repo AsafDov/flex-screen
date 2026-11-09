@@ -14,5 +14,6 @@ void previewVolume(int level);
 
 // Switches to a page (0 Today, 1 Audio, 2 Dev, 3 Windows, 4 Capture, 5 Numpad).
 void showPage(int index);
+int currentPage();
 
 }  // namespace ui

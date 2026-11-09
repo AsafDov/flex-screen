@@ -33,6 +33,9 @@ static class Settings
     /// <summary>The launcher's tiles as written (see <see cref="FlexScreen.Companion.Shortcuts"/>); null when the file has none.</summary>
     public static JsonArray? Shortcuts => Get("shortcuts") as JsonArray;
 
+    /// <summary>The context bar's own key sets, or false (see <see cref="FlexScreen.Companion.ContextBar"/>); null when the file says nothing.</summary>
+    public static JsonNode? ContextBar => Get("contextBar");
+
     /// <summary>The deck's color theme: what the tray's Deck colors menu offers.</summary>
     public static readonly (string Name, string Label)[] Palettes = [("base", "Base"), ("vibrant", "Vibrant"), ("ember", "Ember"), ("violet", "Violet")];
 
