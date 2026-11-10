@@ -121,7 +121,8 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 ### Audio
 - Now playing with large art, progress, shuffle and repeat.
 - Output and input device pickers that set the Windows default device.
-- Per-app mixer: a fader and mute button for each app playing sound.
+- Per-app mixer: a fader for each app playing sound; tap the app's name under it to mute
+  it (amber while muted).
 
 ### Dev
 - Claude banner: what the current session is doing, with an **Open** button.

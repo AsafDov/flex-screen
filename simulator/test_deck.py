@@ -130,7 +130,7 @@ def test_audio(d: Deck) -> None:
     expect_act(d, 'audio: shuffle', SHUFFLE, 'media.shuffle', exact=True)
     expect_act(d, 'audio: repeat', LOOP, 'media.repeat', exact=True)
     expect_act(d, 'audio: play/pause', PAUSE, 'media.toggle', exact=True)
-    expect_act(d, 'audio: Teams mute button', 'Teams', 'mixer.mute', exact=True, dy=26, app='ms-teams')
+    expect_act(d, 'audio: Teams name mutes it', 'Teams', 'mixer.mute', exact=True, app='ms-teams')
     spotify = label(d, 'Spotify', exact=True, below=150)
     mark = d.mark()
     if spotify:

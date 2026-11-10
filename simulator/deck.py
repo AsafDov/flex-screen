@@ -24,6 +24,10 @@ import threading
 import time
 import zlib
 
+# Windows can reserve a range of ports (Hyper-V, WinNAT) that takes 48160 in: set
+# FLEX_SIM_PORT to another then ("can't listen on port").
+PORT = int(os.environ.get('FLEX_SIM_PORT', '48160'))
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXE = os.path.join(HERE, 'build', 'flex-screen-sim.exe')
 W, H = 800, 480
@@ -54,7 +58,7 @@ def rgb565(r: int, g: int, b: int) -> int:
 
 
 class Deck:
-    def __init__(self, port: int = 48160, process: subprocess.Popen | None = None, log_path: str | None = None):
+    def __init__(self, port: int = PORT, process: subprocess.Popen | None = None, log_path: str | None = None):
         self.port = port
         self.process = process
         self.log_path = log_path
@@ -68,7 +72,7 @@ class Deck:
     # ---- process and connection
 
     @classmethod
-    def launch(cls, port: int = 48160, headless: bool = True, log_path: str | None = None) -> 'Deck':
+    def launch(cls, port: int = PORT, headless: bool = True, log_path: str | None = None) -> 'Deck':
         args = [EXE, '--port', str(port)] + (['--headless'] if headless else [])
         log = open(log_path, 'w') if log_path else subprocess.DEVNULL
         process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, cwd=HERE)

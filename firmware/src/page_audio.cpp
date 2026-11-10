@@ -14,12 +14,14 @@ constexpr int kChannels = 1 + model::Mixer::kMax;  // Master + apps
 constexpr uint32_t kHoldAfterTouchMs = 1000;       // the mixer is polled every 750 ms
 constexpr uint32_t kProgressEveryMs = 250;
 constexpr uint32_t kSwitchTimeoutMs = 4000;
+constexpr int kDeviceH = 36;  // the output and input buttons
 
 struct Channel {
   String id;  // "" for Master
   lv_obj_t *value = nullptr;
   lv_obj_t *slider = nullptr;
-  lv_obj_t *mute_icon = nullptr;
+  lv_obj_t *pill = nullptr;  // the name, which is the mute button
+  lv_obj_t *name = nullptr;
   uint32_t sent_ms = 0;
   uint32_t touched_ms = 0;
 };
@@ -153,9 +155,13 @@ void buildNowPlaying(lv_obj_t *parent) {
   ellipsize(w.device);
   lv_obj_t *gap = box(side);
   lv_obj_set_flex_grow(gap, 1);
-  w.shuffle_icon = iconButton(side, 40, 40, kRaised, LV_SYMBOL_SHUFFLE, kMuted, onShuffle);
+  // Side by side: stacked, the second ran past the art's 128 px and was cut off.
+  lv_obj_t *toggles = box(side);
+  lv_obj_set_size(toggles, LV_PCT(100), LV_SIZE_CONTENT);
+  flexRow(toggles, 8);
+  w.shuffle_icon = iconButton(toggles, 40, 40, kRaised, LV_SYMBOL_SHUFFLE, kMuted, onShuffle);
   w.shuffle = lv_obj_get_parent(w.shuffle_icon);
-  w.repeat_icon = iconButton(side, 40, 40, kRaised, LV_SYMBOL_LOOP, kMuted, onRepeat);
+  w.repeat_icon = iconButton(toggles, 40, 40, kRaised, LV_SYMBOL_LOOP, kMuted, onRepeat);
   w.repeat = lv_obj_get_parent(w.repeat_icon);
   for (lv_obj_t *b : {w.shuffle, w.repeat}) lv_obj_set_style_radius(b, 10, 0);
 
@@ -195,14 +201,14 @@ void buildNowPlaying(lv_obj_t *parent) {
 
 lv_obj_t *buildDeviceRow(lv_obj_t *parent, const char *kind) {
   lv_obj_t *row = box(parent);
-  lv_obj_set_size(row, LV_PCT(100), 40);
+  lv_obj_set_size(row, LV_PCT(100), kDeviceH);
   flexRow(row, 8);
   lv_obj_t *k = label(row, kind, &lv_font_montserrat_14, kMuted);
   lv_obj_set_width(k, 64);  // "OUTPUT" is ~58 px; never wrap
   lv_label_set_long_mode(k, LV_LABEL_LONG_MODE_CLIP);
   lv_obj_t *buttons = box(row);
   lv_obj_set_flex_grow(buttons, 1);
-  lv_obj_set_height(buttons, 40);
+  lv_obj_set_height(buttons, kDeviceH);
   flexRow(buttons, 8);
   // More than three devices scroll sideways instead of shrinking.
   lv_obj_set_scrollable(buttons, true);
@@ -219,25 +225,19 @@ void buildRight(lv_obj_t *parent) {
 
   lv_obj_t *devices = card(right);
   lv_obj_set_size(devices, LV_PCT(100), LV_SIZE_CONTENT);
-  lv_obj_set_style_pad_all(devices, 10, 0);
-  flexCol(devices, 8);
+  lv_obj_set_style_pad_all(devices, 8, 0);
+  flexCol(devices, 6);
   w.outputs = buildDeviceRow(devices, "OUTPUT");
   w.inputs = buildDeviceRow(devices, "INPUT");
 
+  // All the height that's left goes to the faders: no heading row (with the context bar
+  // under the page, a heading, names and mute icons left them ~25 px of travel).
   lv_obj_t *mixer = card(right);
   lv_obj_set_width(mixer, LV_PCT(100));
   lv_obj_set_flex_grow(mixer, 1);
-  lv_obj_set_style_pad_all(mixer, 10, 0);
-  flexCol(mixer, 6);
-  lv_obj_t *head = box(mixer);
-  lv_obj_set_size(head, LV_PCT(100), LV_SIZE_CONTENT);
-  flexRow(head, 0);
-  lv_obj_set_flex_align(head, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  label(head, "MIXER", &lv_font_montserrat_14, kMuted);
-  label(head, "Drag a fader, tap the icon to mute", &lv_font_montserrat_14, kMuted);
+  lv_obj_set_style_pad_all(mixer, 8, 0);
   w.channels = box(mixer);
-  lv_obj_set_width(w.channels, LV_PCT(100));
-  lv_obj_set_flex_grow(w.channels, 1);
+  lv_obj_set_size(w.channels, LV_PCT(100), LV_PCT(100));
   flexRow(w.channels, 6);
 }
 
@@ -253,7 +253,7 @@ void fillDevices(lv_obj_t *row, const model::Device *list, int count, lv_event_c
     // As wide as the name (up to a limit, then "…"): at a fixed 124 px "Headphones" and
     // "Microphone Array" were cut short and three outputs ran past the card's edge, while
     // "Speakers" had room to spare (seen in the simulator).
-    lv_obj_t *b = button(row, LV_SIZE_CONTENT, 40, kRaised, cb, reinterpret_cast<void *>(intptr_t(i)));
+    lv_obj_t *b = button(row, LV_SIZE_CONTENT, kDeviceH, kRaised, cb, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_set_style_min_width(b, 84, 0);
     lv_obj_set_style_radius(b, 10, 0);
     lv_obj_set_style_pad_hor(b, 12, 0);
@@ -272,11 +272,12 @@ void buildChannel(int index, const char *name, bool master) {
   lv_obj_set_height(col, LV_PCT(100));
   flexCol(col, 4);
   lv_obj_set_flex_align(col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_ver(col, 6, 0);
+  lv_obj_set_style_pad_ver(col, 4, 0);
   if (master) {
     lv_obj_set_style_bg_color(col, hex(0x1A1E24), 0);
     lv_obj_set_style_bg_opa(col, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(col, 10, 0);
+    lv_obj_set_style_pad_hor(col, 4, 0);
   }
   void *user = reinterpret_cast<void *>(intptr_t(index));
 
@@ -285,29 +286,41 @@ void buildChannel(int index, const char *name, bool master) {
   // overhang: a margin on the fader itself isn't counted when flex shares out the height,
   // which pushed the mute buttons out of the mixer.
   lv_obj_t *holder = box(col);
-  lv_obj_set_width(holder, 40);
+  lv_obj_set_width(holder, 44);
   lv_obj_set_flex_grow(holder, 1);
-  lv_obj_set_style_pad_ver(holder, 8, 0);
+  lv_obj_set_style_pad_ver(holder, 10, 0);
   ch.slider = lv_slider_create(holder);
-  lv_obj_set_size(ch.slider, 8, LV_PCT(100));  // taller than wide: LVGL makes it vertical
+  lv_obj_set_size(ch.slider, 10, LV_PCT(100));  // taller than wide: LVGL makes it vertical
   lv_obj_align(ch.slider, LV_ALIGN_CENTER, 0, 0);
   lv_slider_set_range(ch.slider, 0, 100);
   lv_obj_set_style_bg_color(ch.slider, hex(kTrack), LV_PART_MAIN);
   lv_obj_set_style_bg_color(ch.slider, hex(kAccent), LV_PART_INDICATOR);
   lv_obj_set_style_bg_color(ch.slider, hex(kText), LV_PART_KNOB);
-  lv_obj_set_style_radius(ch.slider, 7, LV_PART_KNOB);
-  lv_obj_set_style_pad_hor(ch.slider, 14, LV_PART_KNOB);  // a 36x14 pill like the canvas
-  lv_obj_set_style_pad_ver(ch.slider, 3, LV_PART_KNOB);
+  lv_obj_set_style_radius(ch.slider, 9, LV_PART_KNOB);
+  lv_obj_set_style_pad_hor(ch.slider, 15, LV_PART_KNOB);  // a 40x20 pill
+  lv_obj_set_style_pad_ver(ch.slider, 5, LV_PART_KNOB);
   lv_obj_set_ext_click_area(ch.slider, 18);
   lv_obj_set_gesture_bubble(ch.slider, false);  // dragging it isn't a page swipe
   lv_obj_add_event_cb(ch.slider, onFader, LV_EVENT_VALUE_CHANGED, user);
   lv_obj_add_event_cb(ch.slider, onFader, LV_EVENT_RELEASED, user);
 
-  lv_obj_t *n = label(col, name, &body_font, master ? kText : kMuted);
-  ellipsize(n);
-  lv_obj_set_style_text_align(n, LV_TEXT_ALIGN_CENTER, 0);
-  ch.mute_icon = iconButton(col, 36, 36, kRaised, LV_SYMBOL_VOLUME_MAX, kText, onChannelMute, user);
-  lv_obj_set_style_radius(lv_obj_get_parent(ch.mute_icon), 10, 0);
+  // The name is the mute button, amber while muted (a name and a mute icon under each
+  // fader took the height the faders needed).
+  ch.pill = button(col, LV_PCT(100), 36, kRaised, onChannelMute, user);
+  lv_obj_set_style_radius(ch.pill, 10, 0);
+  lv_obj_set_style_pad_hor(ch.pill, 2, 0);
+  ch.name = label(ch.pill, name, &lv_font_montserrat_14, master ? kText : kSoftText);
+  ellipsize(ch.name);
+  lv_obj_set_style_text_align(ch.name, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_center(ch.name);
+}
+
+// The level, with the mute sign while muted; the fader's fill greys out then too.
+void showLevel(Channel &ch, int level, bool muted) {
+  char text[16];
+  snprintf(text, sizeof(text), muted ? LV_SYMBOL_MUTE " %d" : "%d", level);
+  setText(ch.value, text);
+  setTextColor(ch.value, muted ? kAmber : kText);
 }
 
 // False while the finger is on the fader or has just left it (a report from the PC can
@@ -315,17 +328,19 @@ void buildChannel(int index, const char *name, bool master) {
 // Before any touch there's nothing to wait out: at boot, millis() is below the hold too,
 // and the first mixer report used to be dropped for good (seen in the simulator).
 bool setChannel(Channel &ch, int level, bool muted) {
-  setText(ch.mute_icon, muted ? LV_SYMBOL_MUTE : LV_SYMBOL_VOLUME_MAX);
-  setTextColor(ch.mute_icon, muted ? kAmber : kText);
-  setBgColor(lv_obj_get_parent(ch.mute_icon), muted ? kAmberBg : kRaised);
+  const bool master = ch.id.length() == 0;
+  setBgColor(ch.pill, muted ? kAmberBg : kRaised);
+  setTextColor(ch.name, muted ? kAmber : master ? kText : kSoftText);
+  const lv_color_t fill = hex(muted ? kMuted : kAccent);
+  if (!lv_color_eq(lv_obj_get_style_bg_color(ch.slider, LV_PART_INDICATOR), fill)) {
+    lv_obj_set_style_bg_color(ch.slider, fill, LV_PART_INDICATOR);
+  }
   const bool touched = lv_obj_has_state(ch.slider, LV_STATE_PRESSED) ||
                        (ch.touched_ms != 0 && millis() - ch.touched_ms < kHoldAfterTouchMs);
   if (touched) return false;
   if (level >= 0) {
     if (lv_slider_get_value(ch.slider) != level) lv_slider_set_value(ch.slider, level, LV_ANIM_OFF);
-    char text[8];
-    snprintf(text, sizeof(text), "%d", level);
-    setText(ch.value, text);
+    showLevel(ch, level, muted);
   }
   return true;
 }

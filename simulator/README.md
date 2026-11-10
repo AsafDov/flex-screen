@@ -27,7 +27,9 @@ simulator\build\flex-screen-sim.exe --headless --port 48160
 ```
 
 It listens on `127.0.0.1:48160` (`--port` to change) for the companion's side of the link:
-newline-delimited JSON, exactly as over USB (`protocol/v0.md`). Send `{"t":"sync"}` and it
+newline-delimited JSON, exactly as over USB (`protocol/v0.md`). If it says it can't listen, Windows has
+reserved a port range that includes it (`netsh int ipv4 show excludedportrange
+protocol=tcp`): pick another, and set `FLEX_SIM_PORT` for the Python tools. Send `{"t":"sync"}` and it
 answers `hello`, like the deck. A palette change restarts it, as the deck restarts: the
 new process listens again, so reconnect. `--scale 2` doubles the window.
 

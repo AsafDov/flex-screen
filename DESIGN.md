@@ -833,6 +833,29 @@ Gotchas found after phase 6:
     the companion logged "usage 5h 90% (from a server's Claude Code)"; run again at once,
     it stopped at the 3-minute stamp. Not checked on the work server itself.
 
+- Firmware 0.16.4 and companion: the mixer usable again under the context bar (reported:
+  "The mixer is a bit slow to response, and due to the new bar, its a bit unusable. the
+  faders are way too small"):
+  - With the bar under the page, each channel's value, fader, name and mute icon left
+    the fader ~25 px of travel for 0–100, four steps a pixel, with a 36x14 knob. Now the
+    app's name is its mute button (amber while muted; the level shows the mute sign and
+    the fader's fill greys out), the "MIXER" heading row is gone, the device rows are
+    36 px (were 40) and the knob is 40x20: ~100 px of travel.
+  - The Now Playing card's shuffle and repeat buttons are side by side: stacked beside the
+    128 px art, the second was cut off.
+  - The companion handled each fader message on the thread that reads the deck's link,
+    reading every output's sessions before taking the next message. That's ~3 ms on this
+    PC, but more with many apps and devices, and a drag sends one every 60 ms. Now a
+    move sets the app's level and wakes the mixer thread, which applies the latest level
+    once; the link thread doesn't wait (0 ms, was 3–4 ms here).
+  - The simulator's default port, 48160, fell inside a port range Windows had reserved
+    (48098–48197; Hyper-V/WinNAT reserve ranges at times): `FLEX_SIM_PORT` picks another
+    for the Python tools.
+  - Checked: on the simulator, all 130 checks (the Teams name mutes it; a drag on
+    Spotify's fader sets it: 10 levels over a 0.6 s drag); the companion's mixer timed by
+    loading the built companion, setting an app to the level it had. Not flashed: the
+    deck wasn't on this PC.
+
 ## Decisions
 
 - Touch version of the board (confirmed).

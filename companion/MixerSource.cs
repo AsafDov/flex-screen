@@ -83,10 +83,16 @@ sealed class MixerSource
 
     public void Start() => new Thread(Run) { IsBackground = true, Name = "mixer" }.Start();
 
+    // A fader move or mute wakes the mixer thread rather than reading every device's sessions
+    // on the caller's: the deck's messages are read one at a time, so a drag (one message every
+    // 60 ms) waited on each read, and on a busy PC the backlog made the fader lag. Moves that
+    // arrive while a round runs are applied together, at the latest level, in the next.
+    readonly AutoResetEvent _wake = new(false);
+
     public void SetLevel(string appId, int level)
     {
         lock (_gate) _levels[appId] = new Level(ToAmplitude(level), _levels.TryGetValue(appId, out var was) && was.Muted);
-        Poll();
+        _wake.Set();
     }
 
     // The numbers Windows' volume mixer shows: a session's volume as stored, times 100.
@@ -103,7 +109,7 @@ sealed class MixerSource
             if (!_levels.TryGetValue(appId, out var was)) return;
             _levels[appId] = was with { Muted = !was.Muted };
         }
-        Poll();
+        _wake.Set();
     }
 
     void Run()
@@ -114,14 +120,13 @@ sealed class MixerSource
         while (true)
         {
             Poll();
-            Thread.Sleep(PollMs);
+            _wake.WaitOne(PollMs);  // or at once, after a fader move
         }
     }
 
     void Poll()
     {
-        // The poll thread and the link thread (after a fader move) both publish; one at a
-        // time, so the deck can't receive an older reading after a newer one.
+        // One at a time, so the deck can't receive an older reading after a newer one.
         lock (_publishGate)
         {
             List<AppVolume> apps;
