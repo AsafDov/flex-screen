@@ -9,3 +9,10 @@ vscode-ext/out/
 dist/
 
 *.log
+
+# Kept on this PC only: the board's factory flash dump (Waveshare's firmware), the
+# vendor manual, and editor settings with local paths.
+backup/*.bin
+backup/*.bundle
+manual.pdf
+.vscode/settings.json
