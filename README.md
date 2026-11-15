@@ -23,6 +23,8 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - **Claude Code hooks** tell the companion when a Claude session is working, needs you or
   is done.
 
+<img src="docs/screens/today.png" alt="The Today page: status bar, clock, now playing, up next, recent actions and the context bar" width="720">
+
 ## Features
 
 ### Status bar (on every page)
@@ -38,6 +40,9 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   results.
 
 ### Claude approvals (on every page)
+
+<img src="docs/screens/approval.png" alt="A Claude permission request with Deny, Always and Approve" width="560">
+
 - When Claude Code asks for permission (in the Claude app, VS Code or a terminal), a banner
   under the status bar shows what it wants to run, with **Approve**, **Always** (Claude's
   own "don't ask again" rule, when it offers one) and **Deny**. Claude's prompt on the PC
@@ -49,6 +54,9 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   and a banner goes as soon as you answer at the PC instead.
 
 ### Context bar (on every page but the Numpad)
+
+<img src="docs/screens/context-bar.png" alt="Arranging the context bar: VS Code's actions to put in a key's place" width="560">
+
 - A strip above the tabs with keys for the app in front on the PC, in that app's color. The
   keys each app starts with (a long press shows the rest of its list):
   - **VS Code:** Go to file, Go to symbol, Terminal, Search, Approve, Model. Its list also
@@ -103,6 +111,9 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Add your own actions to an app's list in settings.json's `contextBar` (see [Settings](#settings)).
 
 ### Shortcuts (on every page)
+
+<img src="docs/screens/shortcuts.png" alt="The shortcuts launcher open over Today" width="560">
+
 - A launcher button at the right end of the tab bar opens a panel of up to 12 tiles:
   apps, links, deck actions and key combinations, each with its real icon (an app's own,
   a site's) or a symbol. Tap one to run it; tap anywhere else to close.
@@ -123,12 +134,18 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - How many tasks are open and how many are due today or overdue; tap it for Capture.
 
 ### Audio
+
+<img src="docs/screens/audio.png" alt="The Audio page: output, inputs and the app mixer" width="560">
+
 - Now playing with large art, progress, shuffle and repeat.
 - Output and input device pickers that set the Windows default device.
 - Per-app mixer: a fader for each app playing sound; tap the app's name under it to mute
   it (amber while muted).
 
 ### Dev
+
+<img src="docs/screens/dev.png" alt="The Dev page: Claude's status, recent terminal commands, git and the last build" width="560">
+
 - Claude banner: what the current session is doing, with an **Open** button.
 - Git for VS Code's active repo: branch, ahead/behind, changed files; fetch, pull, push,
   stash, and **Commit…** to open VS Code's Source Control.
@@ -138,6 +155,9 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   came from. History is kept per workspace, so it survives restarts.
 
 ### Windows
+
+<img src="docs/screens/windows.png" alt="The Windows page: open windows and FancyZones layouts" width="560">
+
 - The 8 most recently used windows with their icons, in taskbar order. Tap to focus (tap
   again to minimize); a minimized window keeps its tile, icon dimmed, and a tap brings it
   back. Hold to close the window, which takes its tile away at once.
@@ -147,6 +167,9 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   to maximize. A monitor picker for multi-monitor setups.
 
 ### Capture
+
+<img src="docs/screens/capture.png" alt="The Capture page: tasks, clipboard and Obsidian" width="560">
+
 - Tasks (see below), the clipboard and Obsidian side by side.
 - Clipboard history: your newest text copies plus pins. Tap to paste into the focused
   window, hold to pin, Clear. Copies that password managers mark as private are never
@@ -154,6 +177,9 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Obsidian: open today's daily note, or one of the five most recent notes.
 
 ### Tasks (on Capture)
+
+<img src="docs/screens/task.png" alt="A task opened from the Tasks card" width="560">
+
 - Your Google Tasks, as chips along the top with how many are open in each: **Scheduled**
   (every task with a due date, from any list) and then the lists you chose for the deck
   (the tray icon's **Task lists on the deck**; all of them until you untick some). A list
@@ -174,11 +200,22 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Built to take more sources besides Google Tasks later (the companion's `ITaskProvider`).
 
 ### Numpad
+
+<img src="docs/screens/numpad.png" alt="The Numpad page" width="560">
+
 - A full USB keypad, with keys that repeat while held, editing keys, and `( ) , =`.
   Num Lock follows the PC's.
 - Calculator mode: work it out on the deck, and Enter types the result into the PC.
 
 ### Calls
+
+<img src="docs/screens/call-teams.png" alt="The call panel in a Teams meeting" width="560">
+
+<p>
+  <img src="docs/screens/zoom-whiteboard.png" alt="Zoom's whiteboard tools: laser, pen, marker, eraser, pan, select, colors and weight" width="400">
+  <img src="docs/screens/zoom-annotate.png" alt="Annotating a shared screen in Zoom: tools, colors and line widths" width="400">
+</p>
+
 - When an app is using the microphone (Teams, Zoom, Discord, Webex, a browser), a call
   panel pops up with what that app allows: mute, camera, raise hand, reactions, leave,
   volume, and bring the call forward. Hide turns it into a status-bar pill.
@@ -207,6 +244,9 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   Raise hand, Record, Full screen and quick reactions (hold a key to swap).
 
 ### Keyboard layer cheat sheet
+
+<img src="docs/screens/cheat-sheet.png" alt="The cheat sheet: the base layer laid out like the keyboard" width="560">
+
 - Hold a layer key for ten seconds (`cheatSheetSeconds` in [Settings](#settings)) and the
   deck shows that layer laid out like your keyboard, read straight from the Vial keyboard's own layout and keymap. Letting go
   hides it; tapping the layer pill keeps it open.
