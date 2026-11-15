@@ -59,10 +59,20 @@ const Event *Google::next(int64_t now) const {
 }
 
 const char *Tasks::listName(const String &src, const String &id) const {
+  const TaskList *l = listOf(src, id);
+  return l ? l->name.c_str() : "";
+}
+
+const TaskList *Tasks::listOf(const String &src, const String &id) const {
   for (int i = 0; i < list_count; i++) {
-    if (lists[i].src == src && lists[i].id == id) return lists[i].name.c_str();
+    if (lists[i].src == src && lists[i].id == id) return &lists[i];
   }
-  return "";
+  return nullptr;
+}
+
+bool Tasks::canTick(const Task &t) const {
+  const TaskList *l = listOf(t.src, t.list);
+  return !l || l->tick;
 }
 
 int64_t utcNow() {

@@ -180,24 +180,34 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 
 <img src="docs/screens/task.png" alt="A task opened from the Tasks card" width="560">
 
-- Your Google Tasks, as chips along the top with how many are open in each: **Scheduled**
-  (every task with a due date, from any list) and then the lists you chose for the deck
-  (the tray icon's **Task lists on the deck**; all of them until you untick some). A list
-  shows its undated tasks too. Grouped by when they're due: overdue, today, tomorrow, this
-  week, later, no date. Under Scheduled a row is just the title, the due day and its
-  status (to do, done, or how many days overdue); in a list it's the day and the first
-  line of its notes. Subtasks are indented.
-- Tap a task to open it: its whole title, list, due day, status and notes, with **Mark
-  done** and **Close** (or tap beside it).
-- Tap the box at a task's start to tick it off in Google Tasks straight away. It stays on
-  the page, struck through, until midnight, so ticking it again undoes it.
+- Tasks from several places at once, each keeping where it came from: **Google Tasks**,
+  **Microsoft To Do**, the open tasks of your latest **Obsidian** daily note, and the
+  **Jira** and **GitHub** issues assigned to you (set up under the tray icon's **Task
+  sources**; [docs/task-sources.md](docs/task-sources.md) walks through each). A source not
+  set up on a PC is left out, so the same companion suits home and work.
+- Chips along the top with how many are open in each: **Scheduled** (every task with a
+  due date, from any list) and then the lists you chose for the deck (the tray icon's
+  **Task lists on the deck**; all of them until you untick some). A list shows its undated
+  tasks too. Grouped by when they're due: overdue, today, tomorrow, this week, later, no
+  date. Under Scheduled a row is just the title, the due day and its status (to do, done,
+  or how many days overdue); in a list it's the day and the first line of its notes. An
+  issue's row shows its key, priority and status instead. Subtasks are indented.
+- Tap a task to open it: its whole title, list, due day, status and notes, what its source
+  says about it (a Jira issue's project, key, priority and status, below), **Open in …** (the
+  issue's page, the note in Obsidian, the task on the web), **Mark done** and **Close**
+  (or tap beside it).
+  <img src="docs/screens/task-jira.png" alt="A Jira issue opened from the Tasks card" width="560">
+- Tap the box at a task's start to tick it off in its source straight away. It stays on
+  the page, struck through, until midnight, so ticking it again undoes it. Jira and GitHub
+  issues have no box: they're moved on in Jira or GitHub, not by a slip of the finger.
 - **+** opens a form with an on-screen keyboard: the title, which list (the one on
-  show to begin with; from Scheduled, the first list, due today) and when it's due (no
-  date, today or tomorrow).
+  show to begin with; from Scheduled or an issues list, the first list, due today from
+  Scheduled) and when it's due (no date, today or tomorrow).
 - No *Starred*: Google's Tasks API doesn't say which tasks are starred.
-- The ↻ button reads Google again now; otherwise the companion reads it every 2 minutes
-  and right after every change from the deck.
-- Built to take more sources besides Google Tasks later (the companion's `ITaskProvider`).
+- The ↻ button reads every source again now; otherwise the companion reads them every 2
+  minutes and right after every change from the deck.
+- Another source is one class in the companion (`ITaskProvider`: read, tick, add), added
+  to the list in `TrayApp`.
 
 ### Numpad
 
@@ -327,6 +337,9 @@ apply straight away.
   "cheatSheetSeconds": 10,                             // hold a layer key this long for its cheat sheet; 0: only from the pill
   "obsidianVault": "C:\\path\\to\\vault",               // if it isn't found by itself
   "hiddenTaskLists": ["google/MTIzNDU2"],              // task lists left off the deck (the tray's Task lists on the deck)
+  "obsidianTasks": true,                               // the latest daily note's tasks on the deck
+  "jira": { "url": "https://acme.atlassian.net", "email": "me@acme.com", "jql": "…" },  // set by Task sources › Jira
+  "github": { "host": "github.com", "query": "is:open is:issue assignee:@me" },          // set by Task sources › GitHub
   "shortcuts": [                                       // the launcher's tiles, up to 12
     { "name": "Gmail", "url": "https://mail.google.com" },
     { "name": "Spotify", "app": "Spotify" },             // a Start menu app, by its name there
@@ -379,7 +392,7 @@ A key is `keys` (pressed in that app's window; `"g, i"` presses one after the ot
 | `vscode-ext/` | The VS Code extension |
 | `protocol/` | [v0.md](protocol/v0.md): every message between the parts |
 | `install/` | Install kit builder and install/uninstall scripts |
-| `docs/` | Guides: [connecting Google Calendar and Tasks](docs/google-setup.md) |
+| `docs/` | Guides: [connecting Google Calendar and Tasks](docs/google-setup.md), [the other task sources](docs/task-sources.md) |
 | `backup/` | Factory firmware backup and restore steps |
 | `simulator/` | The deck's UI on the PC, with feature tests and screenshot tours ([README](simulator/README.md)) |
 

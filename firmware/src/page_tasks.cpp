@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "fonts/font_icons.h"
 #include "model.h"
 #include "pc.h"
 #include "ui_kit.h"
@@ -32,9 +33,10 @@ struct {
 String filter_src, filter_id;
 int form_list = 0, form_due = 0;
 
-// The open task, over everything: its title, list, due day, status and notes.
+// The open task, over everything: its title, list, due day, status, what its source says
+// about it (project, key, priority…), its notes, and a button that opens it where it lives.
 struct {
-  lv_obj_t *scrim, *panel, *title, *meta, *notes_box, *notes, *done, *done_text;
+  lv_obj_t *scrim, *panel, *title, *meta, *source, *notes_box, *notes, *open, *open_text, *done, *done_text;
 } pop;
 String pop_src, pop_list, pop_id;  // pop_id "" when none is open
 uint32_t pop_tasks_seen = UINT32_MAX, pop_detail_seen = UINT32_MAX;
@@ -60,9 +62,12 @@ bool listShown(const model::Tasks &k, const String &src, const String &id) {
   return false;
 }
 
-int shownLists(const model::Tasks &k) {
+// The lists a new task can go into: on the deck, and not a tracker's (Jira, GitHub).
+bool addable(const model::TaskList &l) { return l.show && l.add; }
+
+int addableLists(const model::Tasks &k) {
   int n = 0;
-  for (int i = 0; i < k.list_count; i++) n += k.lists[i].show;
+  for (int i = 0; i < k.list_count; i++) n += addable(k.lists[i]);
   return n;
 }
 
@@ -120,13 +125,14 @@ void dueText(const String &ymd, char *out, size_t n) {
   snprintf(out, n, "%s %d %s", weekday, d.tm_mday, month);
 }
 
-// "Done", "3 days overdue" or "To do".
+// "Done", "3 days overdue" or "To do"; for an issue that's only opened here (Jira, GitHub),
+// "" instead of "To do": its own status says more, and comes with it.
 void statusText(const model::Task &t, int64_t now_day, char *out, size_t n) {
   const int64_t due = dayNumber(t.due);
   const int64_t late = due == INT64_MIN || now_day == INT64_MIN ? 0 : now_day - due;
   if (t.done) snprintf(out, n, "Done");
   else if (late > 0) snprintf(out, n, "%d day%s overdue", int(late), late == 1 ? "" : "s");
-  else snprintf(out, n, "To do");
+  else snprintf(out, n, "%s", model::tasks.canTick(t) ? "To do" : "");
 }
 
 // ---- actions
@@ -135,6 +141,7 @@ void tick(int i) {
   model::Tasks &k = model::tasks;
   if (i >= k.count || !pc::connected()) return;
   model::Task &t = k.list[i];
+  if (!k.canTick(t)) return;  // a tracker's issue: changed there, not here
   t.done = !t.done;  // tick it now; the companion confirms
   k.open += t.done ? -1 : 1;
   if (t.due.length()) k.sched += t.done ? -1 : 1;
@@ -173,14 +180,25 @@ void showPopup() {
   dueText(t->due, day, sizeof(day));
   statusText(*t, dayToday(), status, sizeof(status));
   const char *list = model::tasks.listName(t->src, t->list);
-  snprintf(meta, sizeof(meta), "%s%s%s%s  ·  %s", list, list[0] ? "  ·  " : "", day[0] ? "Due " : "No due date", day, status);
+  snprintf(meta, sizeof(meta), "%s%s%s%s%s%s", list, list[0] ? "  ·  " : "", day[0] ? "Due " : "No due date", day,
+           status[0] ? "  ·  " : "", status);
   setText(pop.meta, meta);
   setTextColor(pop.meta, strstr(status, "overdue") ? kUrgent : kMuted);
+
+  // What the source says (a Jira issue's project, key, priority and status), once it's come.
+  const bool source = loaded && d.meta.length() > 0;
+  setHidden(pop.source, !source);
+  if (source) setText(pop.source, d.meta.c_str());
 
   const bool notes = loaded && d.notes.length() > 0;
   setText(pop.notes, notes ? d.notes.c_str() : loaded ? "No notes." : "Loading…");
   setTextColor(pop.notes, notes ? kSoftText : kMuted);
 
+  const bool link = loaded && d.found && d.link.length() > 0;
+  setHidden(pop.open, !link);
+  if (link) setText(pop.open_text, d.link.c_str());
+
+  setHidden(pop.done, !model::tasks.canTick(*t));
   setText(pop.done_text, t->done ? "Mark not done" : LV_SYMBOL_OK "  Mark done");
   setBgColor(pop.done, t->done ? kRaised : kAccent);
   setTextColor(pop.done_text, t->done ? kText : kOnAccent);
@@ -204,6 +222,14 @@ void onOpen(lv_event_t *e) {
 }
 
 void onPopClose(lv_event_t *) { closePopup(); }
+
+// Opens it on the PC (the issue's page, the note in Obsidian); the popup closes, as the PC's
+// screen is where it continues.
+void onPopOpen(lv_event_t *) {
+  if (!popTask() || !pc::connected()) return;
+  pc::openTaskLink(pop_src.c_str(), pop_list.c_str(), pop_id.c_str());
+  closePopup();
+}
 
 void onPopDone(lv_event_t *) {
   const model::Task *t = popTask();
@@ -233,12 +259,12 @@ void showChoice(lv_obj_t *chip, bool on) {
 void showForm() {
   const model::Tasks &k = model::tasks;
   for (int i = 0; i < model::Tasks::kMaxLists; i++) {
-    const bool used = i < k.list_count && k.lists[i].show;
+    const bool used = i < k.list_count && addable(k.lists[i]);
     setHidden(form.list_chips[i], !used);
     if (used) setText(lv_obj_get_child(form.list_chips[i], 0), k.lists[i].name.c_str());
     showChoice(form.list_chips[i], i == form_list);
   }
-  setHidden(form.chips, shownLists(k) < 2);  // one list: nothing to choose
+  setHidden(form.chips, addableLists(k) < 2);  // one list: nothing to choose
   char date[12];
   dateOf(0, date, sizeof(date));
   for (int i = 0; i < kDues; i++) {
@@ -249,14 +275,15 @@ void showForm() {
 
 void onAdd(lv_event_t *) {
   const model::Tasks &k = model::tasks;
-  if (!pc::connected() || k.status != "ok") return;
-  // The list on show; from Scheduled the first list with a chip, due today so it shows there.
+  if (!pc::connected() || k.status != "ok" || addableLists(k) == 0) return;
+  // The list on show; from Scheduled (or a tracker's list, which takes none) the first list
+  // with a chip, due today from Scheduled so it shows there.
   form_list = 0;
   for (int i = k.list_count - 1; i >= 0; i--) {
-    if (k.lists[i].show) form_list = i;
+    if (addable(k.lists[i])) form_list = i;
   }
   for (int i = 0; i < k.list_count; i++) {
-    if (k.lists[i].src == filter_src && k.lists[i].id == filter_id) form_list = i;
+    if (k.lists[i].src == filter_src && k.lists[i].id == filter_id && addable(k.lists[i])) form_list = i;
   }
   char today[12];
   dateOf(0, today, sizeof(today));
@@ -401,7 +428,7 @@ void buildPopup() {
 
   lv_obj_t *p = pop.panel = card(lv_layer_top(), kSurface, kBorder);
   lv_obj_set_size(p, 600, LV_SIZE_CONTENT);
-  lv_obj_set_style_max_height(p, 400, 0);
+  lv_obj_set_style_max_height(p, 420, 0);
   lv_obj_align(p, LV_ALIGN_CENTER, 0, 0);
   lv_obj_set_style_radius(p, 18, 0);
   lv_obj_set_style_pad_all(p, 18, 0);
@@ -418,6 +445,10 @@ void buildPopup() {
   pop.meta = label(p, "", &small_font, kMuted);
   lv_obj_set_width(pop.meta, LV_PCT(100));
   lv_label_set_long_mode(pop.meta, LV_LABEL_LONG_MODE_WRAP);
+  pop.source = label(p, "", &small_font, kSoftText);
+  lv_obj_set_width(pop.source, LV_PCT(100));
+  lv_label_set_long_mode(pop.source, LV_LABEL_LONG_MODE_WRAP);
+  lv_obj_set_hidden(pop.source, true);
 
   // The notes, scrolling when long.
   lv_obj_t *nb = pop.notes_box = box(p);
@@ -435,6 +466,17 @@ void buildPopup() {
   lv_obj_t *row = box(p);
   lv_obj_set_size(row, LV_PCT(100), 44);
   flexRow(row, 10);
+  // "Open in Jira": an icon and the companion's words, as wide as they are.
+  pop.open = button(row, LV_SIZE_CONTENT, 44, kRaised, onPopOpen);
+  lv_obj_set_style_radius(pop.open, 12, 0);
+  lv_obj_set_style_pad_hor(pop.open, 16, 0);
+  flexRow(pop.open, 8);
+  label(pop.open, glyphOf("external"), &font_icons_15, kAccent);
+  pop.open_text = label(pop.open, "", &body_font, kText);
+  lv_obj_set_style_max_width(pop.open_text, 220, 0);
+  lv_label_set_long_mode(pop.open_text, LV_LABEL_LONG_MODE_DOTS);
+  lv_obj_set_height(pop.open_text, lv_font_get_line_height(&body_font));
+  lv_obj_set_hidden(pop.open, true);
   lv_obj_t *gap = box(row);
   lv_obj_set_size(gap, 1, 1);
   lv_obj_set_flex_grow(gap, 1);
@@ -525,16 +567,24 @@ void addRow(int i, Group group, bool all, int64_t now_day) {
   lv_obj_set_style_pad_right(r, 6, 0);
   flexRow(r, 4);
 
-  lv_obj_t *tick_button = button(r, 44, 44, kSurface, onTick, reinterpret_cast<void *>(intptr_t(i)));
-  lv_obj_set_style_radius(tick_button, 10, 0);
-  lv_obj_t *mark = card(tick_button, t.done ? 0x4A525C : kSurface, t.done ? 0x4A525C : kBox);
-  lv_obj_set_clickable(mark, false);  // taps go to the button
-  lv_obj_set_size(mark, 24, 24);
-  lv_obj_set_style_pad_all(mark, 0, 0);
-  lv_obj_set_style_radius(mark, t.child ? 12 : 6, 0);
-  lv_obj_set_style_border_width(mark, 2, 0);
-  lv_obj_center(mark);
-  if (t.done) lv_obj_center(label(mark, LV_SYMBOL_OK, &small_font, kText));
+  const bool tickable = k.canTick(t);
+  if (tickable) {
+    lv_obj_t *tick_button = button(r, 44, 44, kSurface, onTick, reinterpret_cast<void *>(intptr_t(i)));
+    lv_obj_set_style_radius(tick_button, 10, 0);
+    lv_obj_t *mark = card(tick_button, t.done ? 0x4A525C : kSurface, t.done ? 0x4A525C : kBox);
+    lv_obj_set_clickable(mark, false);  // taps go to the button
+    lv_obj_set_size(mark, 24, 24);
+    lv_obj_set_style_pad_all(mark, 0, 0);
+    lv_obj_set_style_radius(mark, t.child ? 12 : 6, 0);
+    lv_obj_set_style_border_width(mark, 2, 0);
+    lv_obj_center(mark);
+    if (t.done) lv_obj_center(label(mark, LV_SYMBOL_OK, &small_font, kText));
+  } else {
+    // A tracker's issue (Jira, GitHub): no box, since it's moved on there; a tap anywhere opens it.
+    lv_obj_t *slot = box(r);
+    lv_obj_set_size(slot, 44, 44);
+    lv_obj_center(label(slot, glyphOf("external"), &font_icons_15, kMuted));
+  }
 
   lv_obj_t *text = box(r);
   lv_obj_set_height(text, LV_SIZE_CONTENT);
@@ -544,8 +594,9 @@ void addRow(int i, Group group, bool all, int64_t now_day) {
   ellipsize(title);
   if (t.done) lv_obj_set_style_text_decor(title, LV_TEXT_DECOR_STRIKETHROUGH, 0);
 
-  // Scheduled: the due day and where it stands, nothing else. One list: the day (where the
-  // heading doesn't say it) and the notes' first line.
+  // Scheduled: the due day and where it stands, nothing else (an issue's own key, priority
+  // and status, unless it's late). One list: the day (where the heading doesn't say it) and
+  // the source's line (the notes' first line; an issue's key, priority and status).
   char sub[200];
   size_t n = 0;
   sub[0] = '\0';
@@ -560,6 +611,7 @@ void addRow(int i, Group group, bool all, int64_t now_day) {
     statusText(t, now_day, status, sizeof(status));
     add(day);
     add(status);
+    if (!tickable && !status[0]) add(t.sub.c_str());
   } else {
     if (group == kOverdue || group == kThisWeek || group == kLater) {
       const time_t at = time_t(dayNumber(t.due) * 86400);
@@ -600,7 +652,7 @@ void updateFilters() {
     if (open) setTextf(w.filter_name[i], "%s  %d", name, open);
     else setText(w.filter_name[i], name);
   }
-  lv_obj_set_style_opa(w.add, ok ? LV_OPA_COVER : LV_OPA_40, 0);
+  lv_obj_set_style_opa(w.add, ok && addableLists(k) > 0 ? LV_OPA_COVER : LV_OPA_40, 0);
 }
 
 void updateList() {
@@ -628,14 +680,19 @@ void updateList() {
   setHidden(w.badge, !ok || open == 0);
   setTextf(lv_obj_get_child(w.badge, 0), "%d open", open);
 
-  const char *why = !online                ? "PC offline"
-                    : k.status == "setup"  ? "Connect Google in the companion: tray icon, \"Connect Google Calendar and Tasks\"."
-                    : k.status == "signin" ? "Sign in to Google from the companion's tray menu."
-                    : k.status == "error" && k.count == 0 ? "Google Tasks can't be reached right now."
-                    : k.status.length() == 0 ? "Reading your tasks…"
-                    : !any && all             ? "Nothing scheduled. Tap + to add one."
-                    : !any                    ? "Nothing to do. Tap + to add one."
-                                              : "";
+  // Which source it's about, when the companion says ("Google Tasks").
+  const char *from = k.from.length() ? k.from.c_str() : "your task source";
+  const model::TaskList *list = all ? nullptr : k.listOf(filter_src, filter_id);
+  char why[160];
+  if (!online) snprintf(why, sizeof(why), "PC offline");
+  else if (k.status == "setup") snprintf(why, sizeof(why), "Connect your tasks in the companion: tray icon, \"Task sources\".");
+  else if (k.status == "signin") snprintf(why, sizeof(why), "Sign in to %s from the companion's tray menu, \"Task sources\".", from);
+  else if (k.status == "error" && k.count == 0) snprintf(why, sizeof(why), "%s can't be reached right now.", k.from.length() ? from : "Your tasks");
+  else if (k.status.length() == 0) snprintf(why, sizeof(why), "Reading your tasks…");
+  else if (!any && all) snprintf(why, sizeof(why), "Nothing scheduled. Tap + to add one.");
+  else if (!any && list && !list->add) snprintf(why, sizeof(why), "Nothing assigned to you.");
+  else if (!any) snprintf(why, sizeof(why), "Nothing to do. Tap + to add one.");
+  else why[0] = '\0';
   setText(w.note, why);
   setHidden(w.note, why[0] == '\0');
 

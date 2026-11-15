@@ -366,7 +366,8 @@ void updateTasks() {
     }
   }
   if (!pc::connected() || k.status.length() == 0) setText(w.tasks_text, "Tasks");  // not read yet
-  else if (k.status == "setup" || k.status == "signin") setText(w.tasks_text, "Tasks need Google");
+  else if (k.status == "setup") setText(w.tasks_text, "Connect your tasks");
+  else if (k.status == "signin") setText(w.tasks_text, "Tasks need signing in");
   else if (k.open == 0) setText(w.tasks_text, "Nothing to do");
   else if (urgent) setTextf(w.tasks_text, "%d to do · %d due", k.open, urgent);
   else setTextf(w.tasks_text, "%d to do", k.open);

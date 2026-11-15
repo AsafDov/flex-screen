@@ -292,9 +292,60 @@ def test_tasks(d: Deck) -> None:
           on_screen(d, 'SCHEDULED', exact=True) and not on_screen(d, 'Home  3', exact=True))
     d.state('tasks', fixtures.tasks())
 
-    d.state('tasks', {'rev': 9, 'status': 'signin', 'lists': [], 'tasks': [], 'open': 0})
-    check('tasks: signed out, it says how to connect', on_screen(d, 'Sign in to Google'))
+    d.state('tasks', {'rev': 9, 'status': 'signin', 'from': 'Google Tasks', 'lists': [], 'tasks': [], 'open': 0})
+    check('tasks: signed out, it says which source to sign in to', on_screen(d, 'Sign in to Google Tasks'))
     d.shot(os.path.join(OUT, 'tasks-signin.png'))
+    d.state('tasks', {'rev': 10, 'status': 'setup', 'lists': [], 'tasks': [], 'open': 0})
+    check('tasks: nothing connected, it says where to connect', on_screen(d, '"Task sources"'))
+
+
+def test_task_sources(d: Deck) -> None:
+    d.page(4)
+    d.state('tasks', fixtures.task_sources())
+    tap(d, 'Scheduled  ')
+    check('sources: a Jira issue is under Scheduled by its due day, with its key, priority and status',
+          on_screen(d, 'Checkout fails on Safari') and on_screen(d, 'Mon 9 Nov  ·  ACME-142  ·  High  ·'))  # cut short on the card
+    n = label(d, 'Checkout fails on Safari')
+    mark = d.mark()
+    if n:
+        d.tap(n['x'] - 26, n['y'] + n['h'] // 2)  # where a task's box is
+    check('sources: an issue has no box: a tap there opens it, ticking nothing',
+          did(d, mark, 'task.open', src='jira', list='assigned', id='ACME-142') is not None
+          and did(d, mark, 'task.done', timeout=0.3) is None, str(d.acts(mark)))
+    check('sources: its popup says its list and due day, and has no Mark done',
+          on_screen(d, 'Jira  ·  Due Mon 9 Nov', exact=True) and not on_screen(d, 'Mark done') and not on_screen(d, 'Open in'))
+    d.state('task', {'src': 'jira', 'list': 'assigned', 'id': 'ACME-142', 'found': True, 'title': 'Checkout fails on Safari 17',
+                     'notes': 'Steps: add to cart, pay with Apple Pay.', 'meta': 'Acme Web  ·  ACME-142  ·  High  ·  In Progress',
+                     'link': 'Open in Jira'})
+    check('sources: then what Jira says about it, and a button to open it',
+          on_screen(d, 'Acme Web  ·  ACME-142  ·  High  ·  In Progress', exact=True) and on_screen(d, 'Open in Jira', exact=True)
+          and on_screen(d, 'Steps: add to cart'))
+    d.shot(os.path.join(OUT, 'tasks-jira.png'))
+    expect_act(d, 'sources: Open in Jira opens it on the PC', 'Open in Jira', 'task.link', exact=True,
+               src='jira', list='assigned', id='ACME-142')
+    check('sources: and closes the popup', not on_screen(d, 'Open in Jira', exact=True))
+
+    tap(d, 'Jira  2', exact=True)
+    check('sources: Jira is a list of its own, undated issues too',
+          on_screen(d, 'JIRA', exact=True) and on_screen(d, 'Upgrade the payment SDK') and on_screen(d, 'ACME-77  ·  Medium  ·  To Do'))
+    tap(d, PLUS, exact=True)
+    check('sources: + from Jira offers only the lists that take new tasks',
+          on_screen(d, 'Tomorrow', exact=True) and on_screen(d, 'Daily note', exact=True) and on_screen(d, 'My Tasks', exact=True)
+          and not on_screen(d, 'Jira', exact=True))
+    for i in range(3):  # q, w, e
+        key = keyboard_key(d, 0, 5 + 4 * i, 4, 52)
+        if key:
+            d.tap(*key)
+    expect_act(d, 'sources: and adds to the first of them', 'Add', 'task.add', src='google', list='L1', title='qwe', due='')
+
+    tap(d, 'Scheduled  ')  # the daily note's chip is past the card's edge, a swipe away
+    n = label(d, 'Water the plants')
+    mark = d.mark()
+    if n:
+        d.tap(n['x'] - 26, n['y'] + n['h'] // 2)
+    check('sources: a daily note task has a box that ticks it off',
+          did(d, mark, 'task.done', src='obsidian', list='daily', id='a1b2c3', done=True) is not None, str(d.acts(mark)))
+    d.state('tasks', fixtures.tasks())
 
 
 def test_numpad(d: Deck) -> None:
@@ -852,7 +903,7 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_numpad,
+        for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
                      test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_picker, test_idle, test_offline):
             try:
                 d.load(fixtures.day())  # each starts from the same day

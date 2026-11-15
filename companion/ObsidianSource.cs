@@ -59,20 +59,55 @@ sealed class ObsidianSource
         }
     }
 
+    /// <summary>The vault's folder, or null while none is found.</summary>
+    public string? Root => _root;
+
     /// <summary>Today's daily note, as the Daily notes plugin names it; created if it isn't there yet.</summary>
     public void OpenToday()
     {
         if (_root == null || !ObsidianKnowsVault()) return;
-        var settings = ReadJson(Path.Combine(_root, ".obsidian", "daily-notes.json"));
-        var folder = (string?)settings?["folder"] ?? "";
-        var name = MomentFormat(DateTime.Now, (string?)settings?["format"] is { Length: > 0 } f ? f : "YYYY-MM-DD");
-        var file = Path.Combine(_root, folder, name + ".md");
-        if (!File.Exists(file))
+        Open(CreateDailyNote(_root, DateTime.Now));
+    }
+
+    /// <summary>The Daily notes plugin's folder, file name format (Moment's) and template.</summary>
+    static (string Folder, string Format, string? Template) DailySettings(string root)
+    {
+        var settings = ReadJson(Path.Combine(root, ".obsidian", "daily-notes.json"));
+        var template = (string?)settings?["template"] is { Length: > 0 } t ? Path.Combine(root, t.EndsWith(".md") ? t : t + ".md") : null;
+        return ((string?)settings?["folder"] ?? "", (string?)settings?["format"] is { Length: > 0 } f ? f : "YYYY-MM-DD", template);
+    }
+
+    static string DailyNotePath(string root, DateTime day, (string Folder, string Format, string? Template) daily) =>
+        Path.Combine(root, daily.Folder, MomentFormat(day, daily.Format) + ".md");
+
+    /// <summary>The note for <paramref name="day"/>, made from the plugin's template if it isn't there yet.</summary>
+    public static string CreateDailyNote(string root, DateTime day)
+    {
+        var daily = DailySettings(root);
+        var file = DailyNotePath(root, day, daily);
+        if (File.Exists(file)) return file;
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, daily.Template != null && File.Exists(daily.Template) ? File.ReadAllText(daily.Template) : "");
+        return file;
+    }
+
+    /// <summary>The newest daily note up to today (looking back a quarter of a year), or null.</summary>
+    public static string? LatestDailyNote(string root)
+    {
+        var daily = DailySettings(root);
+        for (var day = DateTime.Today; day > DateTime.Today.AddDays(-92); day = day.AddDays(-1))
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-            var template = (string?)settings?["template"] is { Length: > 0 } t ? Path.Combine(_root, t.EndsWith(".md") ? t : t + ".md") : null;
-            File.WriteAllText(file, template != null && File.Exists(template) ? File.ReadAllText(template) : "");
+            var file = DailyNotePath(root, day, daily);
+            if (File.Exists(file)) return file;
         }
+        return null;
+    }
+
+    /// <summary>Opens a note of the vault (a full path) in Obsidian.</summary>
+    public void OpenFile(string file)
+    {
+        if (_root == null || !ObsidianKnowsVault()) return;
+        if (!Path.GetFullPath(file).StartsWith(_root, StringComparison.OrdinalIgnoreCase)) return;
         Open(file);
     }
 
@@ -201,7 +236,7 @@ sealed class ObsidianSource
         return null;
     }
 
-    static JsonNode? ReadJson(string path)
+    internal static JsonNode? ReadJson(string path)
     {
         try
         {
@@ -224,6 +259,19 @@ sealed class ObsidianSource
         var result = new System.Text.StringBuilder();
         for (var i = 0; i < format.Length;)
         {
+            if (format[i] == '[' && format.IndexOf(']', i) is > 0 and var close)
+            {
+                result.Append(format, i + 1, close - i - 1);  // Moment's escaped text
+                i = close + 1;
+                continue;
+            }
+            if (string.CompareOrdinal(format, i, "Do", 0, 2) == 0)
+            {
+                var d = date.Day;
+                result.Append(d).Append(d is 11 or 12 or 13 ? "th" : (d % 10) switch { 1 => "st", 2 => "nd", 3 => "rd", _ => "th" });
+                i += 2;
+                continue;
+            }
             var token = map.FirstOrDefault(t => string.CompareOrdinal(format, i, t.Moment, 0, t.Moment.Length) == 0);
             if (token.Moment != null)
             {

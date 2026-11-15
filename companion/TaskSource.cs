@@ -6,21 +6,45 @@ namespace FlexScreen.Companion;
 /// <param name="Notes">The task's notes as the source has them ("" for none).</param>
 /// <param name="Due">"yyyy-MM-dd", or "".</param>
 /// <param name="Parent">The parent task's id for a subtask, else "".</param>
-record TaskItem(string Source, string List, string Id, string Title, string Notes, string Due, bool Done, string Parent = "");
+record TaskItem(string Source, string List, string Id, string Title, string Notes, string Due, bool Done, string Parent = "")
+{
+    /// <summary>Where the task lives (a web page, an obsidian:// link), opened on the PC from the deck's popup; "" for none.</summary>
+    public string Url { get; init; } = "";
 
-/// <summary>A list (Google Tasks' task lists; a project, a folder… for other sources).</summary>
-record TaskList(string Source, string Id, string Name);
+    /// <summary>The issue's key ("ACME-142", "flex-screen#12"), or "".</summary>
+    public string Key { get; init; } = "";
+
+    /// <summary>A Jira project, a GitHub repository, the heading a note's task is under; or "".</summary>
+    public string Project { get; init; } = "";
+
+    /// <summary>As the source names it ("High", "P1"), or "".</summary>
+    public string Priority { get; init; } = "";
+
+    /// <summary>The source's own status ("In Progress"), or "".</summary>
+    public string Status { get; init; } = "";
+
+    /// <summary>The row's second line on the deck, when the source has a better one than the notes' first line.</summary>
+    public string Summary { get; init; } = "";
+}
+
+/// <summary>A list (Google Tasks' task lists; a project, a query, a note… for other sources).</summary>
+/// <param name="Add">Tasks can be added to it from the deck.</param>
+/// <param name="Tick">Its tasks can be ticked off from the deck (not a shared tracker's issues).</param>
+record TaskList(string Source, string Id, string Name, bool Add = true, bool Tick = true);
 
 /// <param name="Status">"ok", or why there's nothing: "setup" (the source isn't set up), "signin", "error".</param>
 record TaskRead(string Status, IReadOnlyList<TaskList> Lists, IReadOnlyList<TaskItem> Tasks);
 
 /// <summary>Everything the deck's Tasks card (on Capture) shows.</summary>
-/// <param name="Status">"ok" when any source read; else the first source's reason; "" before the first read.</param>
-record TasksState(string Status, IReadOnlyList<TaskList> Lists, IReadOnlyList<TaskItem> Tasks);
+/// <param name="Status">"ok" when any source read; else the likeliest reason ("error", "signin", then "setup"); "" before the first read.</param>
+/// <param name="From">The source <paramref name="Status"/> is about when it isn't "ok" ("Google Tasks"), else "".</param>
+record TasksState(string Status, IReadOnlyList<TaskList> Lists, IReadOnlyList<TaskItem> Tasks, string From = "");
 
 /// <summary>
-/// A place tasks come from. Google Tasks is the first; another source (a mail triage, a
-/// project tracker, a notes app) implements this and is added to <see cref="TaskSource"/>.
+/// A place tasks come from: Google Tasks, Microsoft To Do, the latest Obsidian daily note,
+/// Jira, GitHub. Each one is a class of its own (GoogleTasks.cs, MicrosoftTodo.cs…) added to
+/// <see cref="TaskSource"/> in TrayApp; nothing else needs to know about it. A source that
+/// isn't set up on this PC reads as "setup" and is left out.
 /// </summary>
 interface ITaskProvider
 {
@@ -33,11 +57,19 @@ interface ITaskProvider
     /// <summary>The open tasks. Throws HttpRequestException/IOException when it can't be read.</summary>
     Task<TaskRead> ReadAsync();
 
+    /// <summary>Only called for a list with <see cref="TaskList.Tick"/>.</summary>
     Task SetDoneAsync(string list, string id, bool done);
 
-    /// <summary>Adds a task; <paramref name="list"/> "" is the source's default list.</summary>
+    /// <summary>Adds a task; <paramref name="list"/> "" is the source's default list. Only called for a list with <see cref="TaskList.Add"/>.</summary>
     /// <returns>The list's name, for the deck's toast.</returns>
     Task<string> AddAsync(string list, string title, string due);
+}
+
+/// <summary>A source that opens its tasks itself (in its own app) rather than at <see cref="TaskItem.Url"/> in the browser.</summary>
+interface ITaskOpener
+{
+    /// <returns>False when it can't, so the link opens instead.</returns>
+    bool Open(TaskItem task);
 }
 
 /// <summary>
@@ -122,12 +154,20 @@ sealed class TaskSource
             lists.AddRange(read.Lists);
             tasks.AddRange(read.Tasks);
         }
-        // Ticked off from the deck today: still shown, ticked; one ticked back on comes back by itself.
+        // Ticked off from the deck today: still shown, ticked; one ticked back on comes back by
+        // itself. Not once its source is disconnected.
+        var live = _providers.Where((_, i) => reads[i].Status is "ok" or "error").Select(p => p.Id).ToHashSet();
+        foreach (var key in _doneHere.Where(d => !live.Contains(d.Value.Source)).Select(d => d.Key).ToList()) _doneHere.Remove(key);
         tasks.RemoveAll(t => _doneHere.ContainsKey(Key(t)));
         tasks.AddRange(_doneHere.Values);
         var ok = reads.Any(r => r.Status == "ok") || (reads.Any(r => r.Status == "error") && Current.Status == "ok");
-        var status = ok ? "ok" : reads.Select(r => r.Status).FirstOrDefault() ?? "setup";
-        Publish(new TasksState(status, lists, Sorted(tasks)));
+        // Nothing read: the reason worth telling first. A source just not set up on this PC
+        // (Jira at home) says nothing while another one is only signed out.
+        var why = ok ? -1 : Array.FindIndex(reads, r => r.Status == "error") is >= 0 and var e ? e
+                          : Array.FindIndex(reads, r => r.Status == "signin") is >= 0 and var s ? s : reads.Length > 0 ? 0 : -1;
+        var status = ok ? "ok" : why >= 0 ? reads[why].Status : "setup";
+        var from = why >= 0 && status != "setup" ? _providers[why].Name : "";
+        Publish(new TasksState(status, lists, Sorted(tasks), from));
     }
 
     async Task<TaskRead> ReadOneAsync(ITaskProvider provider)
@@ -136,7 +176,8 @@ sealed class TaskSource
         {
             return await provider.ReadAsync();
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException or
+                                       System.Text.Json.JsonException)
         {
             Log.Write($"tasks: {provider.Id}: {e.Message}");
             return new TaskRead("error", [], []);
@@ -153,23 +194,67 @@ sealed class TaskSource
     ITaskProvider? Provider(string source) =>
         _providers.FirstOrDefault(p => p.Id == source) ?? (source.Length == 0 ? _providers.FirstOrDefault() : null);
 
+    /// <summary>"Google Tasks" for "google"; the id itself for a source not known.</summary>
+    public string SourceName(string source) => _providers.FirstOrDefault(p => p.Id == source)?.Name ?? source;
+
+    public TaskItem? Find(string source, string list, string id) =>
+        Current.Tasks.FirstOrDefault(t => t.Source == source && t.List == list && t.Id == id);
+
+    TaskList? ListOf(string source, string list) => Current.Lists.FirstOrDefault(l => l.Source == source && l.Id == list);
+
+    /// <summary>Whether the deck's popup offers to open the task where it lives.</summary>
+    public bool CanOpen(TaskItem task) => task.Url.Length > 0 || Provider(task.Source) is ITaskOpener;
+
+    /// <summary>Opens a task where it lives (its source's app, or its page in the browser), from the deck.</summary>
+    public void Open(string source, string list, string id)
+    {
+        if (Find(source, list, id) is not { } task || Provider(source) is not { } provider) return;
+        if (provider is ITaskOpener opener && opener.Open(task)) return;
+        // Only web pages: the link came from the source's server.
+        if (!Uri.TryCreate(task.Url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http")) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+            Log.Write($"tasks: opened a {provider.Id} task");
+        }
+        catch (System.ComponentModel.Win32Exception e)
+        {
+            Log.Write($"tasks: can't open a {provider.Id} task: {e.Message}");
+        }
+    }
+
+    // A source's own failures: a web API's, or a note that changed under it.
+    static bool CantChange(Exception e) =>
+        e is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException or InvalidOperationException;
+
     /// <summary>Ticks a task off (or back on), from the deck.</summary>
     public async Task SetDoneAsync(string source, string list, string id, bool done)
     {
         if (Provider(source) is not { } provider) return;
         var task = Current.Tasks.FirstOrDefault(t => t.Source == provider.Id && t.List == list && t.Id == id);
+        void Undo()
+        {
+            // Sent again with a new revision, so the deck takes it and drops its own tick.
+            Revision++;
+            Changed?.Invoke(Current);
+        }
+        if (ListOf(provider.Id, list) is { Tick: false })
+        {
+            // A deck older than read-only lists still has a box on the row.
+            Toast?.Invoke(new Toast("attention", $"{provider.Name} items are ticked off in {provider.Name} itself"));
+            Undo();
+            return;
+        }
         try
         {
             await provider.SetDoneAsync(list, id, done);
             Log.Write($"tasks: {(done ? "done" : "not done")}: {provider.Id} task");
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException)
+        catch (Exception e) when (CantChange(e))
         {
             Log.Write($"tasks: can't update a {provider.Id} task: {e.Message}");
             Toast?.Invoke(new Toast("error", $"Couldn't update the task in {provider.Name}"));
-            // Sent again with a new revision, so the deck takes it and drops its own tick.
-            Revision++;
-            Changed?.Invoke(Current);
+            Undo();
             return;
         }
         if (task != null)
@@ -187,13 +272,18 @@ sealed class TaskSource
     {
         title = title.Trim();
         if (title.Length == 0 || Provider(source) is not { } provider) return;
+        if ((list.Length > 0 ? ListOf(provider.Id, list) : null) is { Add: false })
+        {
+            Toast?.Invoke(new Toast("attention", $"New tasks can't go into that list"));
+            return;
+        }
         try
         {
             var name = await provider.AddAsync(list, title, due);
             Log.Write($"tasks: added a {provider.Id} task");
             Toast?.Invoke(new Toast("ok", name.Length > 0 ? $"Added to {name}" : "Task added"));
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException)
+        catch (Exception e) when (CantChange(e))
         {
             Log.Write($"tasks: can't add a {provider.Id} task: {e.Message}");
             Toast?.Invoke(new Toast("error", $"Couldn't add the task to {provider.Name}"));
@@ -204,7 +294,8 @@ sealed class TaskSource
 
     void Publish(TasksState state)
     {
-        var changed = state.Status != Current.Status || !state.Lists.SequenceEqual(Current.Lists) || !state.Tasks.SequenceEqual(Current.Tasks);
+        var changed = state.Status != Current.Status || state.From != Current.From || !state.Lists.SequenceEqual(Current.Lists) ||
+                      !state.Tasks.SequenceEqual(Current.Tasks);
         Current = state;
         if (!changed) return;
         Revision++;

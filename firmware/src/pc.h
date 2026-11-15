@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.18.1";
+constexpr const char *kFirmwareVersion = "0.19.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -84,6 +84,8 @@ void addTask(const char *src, const char *list, const char *title, const char *d
 void refreshTasks();
 // Asks for a task's whole title and notes (model::task_detail).
 void openTask(const char *src, const char *list, const char *id);
+// Opens the task where it lives, on the PC (Jira's page, the note in Obsidian…).
+void openTaskLink(const char *src, const char *list, const char *id);
 void joinMeeting(const char *id);  // opens the event's Meet/Zoom/Teams link
 
 // Characters, typed by the companion as Unicode (so "(" doesn't depend on the keyboard

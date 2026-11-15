@@ -69,7 +69,7 @@ renders under 12px.
 | 12 | Clipboard stack | Capture | Companion | Clipboard listener keeps the last 20 text clips plus pins; tap = paste. Skips clips that password managers mark as excluded from history |
 | 13 | Obsidian | Capture | Companion | Vault `DoorsOfStone`: today's note (`obsidian://` URI), Clipboard → Inbox (append to the file), recent notes (from `.obsidian/workspace.json`), quick capture |
 | 14 | Calendar | Status bar, Today | Companion | Google Calendar API (read-only, every calendar ticked in Google Calendar): next-meeting countdown, today's list, Join button from the Meet/Teams/Zoom link |
-| 15 | Tasks | Capture, Today | Companion | Open tasks from the task sources (Google Tasks first; `ITaskProvider` takes more): Scheduled (every dated task) or one of the lists chosen in the tray, grouped by due day; tap = tick off, + = add one with the on-screen keyboard. Today has a count pill |
+| 15 | Tasks | Capture, Today | Companion | Open tasks from the task sources (Google Tasks, Microsoft To Do, the latest Obsidian daily note, Jira and GitHub issues; one `ITaskProvider` each): Scheduled (every dated task) or one of the lists chosen in the tray, grouped by due day; tap = open (Open in its source), box = tick off (not Jira's or GitHub's issues), + = add one with the on-screen keyboard. Today has a count pill |
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
 | 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (long press) and kept per app; settings.json's `contextBar` adds actions. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
@@ -110,7 +110,7 @@ companion/   C# / .NET 10 tray app; also installs the Claude Code hooks (--insta
 vscode-ext/  TypeScript VS Code extension
 install/     install kit for another PC: build-dist.ps1, install/uninstall scripts
 dist/        build-dist.ps1's output (flex-screen.zip)
-docs/        user guides (google-setup.md: Calendar and Tasks; also in the install kit)
+docs/        user guides (google-setup.md: Calendar and Tasks; task-sources.md: the others; also in the install kit)
 simulator/   the firmware UI on the PC (MSVC), with a Python driver, feature tests and screenshot tours
 qmk/         (phase 6) Corne keymap addition (layer report) for vial-qmk
 ```
@@ -1002,6 +1002,46 @@ Gotchas found after phase 6:
     overdue status, no notes, tap beside and Close); on the deck, firmware 0.17.2 shows
     "Sun 15 Nov · To do" rows under Scheduled, and the companion took a `task.open` for
     a real task through `/test`. Not checked: the popup on the real panel (it needs a tap).
+- More task sources, firmware 0.19.0 (asked for, after outside advice to keep sources
+  modular and details on demand: Microsoft To Do, "Jira. will be needed on my work pc",
+  GitHub issues, "Obsidian Tasks - extract the tasks from the last daily notes"; Jira and
+  GitHub "could show their project, priority and status"):
+  - Each source is one `ITaskProvider` class; `TaskSource` and the deck know nothing of
+    them. A source not set up on a PC reads as `setup` and is left out, so home (Google,
+    To Do, Obsidian) and work (Jira, GitHub) run the same companion. Status: `ok` if any
+    source read, else the likeliest reason (`error`, `signin`, `setup`) and `from`, the
+    source it's about, for the deck's message.
+  - A task carries `Url`, `Key`, `Project`, `Priority`, `Status` and `Summary` (the row's
+    line, chosen by its source). A list says whether it takes new tasks (`add`) and whether
+    its tasks tick off from the deck (`tick`).
+  - Jira and GitHub are look-and-open only (asked: "View and open only"): no box on their
+    rows, no Mark done, not in the New task form's lists; the popup's **Open in Jira**
+    (`task.link`) opens the issue's page. Jira: Cloud (email + API token, `/rest/api/2/
+    search/jql`) or Server/Data Center (personal access token, `/rest/api/2/search`),
+    `assignee = currentUser() AND statusCategory != Done` by default. GitHub: the search
+    API (`is:open is:issue assignee:@me`), github.com or Enterprise, a token or the GitHub
+    CLI's; priority and status from labels, due from the milestone.
+  - Microsoft To Do: Graph with the user's own app registration (as for Google), a
+    loopback PKCE sign-in (`OAuthLoopback`), every list, tick and add (not into Flagged
+    email), dates asked for in this PC's time zone so they don't slip a day.
+  - Obsidian: only the latest daily note (asked: "Latest note only", for notes that carry
+    the open tasks over), found by trying the Daily notes plugin's file name for each day
+    back from today. `[ ]` and `[/]` are open; subtasks by indent, indented bullets as
+    notes, the heading as its project, the Tasks plugin's 📅/⏳ and priority. A task's id
+    is a hash of its text (without box and ✅ date) and which copy of that text it is, so
+    ticking keeps it; ticking rewrites the box (and adds the Tasks plugin's ✅ date when
+    that plugin is on). New tasks go at the end of that note.
+  - Details stay on demand: the `tasks` line only gains `add`/`tick` per list and `from`;
+    `meta` and `link` come with `task` when a task is opened. The deck holds 12 lists
+    (was 8) for several sources' chips.
+  - Tokens are DPAPI-encrypted per source (`Secrets`), never logged or sent to the deck;
+    the tray's Task sources menu checks a Jira or GitHub token before keeping it. The
+    task messages moved out of TrayApp into `TaskMessages`.
+  - Checked: companion and simulator build; the simulator's checks (new: an issue's row
+    has no box and a tap there opens it, its popup has no Mark done and shows the source's
+    line and Open in Jira, which sends `task.link`; the issues list's + offers only lists
+    that take tasks; a daily note task ticks; the signed-out and nothing-connected
+    messages). Not checked: any source against its real service, nor on the deck.
 
 ## Decisions
 
@@ -1010,7 +1050,11 @@ Gotchas found after phase 6:
   dropped on request: the build command changes all the time), run status with
   finish/fail alerts for long builds.
 - Calendar = Google Calendar. Tasks = Google Tasks, all of it (the mail-only "action
-  items" card was dropped on 2026-11-15: "not good enough"); more sources to come.
+  items" card was dropped on 2026-11-15: "not good enough"), plus Microsoft To Do, the
+  latest Obsidian daily note, and Jira and GitHub issues to look at and open (2026-11-15).
+- App integrations to become modules of their own (detection, context, actions, state
+  per app: VS Code, Chrome, Edge, Explorer, Teams, Zoom, Discord, OBS…), as the task
+  sources are; agreed 2026-11-15, to do once the Zoom work is in.
 - Keyboard layer = the layers of the Corne (QMK, programmed with Vial). The G915 TKL has
   no layers to show.
 - Changes are confirmed on the real board. Since 2026-11-08 there is also a simulator

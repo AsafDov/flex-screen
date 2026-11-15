@@ -43,6 +43,7 @@ sealed class TrayApp : ApplicationContext
     readonly DeckShot _shot = new();
     readonly ObsidianSource _obsidian = new();
     readonly GoogleSource _google = new();
+    readonly MicrosoftTodo _todo = new();
     readonly TaskSource _tasks;
     readonly CallSource _calls;
     readonly ZoneSource _zones;
@@ -74,7 +75,7 @@ sealed class TrayApp : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add(_status);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Connect Google Calendar and Tasks…", null, (_, _) => ConnectGoogle());
+        var connectGoogle = menu.Items.Add("Connect Google Calendar and Tasks…", null, (_, _) => ConnectGoogle());
         menu.Items.Add("Shortcuts…", null, (_, _) => Shortcuts.Edit());
         var approve = new ToolStripMenuItem("Approve Claude from the deck");
         approve.Click += (_, _) => Settings.Set("approveFromDeck", !Settings.ApproveFromDeck);
@@ -99,10 +100,12 @@ sealed class TrayApp : ApplicationContext
         {
             taskLists.DropDownItems.Clear();
             var hidden = Settings.HiddenTaskLists;
-            foreach (var list in _tasks!.Current.Lists)  // set further down; the menu opens later
+            var sources = _tasks!.Current.Lists.Select(l => l.Source).Distinct().Count();  // set further down; the menu opens later
+            foreach (var list in _tasks.Current.Lists)
             {
                 var key = $"{list.Source}/{list.Id}";
-                var item = new ToolStripMenuItem(list.Name) { Checked = !hidden.Contains(key) };
+                var name = sources > 1 ? $"{list.Name} ({_tasks.SourceName(list.Source)})" : list.Name;
+                var item = new ToolStripMenuItem(name) { Checked = !hidden.Contains(key) };
                 item.Click += (_, _) => ToggleTaskList(key);
                 taskLists.DropDownItems.Add(item);
             }
@@ -188,10 +191,14 @@ sealed class TrayApp : ApplicationContext
         _obsidian.Changed += o => _link.Send(ObsidianMessage(o));
         _obsidian.Toast += SendToast;
         _google.Changed += g => _link.Send(GoogleMessage(g));
-        _tasks = new TaskSource(new GoogleTasks(_google));
+        // Every task source; one not set up on this PC (Jira at home) reads as "setup" and is left out.
+        _tasks = new TaskSource(new GoogleTasks(_google), _todo, new ObsidianTasks(_obsidian), new JiraIssues(), new GitHubIssues());
         _tasks.Changed += t => _link.Send(TasksMessage(t, _tasks.Revision));
         _tasks.Toast += SendToast;
         _google.SignedIn += () => _ = _tasks.RefreshAsync();
+        _todo.SignedIn += () => _ = _tasks.RefreshAsync();
+        _todo.Toast += SendToast;
+        menu.Items.Insert(menu.Items.IndexOf(connectGoogle) + 1, new TaskSourceSetup(_tasks, _todo, ConnectGoogle).Menu());
         _calls = new CallSource(_devices, _mixer);
         _calls.Changed += c => _link.Send(CallMessage(c));
         _calls.Toast += SendToast;
@@ -555,68 +562,10 @@ sealed class TrayApp : ApplicationContext
         _link.Send(TasksMessage(_tasks.Current, _tasks.Revision));
     }
 
-    const int MaxDeckTasks = 40;
-    const int MaxTasksBytes = 7000;  // the deck takes lines up to 8 KB
+    // The tasks line stays small; a task's details go only when the deck opens it (TaskMessages).
+    static object TasksMessage(TasksState s, int revision) => TaskMessages.Tasks(s, revision);
 
-    /// <summary>
-    /// Capture's Tasks card: the lists (those chosen for the deck first, with show set), and as
-    /// many tasks (soonest due first) as fit in a line: every task in a chosen list, and the
-    /// dated ones from the rest, for Scheduled.
-    /// </summary>
-    static object TasksMessage(TasksState s, int revision)
-    {
-        var hidden = Settings.HiddenTaskLists;
-        bool Shown(string src, string list) => !hidden.Contains($"{src}/{list}");
-        var lists = s.Lists.OrderBy(l => Shown(l.Source, l.Id) ? 0 : 1)
-            .Select(l => new { src = l.Source, id = l.Id, name = OneLine(l.Name, 40), show = Shown(l.Source, l.Id) }).ToList();
-        var wanted = s.Tasks.Where(t => t.Due.Length > 0 || Shown(t.Source, t.List)).ToList();
-        var tasks = wanted.Take(MaxDeckTasks).Select(t => new
-        {
-            src = t.Source, list = t.List, id = t.Id, title = OneLine(t.Title, 90), sub = TaskSubtitle(t.Notes),
-            due = t.Due, done = t.Done, child = t.Parent.Length > 0,
-        }).ToList();
-        object Message() => new
-        {
-            t = "state",
-            topic = "tasks",
-            d = new { rev = revision, status = s.Status, lists, tasks, open = wanted.Count(t => !t.Done), sched = wanted.Count(t => !t.Done && t.Due.Length > 0) },
-        };
-        // Hebrew goes as \uXXXX, six bytes a letter: drop tasks from the end until it fits.
-        while (tasks.Count > 0 && System.Text.Json.JsonSerializer.Serialize(Message()).Length > MaxTasksBytes) tasks.RemoveAt(tasks.Count - 1);
-        return Message();
-    }
-
-    const int MaxNoteChars = 1500;
-
-    /// <summary>
-    /// One task in full, for the deck's task popup (asked for with task.open): the whole
-    /// title and the notes, without the todo skill's "[todo src=…]" tag. Sent only on request,
-    /// so the tasks line stays small; cut to fit a line (Hebrew is six bytes a letter).
-    /// </summary>
-    void SendTaskDetail(string src, string list, string id)
-    {
-        var task = _tasks.Current.Tasks.FirstOrDefault(t => t.Source == src && t.List == list && t.Id == id);
-        var title = task == null ? "" : OneLine(task.Title, 300);
-        var notes = task == null ? "" : TaskNotes(task.Notes);
-        object Message() => new { t = "state", topic = "task", d = new { src, list, id, found = task != null, title, notes } };
-        while (notes.Length > 0 && System.Text.Json.JsonSerializer.Serialize(Message()).Length > MaxTasksBytes)
-            notes = notes[..(notes.Length * 3 / 4)].TrimEnd() + "…";
-        _link.Send(Message());
-    }
-
-    static string TaskNotes(string notes)
-    {
-        var lines = notes.Replace("\r", "").Split('\n').Where(l => !l.TrimStart().StartsWith("[todo", StringComparison.Ordinal));
-        var text = string.Join("\n", lines).Trim();
-        return text.Length > MaxNoteChars ? text[..(MaxNoteChars - 1)] + "…" : text;
-    }
-
-    /// <summary>The notes' first line worth showing: the todo skill's "[todo src=…]" tag is left out.</summary>
-    static string TaskSubtitle(string notes)
-    {
-        var line = notes.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0 && !l.StartsWith("[todo", StringComparison.Ordinal));
-        return line == null ? "" : OneLine(line, 60);
-    }
+    void SendTaskDetail(string src, string list, string id) => _link.Send(TaskMessages.Detail(_tasks, src, list, id));
 
     static string OneLine(string text, int max)
     {
@@ -977,6 +926,7 @@ sealed class TrayApp : ApplicationContext
                 break;
             case "task.refresh": _ = _tasks.RefreshAsync(); break;
             case "task.open": SendTaskDetail((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
+            case "task.link": _tasks.Open((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
             case "cal.join": OpenUrl(_google.Current.Events.FirstOrDefault(e => e.Id == id)?.Join ?? ""); break;
             case "mail.open": OpenUrl("https://mail.google.com/"); break;
             case "zone.snap": _zones.Snap((int?)message["mon"] ?? -1, (int?)message["zone"] ?? -1, (long?)message["hwnd"] ?? 0); break;

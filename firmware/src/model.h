@@ -437,11 +437,14 @@ struct Google {
   const Event *next(int64_t now) const;
 };
 
-// Capture's Tasks card: every source's lists and open tasks (Google Tasks for now).
+// Capture's Tasks card: every source's lists and open tasks (Google Tasks, Microsoft To Do,
+// the latest Obsidian daily note, Jira, GitHub).
 struct TaskList {
   String src, id;  // the source ("google") and the list's id within it
   String name;
   bool show = true;  // has a chip on the deck (else only its dated tasks show, under Scheduled)
+  bool add = true;   // new tasks can go into it
+  bool tick = true;  // its tasks can be ticked off here (not Jira's or GitHub's issues: those only open)
 };
 
 struct Task {
@@ -454,9 +457,10 @@ struct Task {
 };
 
 struct Tasks {
-  static constexpr int kMaxLists = 8;
+  static constexpr int kMaxLists = 12;  // several sources' lists
   static constexpr int kMax = 40;
-  String status;  // "ok", "setup" (no Google OAuth client yet), "signin", "error"; "" before the first read
+  String status;  // "ok", "setup" (no source connected), "signin", "error"; "" before the first read
+  String from;    // the source the status is about ("Google Tasks"), or ""
   TaskList lists[kMaxLists];
   int list_count = 0;
   Task list[kMax];  // open first, soonest due first
@@ -467,13 +471,20 @@ struct Tasks {
 
   // The list's name, or "" for one not known.
   const char *listName(const String &src, const String &id) const;
+  // The list, or null for one not known.
+  const TaskList *listOf(const String &src, const String &id) const;
+  // Whether the task's box ticks it off (a list not known: yes, as before lists said).
+  bool canTick(const Task &t) const;
 };
 
-// One task in full, sent when the deck opens it (task.open): its whole title and notes.
+// One task in full, sent when the deck opens it (task.open): its whole title and notes, and
+// what the source says about it.
 struct TaskDetail {
   String src, list, id;
   bool found = false;  // the companion still has it
   String title, notes;
+  String meta;  // project, key, priority and status ("Acme  ·  ACME-142  ·  High  ·  In Progress"), or ""
+  String link;  // the Open button's text ("Open in Jira"), or "" when it can't be opened
   uint32_t version = 0;
 };
 

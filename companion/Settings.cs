@@ -13,6 +13,10 @@ namespace FlexScreen.Companion;
 ///   "cheatSheetSeconds": 10,                                  // a layer key held this long shows the cheat sheet; 0: only from the pill
 ///   "hiddenTaskLists": ["google/MTIzNDU2"],                   // task lists left off the deck (the tray's Task lists on the deck)
 ///   "obsidianVault": "C:\\Users\\me\\Notes\\MyVault",           // if it can't be found by itself
+///   "obsidianTasks": true,                                    // the latest daily note's "- [ ]" tasks on the deck (on unless false)
+///   "microsoftTodo": { "clientId": "…", "tenant": "common" },   // the tray's Task sources › Microsoft To Do sets these
+///   "jira": { "url": "https://acme.atlassian.net", "email": "me@acme.com", "jql": "…", "name": "Jira" },  // Task sources › Jira
+///   "github": { "host": "github.com", "query": "is:open is:issue assignee:@me", "name": "GitHub" },     // Task sources › GitHub
 ///   "shortcuts": [ { "name": "Gmail", "url": "https://mail.google.com" }, { "name": "Spotify", "app": "Spotify" } ]
 /// }
 /// </code>
@@ -31,6 +35,12 @@ static class Settings
         (Get("layerNames") as JsonArray)?.Select(n => (string?)n ?? "").ToArray() is { Length: > 0 } names ? names : DefaultLayerNames;
 
     public static string? ObsidianVault => (string?)Get("obsidianVault") is { Length: > 0 } path ? path : null;
+
+    /// <summary>Whether the latest Obsidian daily note's tasks are a task source (on unless set false).</summary>
+    public static bool ObsidianTasks => Get("obsidianTasks") is JsonValue v && v.TryGetValue(out bool on) ? on : true;
+
+    /// <summary>A task source's own settings ("jira", "github", "microsoftTodo"), or null when it isn't set up.</summary>
+    public static JsonObject? Source(string key) => Get(key) as JsonObject;
 
     /// <summary>The launcher's tiles as written (see <see cref="FlexScreen.Companion.Shortcuts"/>); null when the file has none.</summary>
     public static JsonArray? Shortcuts => Get("shortcuts") as JsonArray;

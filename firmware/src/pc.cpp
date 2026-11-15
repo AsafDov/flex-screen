@@ -494,6 +494,7 @@ void handleState(const char *topic, JsonObjectConst d) {
   } else if (!strcmp(topic, "tasks")) {
     model::Tasks &k = model::tasks;
     k.status = d["status"] | "";
+    k.from = d["from"] | "";
     k.list_count = 0;
     for (JsonObjectConst l : d["lists"].as<JsonArrayConst>()) {
       if (k.list_count == model::Tasks::kMaxLists) break;
@@ -502,6 +503,8 @@ void handleState(const char *topic, JsonObjectConst d) {
       list.id = l["id"] | "";
       list.name = l["name"] | "";
       list.show = l["show"] | true;
+      list.add = l["add"] | true;
+      list.tick = l["tick"] | true;
     }
     k.count = 0;
     for (JsonObjectConst t : d["tasks"].as<JsonArrayConst>()) {
@@ -527,6 +530,8 @@ void handleState(const char *topic, JsonObjectConst d) {
     t.found = d["found"] | false;
     t.title = d["title"] | "";
     t.notes = d["notes"] | "";
+    t.meta = d["meta"] | "";
+    t.link = d["link"] | "";
     t.version++;
   } else if (!strcmp(topic, "call")) {
     model::Call &c = model::call;
@@ -1095,6 +1100,16 @@ void openTask(const char *src, const char *list, const char *id) {
   JsonDocument doc;
   doc["t"] = "act";
   doc["a"] = "task.open";
+  doc["src"] = src;
+  doc["list"] = list;
+  doc["id"] = id;
+  send(doc);
+}
+
+void openTaskLink(const char *src, const char *list, const char *id) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "task.link";
   doc["src"] = src;
   doc["list"] = list;
   doc["id"] = id;

@@ -46,6 +46,12 @@ Google Calendar and Tasks (optional, once)
   calendar, share it with this account (in the other account: Google Calendar > Settings >
   the calendar > Share with specific people > "See all event details"), and accept.
 
+Other task sources (optional): Microsoft To Do, Jira, GitHub, Obsidian
+  task-sources.md in this folder is the guide. Tray icon > "Task sources": Microsoft To Do
+  needs an app registration of your own (like Google's); Jira a site and an API token (or
+  a personal access token); GitHub a token, or the GitHub CLI's sign-in. Obsidian's latest
+  daily note is read on its own once the vault is found. A source not set up is left out.
+
 VS Code Remote-SSH (working on a Linux server from this PC)
   The extension runs on this PC even in a Remote-SSH window, so the deck gets the server's
   terminal commands with nothing more to do: keep it installed here (install.cmd does), and

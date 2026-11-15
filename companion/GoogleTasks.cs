@@ -47,7 +47,10 @@ sealed class GoogleTasks(GoogleSource google) : ITaskProvider
                 if (title.Length == 0 || (bool?)t?["deleted"] == true) continue;  // Google keeps blank ones a row was started for
                 var due = (string?)t?["due"] is { Length: >= 10 } d ? d[..10] : "";
                 tasks.Add(new TaskItem(Id, list, (string?)t?["id"] ?? "", title, (string?)t?["notes"] ?? "", due,
-                                       (string?)t?["status"] == "completed", (string?)t?["parent"] ?? ""));
+                                       (string?)t?["status"] == "completed", (string?)t?["parent"] ?? "")
+                {
+                    Url = (string?)t?["webViewLink"] ?? "",  // the task in Google Tasks on the web
+                });
             }
             page = (string?)json?["nextPageToken"];
             if (page == null) break;

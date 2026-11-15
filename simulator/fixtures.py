@@ -311,6 +311,26 @@ def tasks() -> dict:
     return {'rev': 1, 'status': 'ok', 'lists': lists, 'tasks': items, 'open': len(items), 'sched': sum(1 for i in items if i['due'])}
 
 
+def task_sources() -> dict:
+    """Three sources on the 8th: a Google Tasks list, Jira (issues assigned to me, to open, not
+    to tick off or add to) and the latest Obsidian daily note."""
+    lists = [{'src': 'google', 'id': 'L1', 'name': 'My Tasks', 'show': True, 'add': True, 'tick': True},
+             {'src': 'jira', 'id': 'assigned', 'name': 'Jira', 'show': True, 'add': False, 'tick': False},
+             {'src': 'obsidian', 'id': 'daily', 'name': 'Daily note', 'show': True, 'add': True, 'tick': True}]
+
+    def t(src: str, lst: str, i: str, title: str, due: str = '', sub: str = '') -> dict:
+        return {'src': src, 'list': lst, 'id': i, 'title': title, 'sub': sub, 'due': due, 'done': False, 'child': False}
+    items = [  # as the companion sends them: soonest first
+        t('google', 'L1', 't2', 'Send the signed lease', '2026-11-08'),
+        t('obsidian', 'daily', 'a1b2c3', 'Water the plants', '2026-11-08', 'Home'),
+        t('jira', 'assigned', 'ACME-142', 'Checkout fails on Safari', '2026-11-09', 'ACME-142  ·  High  ·  In Progress'),
+        t('google', 'L1', 't6', 'Book the car service', '2026-11-12'),
+        t('jira', 'assigned', 'ACME-77', 'Upgrade the payment SDK', '', 'ACME-77  ·  Medium  ·  To Do'),
+    ]
+    return {'rev': 20, 'status': 'ok', 'from': '', 'lists': lists, 'tasks': items, 'open': len(items),
+            'sched': sum(1 for i in items if i['due'])}
+
+
 def call(app: str = 'teams') -> dict:
     can = {'teams': ['mic', 'camera', 'hand', 'leave', 'react'], 'zoom': ['mic', 'camera', 'hand', 'whiteboard', 'leave'],
            'discord': ['mic', 'deafen', 'leave'], 'browser': ['mic']}[app]
