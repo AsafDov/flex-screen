@@ -1002,6 +1002,67 @@ Gotchas found after phase 6:
     overdue status, no notes, tap beside and Close); on the deck, firmware 0.17.2 shows
     "Sun 15 Nov · To do" rows under Scheduled, and the companion took a `task.open` for
     a real task through `/test`. Not checked: the popup on the real panel (it needs a tap).
+- Claude talks to the deck, firmware 0.19.0 (picked from the ideas list: "lets start with
+  1"):
+  - The companion serves an MCP server on `/mcp` (Streamable HTTP, stateless, JSON-RPC by
+    hand: no SDK for three tools). `deck_ask` holds the call until the tap; `deck_notify`
+    and `deck_progress` return at once. The server's `instructions` (which Claude Code puts
+    in the system prompt) say the tools are for when the user may be away, not for chat.
+  - Claude Code ends an MCP call after 60 s unless the server's own entry sets `timeout`
+    (read from its bundle: the per-server field overrides `MCP_TOOL_TIMEOUT`, and progress
+    notifications don't extend it). `--install-hooks` registers the server with
+    `claude mcp add-json --scope user` and `"timeout": 3600000`, rather than editing
+    `~/.claude.json`, which Claude Code rewrites constantly. Its fetch also gives up
+    waiting for the first byte, so a question's answer is an event stream opened at once
+    with a comment every 10 s; a failed write is how the companion learns Claude stopped
+    waiting (Esc), and the question leaves the deck.
+  - The tools are allowed with `mcp__flex-screen` in `permissions.allow`: otherwise each
+    first use would raise an approval banner for showing something on the deck.
+  - A tool call doesn't say which session made it. Its PreToolUse hook does (same tool and
+    arguments, matched within 1.5 s; the hook is asynchronous and can come after the
+    call); without hooks, the only session at work. That gives the card its project and
+    the progress its session.
+  - Claude's own AskUserQuestion: its PermissionRequest hook answered with
+    `{"behavior":"allow","updatedInput":{…, "answers":{"<question>":"<label>"}}}` (labels
+    joined with ", " for several), the shape the Agent SDK documents for answering it.
+    Only choice questions with 2-4 options go to the deck; text or number questions stay
+    at the PC. It replaces 0.16.x's rule that questions never wait for the deck.
+  - The deck shows one card under the status bar (under the approval banner when both
+    show): the newest question, else the newest note. Notes keep for 30 minutes, three
+    at most.
+  - The "Claude has a question" toast now waits 1.5 s: the question's PreToolUse hook
+    arrives just before its PermissionRequest, and the toast came 80 ms ahead of the card.
+  - Checked: 23 new simulator checks (223); headless `claude -p` calling `deck_ask`,
+    answered through `/test` 75 s later ("The user tapped "Beta" on the deck."), with the
+    project told by its hook; `deck_progress` and `deck_notify` through the registered
+    server, the note photographed on the real deck; an AskUserQuestion in the Claude app
+    answered from the deck's side through `/test` (it returned "Blue"); made-up hooks for
+    the toast. Not checked: tapping the card on the real panel, and Remote-SSH.
+- Claude session board, firmware 0.20.0 (the next of the picked ideas: "Yes, session
+  board"):
+  - An overlay, not a seventh page (the tab bar is full): the status bar's Claude pill
+    opens it (it used to bring up the top session, which a row does now), and so does the
+    Dev page's banner (its Open button still brings up the top session).
+  - Up to 8 sessions (was 4). The app comes from the window's process the hooks already
+    find (`claude` → Claude app, `Code` → VS Code, terminals → Terminal; a server's path
+    adds "SSH"); the model from the session's last reply, else what a hook named.
+  - Stop: keys can't aim at one session (the Claude app shows one of several; Esc goes to
+    whatever is focused), so a second PreToolUse hook, synchronous, asks `/claude/stop`
+    before every tool call and gets `{"continue": false}` once the deck asked. Measured
+    66 ms a call through `cmd /c curl` (35 ms for curl alone; cmd keeps a stopped
+    companion quiet). It stops before the next step, not mid-reply. Hooks are read when a
+    session starts, so sessions already open don't have it.
+  - Usage burn-down: the companion keeps each reading of the 5-hour figure for the current
+    window (a new reset time, or the figure falling, starts over) in
+    `usage-history.json`, so the chart survives restarts. The pace is the last hour's
+    readings (at least 10 minutes apart); below 0.5% an hour there's no forecast. The deck
+    draws the window in 5-minute steps (an LVGL chart): readings carried forward to now,
+    the pace ahead in grey to 100%.
+  - Checked: 21 new simulator checks; on this PC a headless Claude run told to run six
+    6-second commands (36 s at least) stopped through `/test` at 16 s and ended at 25 s,
+    2.7 s after the request, at its next step; the usage history filled from real
+    readings (57%, 58%). Not checked: the board on the real panel (it opens with a tap),
+    and Remote-SSH.
 
 ## Decisions
 

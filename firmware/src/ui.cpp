@@ -10,6 +10,8 @@
 #include "cheat.h"
 #include "idle.h"
 #include "approval.h"
+#include "ask.h"
+#include "sessions.h"
 #include "ctxbar.h"
 #include "launcher.h"
 
@@ -134,9 +136,7 @@ void onToast(lv_event_t *) {
 }
 
 // The Claude pill brings up the most urgent session's window.
-void onClaudePill(lv_event_t *) {
-  if (model::claude.count > 0) pc::openClaude(model::claude.sessions[0].id.c_str());
-}
+void onClaudePill(lv_event_t *) { sessions::open(); }
 
 // Volume and mic are buttons, not pills: raised so they read as tappable, and with a few
 // px of extra hit area since the bar's edge is easy to miss.
@@ -347,6 +347,13 @@ void updateClaude() {
   if (state == "input") color = kAmber, bg = kAmberBg, text = "Claude needs you";
   else if (state == "working") color = kAccent, text = "Claude working";
   else if (state == "done") color = kGreen, text = "Claude done";
+  // A long job's progress, while Claude works on it.
+  static char counted[32];
+  const model::ClaudeSession &top = model::claude.sessions[0];
+  if (top.total > 0 && state == "working") {
+    snprintf(counted, sizeof(counted), "Claude %d/%d", top.done, top.total);
+    text = counted;
+  }
   lv_obj_set_style_bg_color(bar.claude_dot, hex(color), 0);
   lv_obj_set_style_bg_color(bar.claude, hex(bg), 0);
   lv_label_set_text(bar.claude_text, text);
@@ -578,7 +585,9 @@ void begin() {
   call::build();
   cheat::build();
   launcher::build(lv_tabview_get_tab_bar(tv));  // its button ends the tab bar; its panel goes over the pages
+  sessions::build();  // under the approval banner and Claude's questions, which can come while it's open
   approval::build();
+  ask::build();
   buildToast();
   idle::build();
 
@@ -619,7 +628,9 @@ void update() {
   fitBar();  // after the call pill too: it sits among the others
   cheat::update();
   launcher::update();
+  sessions::update();
   approval::update();
+  ask::update();
   idle::update();
   if (model::bench_requests != bench_seen) {
     bench_seen = model::bench_requests;

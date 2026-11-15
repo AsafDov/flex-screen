@@ -84,10 +84,17 @@ struct ClaudeSession {
   String state;  // "working", "input" (waiting for an approval), "done", "idle"
   String detail;
   int32_t secs = 0;  // in this state for this long when the report arrived
+  // A long job's progress, as Claude reported it (its deck_progress tool): total 0 for none.
+  String progress;
+  int done = 0;
+  int total = 0;
+  String app;    // "Claude app", "VS Code", "Terminal", "VS Code · SSH"; "" if not known
+  String model;  // "Opus 5.5"; "" if not known
+  bool stopping = false;  // asked to stop on the deck: it stops before its next step
 };
 
 struct Claude {
-  static constexpr int kMax = 4;
+  static constexpr int kMax = 8;  // the session board's rows
   ClaudeSession sessions[kMax];  // most urgent first
   int count = 0;
   uint32_t at_ms = 0;
@@ -201,6 +208,45 @@ struct Approval {
   String detail;   // "Bash: npm run build"
   bool always = false;  // Claude suggests a "don't ask again" rule to go with an approval
   int count = 0;        // requests waiting, this one included
+  uint32_t version = 0;
+};
+
+// What Claude asks or tells you: a question with 2-4 options (its deck_ask tool, or its own
+// AskUserQuestion), or a note (deck_notify) to read and tap OK. The newest question shows,
+// else the newest note.
+struct Question {
+  static constexpr int kMax = 4;
+  String id;       // "" for none
+  String kind;     // "ask" or "note"
+  String level;    // a note's: "info", "done", "warning", "error"
+  String session;  // the Claude session (to bring up its window)
+  String project;
+  String text;
+  struct Option {
+    String label, note;
+  } options[kMax];
+  int count = 0;
+  bool multi = false;  // pick any number, then Done
+  int step = 1;        // a question of several asked together: 2 of 3
+  int steps = 1;
+  int waiting = 0;  // questions and notes waiting, this one included
+  uint32_t version = 0;
+};
+
+// The Claude plan's 5-hour usage, for the session board's burn-down.
+struct Usage {
+  static constexpr int kMax = 120;
+  int five = -1;  // percent of the 5-hour window used; -1 not known
+  int week = -1;
+  int64_t start = 0;   // the window's start, UTC seconds (0: not known)
+  int64_t resets = 0;  // when it resets
+  int64_t eta = 0;     // when 100% comes at the recent pace, if before the reset; 0 otherwise
+  float rate = 0;      // percent an hour lately
+  struct Point {
+    int32_t secs;  // into the window
+    int16_t pct;
+  } points[kMax];
+  int count = 0;
   uint32_t version = 0;
 };
 
@@ -497,6 +543,8 @@ extern Actions actions;
 extern Shortcuts shortcuts;
 extern Context context;
 extern Approval approval;
+extern Question question;
+extern Usage usage;
 extern Picker picker;
 extern Git git;
 extern Toast toast;

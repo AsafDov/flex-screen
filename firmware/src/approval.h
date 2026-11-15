@@ -8,5 +8,7 @@ namespace ui::approval {
 
 void build();   // on LVGL's top layer, after the pages
 void update();  // call every loop
+bool visible();  // showing a request now
+int bottom();    // the banner's lower edge, for what shows under it
 
 }  // namespace ui::approval

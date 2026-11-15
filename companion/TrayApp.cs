@@ -51,6 +51,8 @@ sealed class TrayApp : ApplicationContext
     readonly ContextBar _context;
     readonly System.Threading.Timer _meetingTick;
     readonly ClaudeApprovals _approvals = new();
+    readonly DeckQuestions _questions = new();
+    readonly DeckTools _tools;
     readonly ClaudeUsage _usage = new();
     readonly HashSet<string> _iconsSent = [];
     readonly object _artGate = new();
@@ -59,6 +61,7 @@ sealed class TrayApp : ApplicationContext
     string _shortcutsSent = "";
     string _contextSent = "";
     string _approvalSent = "";
+    string _questionSent = "";
     DateTime _timeSentAt = DateTime.MinValue;
     string _loggedMedia = "";
     string _loggedClaude = "";
@@ -141,11 +144,26 @@ sealed class TrayApp : ApplicationContext
             Log.Write($"mic: {(m.Muted ? "muted" : "live")}");
             _link.Send(MicMessage(m));
         };
+        _tools = new DeckTools(_questions, _claude, () => _link.PortName != null);
+        _server.ClaudeEvent += (hook, _) => _tools.OnHook(hook);
         _server.ClaudeEvent += _claude.Handle;
         _server.ClaudeEvent += (hook, _) => SettleApprovals(hook);
-        _server.ClaudePermission += hook => _approvals.Ask(hook, _claude.ProjectFor((string?)hook["session_id"] ?? "", (string?)hook["cwd"] ?? ""),
-                                                           ClaudeSource.ToolDetail(hook), _link.PortName != null);
+        _server.ClaudePermission += hook =>
+        {
+            var project = _claude.ProjectFor((string?)hook["session_id"] ?? "", (string?)hook["cwd"] ?? "");
+            // Claude's own questions get their options on the deck; everything else Approve and Deny.
+            if ((string?)hook["tool_name"] == "AskUserQuestion")
+            {
+                return _link.PortName != null && Settings.ApproveFromDeck
+                    ? _questions.AnswerAskUserQuestion(hook, project, ClaudeApprovals.Wait)
+                    : Task.FromResult<string?>(null);
+            }
+            return _approvals.Ask(hook, project, ClaudeSource.ToolDetail(hook), _link.PortName != null);
+        };
+        _server.Mcp += _tools.Serve;
+        _server.ClaudeStop += _claude.ShouldStop;
         _approvals.Changed += SendApproval;
+        _questions.Changed += SendQuestion;
         _claude.Changed += sessions =>
         {
             // Tool calls arrive constantly while Claude works; log only state changes.
@@ -157,10 +175,18 @@ sealed class TrayApp : ApplicationContext
             var waiting = sessions.Where(s => s.State == "input").ToList();
             var fresh = waiting.Where(s => !_claudeWaiting.Contains(s.Id)).ToList();
             _claudeWaiting = waiting.Select(s => s.Id).ToHashSet();
-            // A request the deck can answer shows its own Approve and Deny instead.
-            foreach (var s in fresh.Where(s => _approvals.Pending.All(r => r.Session != s.Id)))
-                SendToast(new Toast("attention", ClaudeSource.IsQuestion(s) ? $"Claude has a question · {s.Project}" : $"Claude needs your approval · {s.Project}",
-                                    "claude.open", s.Id));
+            // A request the deck can answer shows its own Approve and Deny, or its options,
+            // instead. A question's PreToolUse hook comes a moment before the request it
+            // makes, so the toast waits a little for it.
+            foreach (var s in fresh)
+            {
+                _ = Task.Delay(1500).ContinueWith(_ =>
+                {
+                    if (!_claudeWaiting.Contains(s.Id) || _approvals.Pending.Any(r => r.Session == s.Id) || _questions.Asking(s.Id)) return;
+                    SendToast(new Toast("attention", ClaudeSource.IsQuestion(s) ? $"Claude has a question · {s.Project}" : $"Claude needs your approval · {s.Project}",
+                                        "claude.open", s.Id));
+                });
+            }
             _context?.Refresh();  // Claude's model and effort on the context bar
         };
         _server.VsCodeConnected += _vscode.Serve;
@@ -204,6 +230,7 @@ sealed class TrayApp : ApplicationContext
         // The next meeting's key counts down ("· 12m").
         _meetingTick = new System.Threading.Timer(_ => _context.Refresh(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
         _usage.Changed += () => _context.Refresh();
+        _usage.Changed += () => _link.Send(UsageMessage(_usage));
         _server.ClaudeUsage += _usage.Report;
         _context.Changed += _ => SendContext();
         _context.Toast += SendToast;
@@ -325,7 +352,7 @@ sealed class TrayApp : ApplicationContext
             TermMessage(_dev.Term), BuildMessage(_dev.Build), RecentMessage(_dev.Recent), GitMessage(_git.Current),
             KeymapMessage(_keyboard.Map), KeyboardMessage(_keyboard.Current), ClipsMessage(_clipboard.Shown),
             ObsidianMessage(_obsidian.Current), GoogleMessage(_google.Current), TasksMessage(_tasks.Current, _tasks.Revision),
-            CallMessage(_calls.Current),
+            CallMessage(_calls.Current), UsageMessage(_usage),
         ];
         foreach (var message in messages)
         {
@@ -338,6 +365,7 @@ sealed class TrayApp : ApplicationContext
         SendShortcuts(force: true);
         SendContext(force: true);
         SendApproval(force: true);
+        SendQuestion(force: true);
         _link.Send(new { t = "state", topic = "zones", d = ZoneSource.Message(_zones.Current) });
     }
 
@@ -741,9 +769,43 @@ sealed class TrayApp : ApplicationContext
                 state = s.State,
                 detail = s.Detail,
                 secs = (int)(DateTime.UtcNow - s.Since).TotalSeconds,  // the deck counts on from here
+                progress = s.Progress == null ? null : new { label = s.Progress.Label, done = s.Progress.Done, total = s.Progress.Total },
+                app = s.App,
+                model = s.Model,
+                stopping = s.Stopping,
             }),
         },
     };
+
+    /// <summary>
+    /// The plan's 5-hour usage for the session board: the figure, the week's, the window's
+    /// start and reset (UTC seconds, 0 if not known), its readings so far (seconds into the
+    /// window, percent) and when the limit comes at the recent pace (0: not before the reset).
+    /// </summary>
+    static object UsageMessage(ClaudeUsage usage)
+    {
+        var u = usage.Current;
+        var forecast = usage.Forecast();
+        static long Unix(DateTime? t) => t is { } v ? new DateTimeOffset(DateTime.SpecifyKind(v, DateTimeKind.Utc)).ToUnixTimeSeconds() : 0;
+        var start = forecast.Start;
+        return new
+        {
+            t = "state",
+            topic = "usage",
+            d = new
+            {
+                five = u == null || usage.Label.Length == 0 ? -1 : (int)Math.Round(u.FiveHour),
+                week = u?.SevenDay is { } w ? (int)Math.Round(w) : -1,
+                start = Unix(start),
+                resets = Unix(u?.FiveHourResets),
+                eta = Unix(forecast.Limit),
+                rate = Math.Round(forecast.PerHour, 1),
+                points = start is { } s0
+                    ? usage.History.Where(p => p.At >= s0).Select(p => new[] { (long)(p.At - s0).TotalSeconds, (long)Math.Round(p.Percent) }).ToArray()
+                    : [],
+            },
+        };
+    }
 
     /// <summary>Brings up the window a Claude session runs in: VS Code, the Claude app, or a terminal.</summary>
     void OpenClaudeSession(string id)
@@ -874,7 +936,7 @@ sealed class TrayApp : ApplicationContext
     // Deck actions a test may trigger: none of them runs anything on the PC. The task ones
     // change the user's own tasks, as the deck's Tasks card does (for checking it end to end).
     static readonly HashSet<string> TestActions = ["win.focus", "win.close", "icon.need", "zone.snap", "zone.layout", "claude.approve", "claude.deny",
-                                                   "task.done", "task.add", "task.refresh", "task.open"];
+                                                   "claude.answer", "claude.stop", "task.done", "task.add", "task.refresh", "task.open"];
 
     /// <summary>For testing without touching the deck: a deck action, or "bench" passed on to the deck.</summary>
     void OnTestMessage(JsonNode message)
@@ -917,6 +979,7 @@ sealed class TrayApp : ApplicationContext
             case "dev.in": _devices.RequestDefault(id, output: false); break;
             case "mic.mute": _devices.ToggleMicMute(); break;
             case "claude.open": OpenClaudeSession(id); break;
+            case "claude.stop": _claude.RequestStop(id); break;
             // The extension forgets the last command when its window reloads; the deck's is the fallback.
             case "term.replay":
                 // In the window that ran it; a command on the deck is cut to one line, so the window's own copy is used.
@@ -993,6 +1056,10 @@ sealed class TrayApp : ApplicationContext
                 if ((id.Length > 0 ? id : _approvals.Pending.LastOrDefault()?.Id) is { } request)
                     _approvals.Answer(request, action == "claude.approve", (bool?)message["always"] ?? false);
                 else SendToast(new Toast("ok", "Nothing from Claude waiting for approval"));
+                break;
+            case "claude.answer":
+                // A question's option(s) tapped, or none: dismissed (a note: read).
+                _questions.Answer(id, (message["picks"] as JsonArray ?? []).Select(p => p is JsonValue v && v.TryGetValue(out int i) ? i : -1).ToArray());
                 break;
             case "desktop.show": KeyInput.Combo("Win+D"); break;
             default: Log.Write($"act: unknown action {action}"); break;
@@ -1198,9 +1265,12 @@ sealed class TrayApp : ApplicationContext
         {
             case "PostToolUse":
                 _approvals.Settled(session, (string?)hook["tool_name"], hook["tool_input"]);
+                if ((string?)hook["tool_name"] == "AskUserQuestion") _questions.Settled(session, notesToo: false);
                 break;
             case "UserPromptSubmit" or "Stop" or "SessionEnd":
                 _approvals.Settled(session);
+                // Its question was answered at the PC; and once you write to it, you've read its notes.
+                _questions.Settled(session, notesToo: (string?)hook["hook_event_name"] == "UserPromptSubmit");
                 if ((string?)hook["hook_event_name"] == "Stop") _usage.Soon();  // the turn used some
                 break;
         }
@@ -1223,6 +1293,29 @@ sealed class TrayApp : ApplicationContext
             _approvalSent = key;
         }
         _link.Send(new { t = "state", topic = "approval", d });
+    }
+
+    /// <summary>What Claude asks or tells you on the deck (an empty id: nothing).</summary>
+    void SendQuestion() => SendQuestion(force: false);
+
+    void SendQuestion(bool force)
+    {
+        var shown = _questions.Shown;
+        object d = shown is not { Item: var q, Waiting: var waiting }
+            ? new { id = "" }
+            : new
+            {
+                id = q.Id, kind = q.Kind, level = q.Level, session = q.Session, project = q.Project, text = q.Text,
+                options = q.Options.Select(o => new { label = o.Label, note = o.Note }),
+                multi = q.Multi, step = q.Step, steps = q.Steps, count = waiting,
+            };
+        lock (_actionsGate)
+        {
+            var key = System.Text.Json.JsonSerializer.Serialize(d);
+            if (!force && key == _questionSent) return;
+            _questionSent = key;
+        }
+        _link.Send(new { t = "state", topic = "question", d });
     }
 
     /// <summary>The context bar, when it changed (or <paramref name="force"/>, on the deck's hello).</summary>

@@ -94,4 +94,8 @@ void update() {
   setHidden(w.root, !show);
 }
 
+bool visible() { return w.root && !lv_obj_has_flag(w.root, LV_OBJ_FLAG_HIDDEN); }
+
+int bottom() { return kY + kH; }
+
 }  // namespace ui::approval

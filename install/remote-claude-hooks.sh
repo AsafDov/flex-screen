@@ -17,6 +17,12 @@
 # It also writes ~/.claude/flex-screen-usage.sh, which the SessionStart and Stop hooks run
 # in the background (at most every 3 minutes): Claude Code's own /usage, headless, so the
 # deck's Usage key shows the plan's 5-hour figure for sessions here. No hook carries it.
+#
+# Before each tool call Claude waits for one hook (a few milliseconds): the deck's Stop.
+#
+# And it registers the deck's tools with Claude Code here (deck_ask, deck_notify,
+# deck_progress, served by the companion through the same tunnel) and allows them without
+# asking: they only show things on the deck.
 set -eu
 
 port="${FLEX_SCREEN_PORT:-48151}"
@@ -91,6 +97,13 @@ exit 0
 '''
 USAGE = {"type": "command", "command": "sh '" + helper + "' " + url, "async": True, "timeout": 120}
 
+# The deck's Stop for a session: Claude waits for this before each tool call, and the
+# companion answers "don't continue" once the deck asked that session to stop. No tunnel:
+# curl fails at once, and "|| true" keeps that quiet.
+STOP = {"type": "command",
+        "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- " + url + "/stop || true",
+        "timeout": 5}
+
 for name in events:
     entries = [e for e in hooks.get(name, []) if not ours(e)]
     if mode != "--remove":
@@ -107,7 +120,7 @@ for name in events:
                                + url + "/permission || true",
                     "timeout": 600}
         entry = {"matcher": "*"} if name in ("PreToolUse", "PostToolUse") else {}
-        entry["hooks"] = [hook, USAGE] if name in ("SessionStart", "Stop") else [hook]
+        entry["hooks"] = [hook, USAGE] if name in ("SessionStart", "Stop") else [hook, STOP] if name == "PreToolUse" else [hook]
         entries.append(entry)
     if entries:
         hooks[name] = entries
@@ -115,6 +128,16 @@ for name in events:
         hooks.pop(name, None)
 if not hooks:
     root.pop("hooks")
+
+# The deck's tools, without a permission prompt each time.
+allow = root.setdefault("permissions", {}).setdefault("allow", [])
+allow[:] = [rule for rule in allow if rule != "mcp__flex-screen"]
+if mode != "--remove":
+    allow.append("mcp__flex-screen")
+if not allow:
+    root["permissions"].pop("allow")
+if not root["permissions"]:
+    root.pop("permissions")
 
 os.makedirs(os.path.dirname(path), exist_ok=True)
 backup = path + ".before-flex-screen"
@@ -135,3 +158,18 @@ else:
     os.chmod(helper, 0o755)
 print(("Removed the flex-screen hooks from " if mode == "--remove" else "Added the flex-screen hooks to ") + path)
 EOF
+
+# The deck's tools in Claude Code's list, for every project here. A call may last an hour: a
+# question on the deck waits for its tap, and Claude Code gives a call 60 s otherwise.
+exe=$(command -v claude 2>/dev/null || true)
+[ -n "$exe" ] || exe="$HOME/.local/bin/claude"
+[ -x "$exe" ] || exe=$(ls -d "$HOME"/.vscode-server/extensions/anthropic.claude-code-*/resources/native-binary/claude 2>/dev/null | sort -V | tail -n 1)
+if [ -n "$exe" ] && [ -x "$exe" ]; then
+  "$exe" mcp remove --scope user flex-screen >/dev/null 2>&1 || true
+  if [ "${1:-}" != "--remove" ]; then
+    "$exe" mcp add-json --scope user flex-screen "{\"type\":\"http\",\"url\":\"http://localhost:$port/mcp\",\"timeout\":3600000}" >/dev/null &&
+      echo "Registered the deck's tools with Claude Code"
+  fi
+else
+  echo "Note: Claude Code isn't installed here yet; run this again after installing it to add the deck's tools." >&2
+fi

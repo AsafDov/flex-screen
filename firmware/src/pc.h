@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.18.1";
+constexpr const char *kFirmwareVersion = "0.20.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -32,6 +32,7 @@ void selectInput(const char *device);
 void toggleMic();
 
 void openClaude(const char *session);  // brings its window (VS Code, Claude) to the front
+void stopClaude(const char *session);  // ends its turn before its next step
 void replayCommand(const char *cmd);  // again, in the VS Code terminal it ran in last
 void runRecent(const char *id);       // a Recent tile on Today: the same action again
 void runShortcut(const char *id);     // a launcher tile: opens the app, link, … it stands for
@@ -48,6 +49,9 @@ void contextPick(const char *key, const char *choice);  // from a key's list (mo
 // "don't ask again" suggestion.
 void approveClaude(const char *id, bool always);
 void denyClaude(const char *id);
+// Answers Claude's question (model::question) with the options picked; none dismisses it
+// (or, for a note, marks it read).
+void answerClaude(const char *id, const int *picks, int count);
 void interruptCommand();               // Ctrl+C
 void focusTerminal();
 void git(const char *operation);       // "fetch", "pull", "push", "stash", "commit"

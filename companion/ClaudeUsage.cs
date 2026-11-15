@@ -38,9 +38,110 @@ sealed class ClaudeUsage
     public ClaudeUsage()
     {
         _timer = new System.Threading.Timer(_ => Tick(), null, Timeout.Infinite, Timeout.Infinite);
+        _history.AddRange(LoadHistory());
     }
 
-    public Usage? Current { get; private set; }
+    Usage? _current;
+
+    public Usage? Current
+    {
+        get => _current;
+        private set
+        {
+            _current = value;
+            if (value != null) Remember(value);
+        }
+    }
+
+    /// <summary>A reading of the 5-hour figure.</summary>
+    public record Point(DateTime At, double Percent);
+
+    /// <param name="Start">When the 5-hour window began (its reset less 5 hours, else the first reading), or null.</param>
+    /// <param name="PerHour">Percent a hour over the last hour's readings; 0 when too few.</param>
+    /// <param name="Limit">When 100% comes at that pace, if before the window resets; else null.</param>
+    public record Pace(DateTime? Start, double PerHour, DateTime? Limit);
+
+    static readonly TimeSpan Window = TimeSpan.FromHours(5);
+    static readonly string HistoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                                      "flex-screen", "usage-history.json");
+    readonly List<Point> _history = [];
+    DateTime? _windowResets;
+
+    /// <summary>This window's readings, oldest first (kept across restarts).</summary>
+    public IReadOnlyList<Point> History
+    {
+        get
+        {
+            lock (_history) return _history.ToList();
+        }
+    }
+
+    /// <summary>
+    /// The burn-down: how fast this window is going, from the readings of the last hour (at
+    /// least 10 minutes apart), and when it runs out at that pace.
+    /// </summary>
+    public Pace Forecast()
+    {
+        var now = DateTime.UtcNow;
+        List<Point> points;
+        lock (_history) points = _history.ToList();
+        var resets = Current?.FiveHourResets;
+        DateTime? start = resets is { } r ? r - Window : points.Count > 0 ? points[0].At : null;
+        if (points.Count < 2 || Current is not { } u) return new Pace(start, 0, null);
+        var last = points[^1];
+        var first = points.FirstOrDefault(p => last.At - p.At <= TimeSpan.FromHours(1)) ?? points[0];
+        var span = (last.At - first.At).TotalHours;
+        if (span < 1.0 / 6) return new Pace(start, 0, null);
+        var perHour = Math.Max(0, (last.Percent - first.Percent) / span);
+        if (perHour < 0.5) return new Pace(start, perHour, null);
+        var limit = now + TimeSpan.FromHours(Math.Max(0, 100 - u.FiveHour) / perHour);
+        return new Pace(start, perHour, resets is { } end && limit >= end ? null : limit);
+    }
+
+    /// <summary>
+    /// Keeps the reading for the burn-down. A new window (another reset time, or the figure
+    /// falling back) starts the list again.
+    /// </summary>
+    void Remember(Usage u)
+    {
+        lock (_history)
+        {
+            var newWindow = (u.FiveHourResets is { } r && _windowResets is { } known && Math.Abs((r - known).TotalMinutes) > 10) ||
+                            (_history.Count > 0 && u.FiveHour + 5 < _history[^1].Percent) ||
+                            (_history.Count > 0 && u.At - _history[^1].At > Window);
+            if (newWindow) _history.Clear();
+            if (u.FiveHourResets != null) _windowResets = u.FiveHourResets;
+            _history.Add(new Point(u.At, u.FiveHour));
+            while (_history.Count > 120) _history.RemoveAt(0);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(HistoryPath)!);
+                File.WriteAllText(HistoryPath, System.Text.Json.JsonSerializer.Serialize(
+                    new { resets = _windowResets, points = _history.Select(p => new { at = p.At, pct = p.Percent }) }));
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    List<Point> LoadHistory()
+    {
+        try
+        {
+            if (!File.Exists(HistoryPath)) return [];
+            var json = JsonNode.Parse(File.ReadAllText(HistoryPath));
+            _windowResets = (DateTime?)json?["resets"];
+            var points = (json?["points"] as JsonArray ?? [])
+                .Select(p => new Point(((DateTime)p!["at"]!).ToUniversalTime(), (double)p["pct"]!))
+                .Where(p => DateTime.UtcNow - p.At < Window)
+                .ToList();
+            return points;
+        }
+        catch (Exception e) when (e is IOException or System.Text.Json.JsonException or InvalidOperationException or FormatException)
+        {
+            return [];
+        }
+    }
 
     /// <summary>Claude Code has no sign-in on this PC to read with (the Usage key offers one then).</summary>
     public bool SignedOut { get; private set; }
@@ -252,7 +353,7 @@ sealed class ClaudeUsage
     }
 
     /// <summary>Claude Code's executable: the native install's, else the newest one VS Code's Claude extension carries, else npm's.</summary>
-    static string? FindClaude()
+    public static string? FindClaude()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var native = Path.Combine(home, ".local", "bin", "claude.exe");

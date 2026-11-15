@@ -61,6 +61,8 @@ they need nothing beyond the standard library.
 - `test_deck.py`: every feature, tapped, held and dragged, checked against what the deck
   sends; overlays (toast, call panel, cheat sheet, idle screen) and offline. Prints
   PASS/FAIL; screenshots of the interesting states in `out/tests/`.
+- `run_some.py test_sessions test_dev`: only those of `test_deck.py`'s tests, for a quick
+  check while working on one feature.
 - `tour.py`: screenshots of all six pages for each data set and theme in `out/tour/`
   (waiting, offline, gone, day in the four themes, stress, empty).
 - `sheet.py`: six screenshots on one sheet, for looking them over: `python sheet.py

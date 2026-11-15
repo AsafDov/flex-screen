@@ -30,14 +30,29 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 ### Status bar (on every page)
 - Clock and date.
 - Next meeting with a countdown, amber from five minutes out.
-- Claude Code status (working, needs you, done); tap it to bring that session's window
-  forward, whether it's the Claude app, VS Code or a terminal.
+- Claude Code status (working, needs you, done); tap it for the session board.
 - Last build result.
 - Keyboard layer (from a Vial keyboard); tap it to pin the layer cheat sheet open.
 - Volume (tap to mute) and microphone mute, which mutes every mic so Teams, Zoom and
   Discord all go quiet at once.
 - Toasts over any page: a long command finished or failed, Claude needs approval, git
   results.
+
+### Claude session board (from the status bar)
+
+<img src="docs/screens/sessions.png" alt="The Claude session board: five sessions with where each runs, its model and what it's doing, beside the 5-hour usage chart" width="560">
+
+- Every Claude session on the PC in one list: the Claude app, each VS Code window,
+  terminals and Remote-SSH. The ones that need you first, then those at work, then the
+  rest. Each row says where it runs and its model, what it's doing (or waiting on), how
+  long it's been at it, and a long job's progress.
+- Tap a row to bring up its window. **Stop**, held, ends that session's turn before its
+  next step (a tap only says *Hold*). It works the same in the app, VS Code, a terminal or
+  on a server: before each tool call Claude checks with the companion, about 70 ms.
+- Beside it, the plan's 5-hour usage: the figure, the week's, a chart of the window so far
+  with the recent pace carried ahead, when it resets, and "At this pace you hit the limit
+  around 21:40" (or that it lasts until the reset).
+- The status bar's Claude pill and the Dev page's Claude banner open it.
 
 ### Claude approvals (on every page)
 
@@ -47,11 +62,34 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   under the status bar shows what it wants to run, with **Approve**, **Always** (Claude's
   own "don't ask again" rule, when it offers one) and **Deny**. Claude's prompt on the PC
   shows as usual; whichever you answer first wins.
-- Turn it off from the tray icon: **Approve Claude from the deck**.
-- The status bar's Claude pill says **needs you** for a question too: Claude's question box,
-  a plan waiting for approval, or a turn that ends asking you something in the Claude app.
-  A question gets no banner (Approve or Deny can't answer it; pick the answer on the PC),
-  and a banner goes as soon as you answer at the PC instead.
+- Claude's own questions (its question box) show on the deck with their options: tap one,
+  or for a question that takes several, tap them and **Done**. Several questions asked
+  together come one at a time ("2 of 3"). The X leaves it to the PC. Again, whichever you
+  answer first wins.
+- Turn both off from the tray icon: **Approve Claude from the deck**.
+- The status bar's Claude pill says **needs you** for a question too, and a plan waiting
+  for approval or a turn that ends asking you something in the Claude app (those you
+  answer at the PC). A banner or card goes as soon as you answer at the PC instead.
+
+### Claude talks to the deck (on every page)
+
+<p>
+  <img src="docs/screens/question.png" alt="Claude asking on the deck: Convert the other 12 files too? Yes, No, Only the icons" width="400">
+  <img src="docs/screens/note.png" alt="A note from Claude on the deck: All 12 files converted; 2 need a look" width="400">
+</p>
+
+- Claude Code gets three tools for the deck (an MCP server in the companion, registered
+  for every project when the hooks are installed, and allowed without a prompt):
+  - **deck_ask**: a question with 2-4 buttons; Claude waits for your tap (up to 15
+    minutes, or as long as it asks, at most 50) and carries on with the answer. Handy for
+    long jobs you leave running: ask it to "ask me on the deck" before anything risky.
+  - **deck_notify**: a note that stays until you tap **OK** (or write to that session
+    again); **Open** brings up its window.
+  - **deck_progress**: "3 of 12 · Converting icons" on the Dev page's Claude banner, with
+    a bar, and **Claude 3/12** in the status bar, until the job or the turn ends.
+- Claude decides when to use them; it's told they're for when you may be away from the
+  keyboard, not for the ordinary chat. Sessions on a Remote-SSH server get them through
+  the same tunnel as the hooks.
 
 ### Context bar (on every page but the Numpad)
 
@@ -146,7 +184,8 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 
 <img src="docs/screens/dev.png" alt="The Dev page: Claude's status, recent terminal commands, git and the last build" width="560">
 
-- Claude banner: what the current session is doing, with an **Open** button.
+- Claude banner: what the current session is doing, with an **Open** button; tap the
+  banner for the session board.
 - Git for VS Code's active repo: branch, ahead/behind, changed files; fetch, pull, push,
   stash, and **Commit…** to open VS Code's Source Control.
 - Build card: the last 10 build runs and their results.
@@ -304,7 +343,9 @@ under the server's Host in the PC's `~/.ssh/config`, reconnect, and run
 `install/remote-claude-hooks.sh` on the server once (again after an update that changes
 it: 0.16.2's sends the model of Claude's last reply, for the Model key; 0.16.3's also
 runs Claude Code's own `/usage` there after each turn, at most every 3 minutes, for the
-Usage key). A session there is matched to the VS Code window that has its folder open.
+Usage key; 0.19.0's registers the deck's tools with Claude Code there; 0.20.0's adds the
+board's Stop). A session there is
+matched to the VS Code window that has its folder open.
 Details in
 [install/README.txt](install/README.txt).
 

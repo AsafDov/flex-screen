@@ -203,6 +203,13 @@ void handleClaude(JsonObjectConst d) {
     out.state = s["state"] | "";
     out.detail = s["detail"] | "";
     out.secs = s["secs"] | 0;
+    JsonObjectConst p = s["progress"];
+    out.progress = p["label"] | "";
+    out.done = p["done"] | 0;
+    out.total = p["total"] | 0;
+    out.app = s["app"] | "";
+    out.model = s["model"] | "";
+    out.stopping = s["stopping"] | false;
   }
   c.at_ms = millis();
   c.version++;
@@ -420,6 +427,42 @@ void handleState(const char *topic, JsonObjectConst d) {
     a.always = d["always"] | false;
     a.count = d["count"] | 0;
     a.version++;
+  } else if (!strcmp(topic, "usage")) {
+    model::Usage &u = model::usage;
+    u.five = d["five"] | -1;
+    u.week = d["week"] | -1;
+    u.start = d["start"] | int64_t(0);
+    u.resets = d["resets"] | int64_t(0);
+    u.eta = d["eta"] | int64_t(0);
+    u.rate = d["rate"] | 0.0f;
+    u.count = 0;
+    for (JsonArrayConst p : d["points"].as<JsonArrayConst>()) {
+      if (u.count == model::Usage::kMax) break;
+      u.points[u.count].secs = p[0] | 0;
+      u.points[u.count].pct = p[1] | 0;
+      u.count++;
+    }
+    u.version++;
+  } else if (!strcmp(topic, "question")) {
+    model::Question &q = model::question;
+    q.id = d["id"] | "";
+    q.kind = d["kind"] | "";
+    q.level = d["level"] | "";
+    q.session = d["session"] | "";
+    q.project = d["project"] | "";
+    q.text = d["text"] | "";
+    q.count = 0;
+    for (JsonObjectConst o : d["options"].as<JsonArrayConst>()) {
+      if (q.count == model::Question::kMax) break;
+      q.options[q.count].label = o["label"] | "";
+      q.options[q.count].note = o["note"] | "";
+      q.count++;
+    }
+    q.multi = d["multi"] | false;
+    q.step = d["step"] | 1;
+    q.steps = d["steps"] | 1;
+    q.waiting = d["count"] | 0;
+    q.version++;
   } else if (!strcmp(topic, "context")) {
     model::Context &c = model::context;
     c.app = d["app"] | "";
@@ -944,6 +987,7 @@ void selectOutput(const char *device) { act("dev.out", "id", device); }
 void selectInput(const char *device) { act("dev.in", "id", device); }
 void toggleMic() { act("mic.mute"); }
 void openClaude(const char *session) { act("claude.open", "id", session); }
+void stopClaude(const char *session) { act("claude.stop", "id", session); }
 void replayCommand(const char *cmd) { act("term.replay", "cmd", cmd); }
 void runRecent(const char *id) { act("recent.run", "id", id); }
 void runShortcut(const char *id) { act("shortcut.run", "id", id); }
@@ -989,6 +1033,16 @@ void approveClaude(const char *id, bool always) {
 }
 
 void denyClaude(const char *id) { act("claude.deny", "id", id); }
+
+void answerClaude(const char *id, const int *picks, int count) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "claude.answer";
+  doc["id"] = id;
+  JsonArray list = doc["picks"].to<JsonArray>();
+  for (int i = 0; i < count; i++) list.add(picks[i]);
+  send(doc);
+}
 void interruptCommand() { act("term.interrupt"); }
 void focusTerminal() { act("term.focus"); }
 

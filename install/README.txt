@@ -57,7 +57,8 @@ VS Code Remote-SSH (working on a Linux server from this PC)
          RemoteForward 48151 localhost:48151
      then reconnect: Ctrl+Shift+P, "Remote-SSH: Kill VS Code Server on Host...", and open
      the folder again.
-  2. The hooks on the server. Copy remote-claude-hooks.sh there and run it once, from this
+  2. The hooks on the server (and the deck's tools for Claude Code there). Copy
+     remote-claude-hooks.sh there and run it once, from this
      folder (use the server's name from your SSH config):
          scp remote-claude-hooks.sh myserver:
          ssh myserver sh remote-claude-hooks.sh
@@ -66,7 +67,10 @@ VS Code Remote-SSH (working on a Linux server from this PC)
      model of Claude's last reply (read from the session's transcript on the server), for
      the deck's Model key, and run Claude Code's own /usage there after each turn (at most
      every 3 minutes, in the background, through ~/.claude/flex-screen-usage.sh), for the
-     Usage key's "5h 42%".
+     Usage key's "5h 42%". And again after updating from a kit older than 0.19.0: it
+     registers the deck's tools with Claude Code there (deck_ask, deck_notify,
+     deck_progress) and allows them without a prompt. And after updating from one older
+     than 0.20.0: it adds the hook behind the session board's Stop.
   Restart Claude sessions on the server afterwards.
   With Claude Code's chat tab in front in VS Code, the deck's bar turns into Claude's. That
   needs Claude in an editor tab (its default, "Open in New Tab"), not in the side bar.
