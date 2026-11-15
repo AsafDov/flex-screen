@@ -14,7 +14,6 @@ namespace {
 // After the user lets go of the slider, ignore the PC's volume reports for this long so
 // a report sent before the last drag step doesn't snap the knob back.
 constexpr uint32_t kHoldAfterTouchMs = 800;
-constexpr int kCapturePage = 4;
 constexpr uint32_t kCalendarTickMs = 15000;  // "in 18 min"
 constexpr uint32_t kIconRetryMs = 3000;      // asking again for a window icon the deck lacks
 
@@ -40,10 +39,12 @@ struct {
   lv_obj_t *next_title, *next_time, *join;
   lv_obj_t *actions_row, *actions_note;
   ActionTile tiles[model::Actions::kMax];
-  lv_obj_t *mail_text;
+  lv_obj_t *tasks_icon, *tasks_text;
 } w;
 
 uint32_t google_seen = UINT32_MAX;
+uint32_t tasks_seen = UINT32_MAX, tasks_tick_ms = 0;
+int tasks_link_seen = -1;
 uint32_t actions_seen = UINT32_MAX, actions_icons_seen = UINT32_MAX, actions_tick_ms = 0;
 int actions_link_seen = -1;
 uint32_t calendar_tick_ms = 0;
@@ -153,7 +154,7 @@ void onJoin(lv_event_t *) {
   if (const model::Event *e = model::google.next(model::utcNow())) pc::joinMeeting(e->id.c_str());
 }
 
-void onMail(lv_event_t *) { showPage(kCapturePage); }
+void onTasks(lv_event_t *) { showPage(kCapturePage); }
 
 void onAction(lv_event_t *e) {
   const int i = int(intptr_t(lv_event_get_user_data(e)));
@@ -166,8 +167,8 @@ void buildActions(lv_obj_t *right) {
   lv_obj_set_width(c, LV_PCT(100));
   lv_obj_set_flex_grow(c, 1);
   flexCol(c, 8);
-  // The heading, and the mail action items as a pill beside it (a line of its own under the
-  // card took the room the context bar needs).
+  // The heading, and the tasks as a pill beside it (a line of its own under the card took
+  // the room the context bar needs).
   lv_obj_t *head = box(c);
   lv_obj_set_size(head, LV_PCT(100), 26);
   flexRow(head, 8);
@@ -175,12 +176,12 @@ void buildActions(lv_obj_t *right) {
   lv_obj_t *gap = box(head);
   lv_obj_set_size(gap, 1, 1);
   lv_obj_set_flex_grow(gap, 1);
-  lv_obj_t *mail = button(head, LV_SIZE_CONTENT, 26, kRaised, onMail);
-  lv_obj_set_style_pad_hor(mail, 10, 0);
-  flexRow(mail, 6);
-  label(mail, LV_SYMBOL_ENVELOPE, &lv_font_montserrat_14, kAmber);
-  w.mail_text = label(mail, "", &small_font, kSoftText);
-  label(mail, LV_SYMBOL_RIGHT, &lv_font_montserrat_12, kMuted);
+  lv_obj_t *tasks = button(head, LV_SIZE_CONTENT, 26, kRaised, onTasks);
+  lv_obj_set_style_pad_hor(tasks, 10, 0);
+  flexRow(tasks, 6);
+  w.tasks_icon = label(tasks, LV_SYMBOL_OK, &lv_font_montserrat_14, kAccent);
+  w.tasks_text = label(tasks, "", &small_font, kSoftText);
+  label(tasks, LV_SYMBOL_RIGHT, &lv_font_montserrat_12, kMuted);
   w.actions_note = label(c, "", &body_font, kMuted);
   lv_obj_set_width(w.actions_note, LV_PCT(100));
   lv_label_set_long_mode(w.actions_note, LV_LABEL_LONG_MODE_WRAP);
@@ -346,11 +347,30 @@ void updateCalendar() {
     else if (mins < 60) setTextf(w.next_time, "%s-%s · in %d min", from, to, int(mins));
     else setTextf(w.next_time, "%s%s-%s", day, from, to);
   }
+}
 
-  if (!online || g.status.length() == 0) setText(w.mail_text, "Mail");  // not read yet
-  else if (g.status != "ok") setText(w.mail_text, "Mail needs Google");
-  else if (g.open == 0) setText(w.mail_text, "Nothing from mail");
-  else setTextf(w.mail_text, "%d to do from mail", g.open);
+// The tasks pill: how many are open, and how many of them are due today or overdue.
+void updateTasks() {
+  const model::Tasks &k = model::tasks;
+  int urgent = 0;
+  const int64_t now = model::localNow();
+  if (now) {
+    char today[12];
+    const time_t t = time_t(now);
+    struct tm tm;
+    gmtime_r(&t, &tm);  // already shifted to local time
+    strftime(today, sizeof(today), "%Y-%m-%d", &tm);
+    for (int i = 0; i < k.count; i++) {
+      // "yyyy-mm-dd" sorts as text.
+      if (!k.list[i].done && k.list[i].due.length() && strcmp(k.list[i].due.c_str(), today) <= 0) urgent++;
+    }
+  }
+  if (!pc::connected() || k.status.length() == 0) setText(w.tasks_text, "Tasks");  // not read yet
+  else if (k.status == "setup" || k.status == "signin") setText(w.tasks_text, "Tasks need Google");
+  else if (k.open == 0) setText(w.tasks_text, "Nothing to do");
+  else if (urgent) setTextf(w.tasks_text, "%d to do · %d due", k.open, urgent);
+  else setTextf(w.tasks_text, "%d to do", k.open);
+  setTextColor(w.tasks_icon, urgent ? kAmber : kAccent);
 }
 
 void updateClock() {
@@ -442,6 +462,12 @@ void update() {
     calendar_link_seen = link;
     calendar_tick_ms = millis();
     updateCalendar();
+  }
+  if (model::tasks.version != tasks_seen || link != tasks_link_seen || millis() - tasks_tick_ms >= kCalendarTickMs) {
+    tasks_seen = model::tasks.version;
+    tasks_link_seen = link;
+    tasks_tick_ms = millis();
+    updateTasks();
   }
   // Icons arrive after the list, and a missing one is asked for again now and then.
   const bool icon_due = millis() - actions_tick_ms >= kIconRetryMs;

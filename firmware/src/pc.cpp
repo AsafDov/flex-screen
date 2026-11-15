@@ -244,11 +244,12 @@ void handleGit(JsonObjectConst d) {
   g.version++;
 }
 
-// Idle timings take effect at once; a different palette is saved and the deck restarts
+// Idle and cheat sheet timings take effect at once; a different palette is saved and the deck restarts
 // into it, since every page is built with the palette's colors.
 void handleSettings(const JsonDocument &doc) {
   model::settings.clock_after_s = doc["idle_clock_s"] | model::settings.clock_after_s;
   model::settings.off_after_s = doc["idle_off_s"] | model::settings.off_after_s;
+  model::settings.cheat_hold_s = doc["cheat_hold_s"] | model::settings.cheat_hold_s;
   const char *palette = doc["palette"] | "";
   if (!palette[0]) return;
   Preferences prefs;
@@ -489,19 +490,44 @@ void handleState(const char *topic, JsonObjectConst d) {
       ev.all_day = e["allday"] | false;
       ev.join = e["join"] | false;
     }
-    g.task_count = 0;
+    g.version++;
+  } else if (!strcmp(topic, "tasks")) {
+    model::Tasks &k = model::tasks;
+    k.status = d["status"] | "";
+    k.list_count = 0;
+    for (JsonObjectConst l : d["lists"].as<JsonArrayConst>()) {
+      if (k.list_count == model::Tasks::kMaxLists) break;
+      model::TaskList &list = k.lists[k.list_count++];
+      list.src = l["src"] | "";
+      list.id = l["id"] | "";
+      list.name = l["name"] | "";
+      list.show = l["show"] | true;
+    }
+    k.count = 0;
     for (JsonObjectConst t : d["tasks"].as<JsonArrayConst>()) {
-      if (g.task_count == model::Google::kMaxTasks) break;
-      model::MailTask &task = g.tasks[g.task_count++];
+      if (k.count == model::Tasks::kMax) break;
+      model::Task &task = k.list[k.count++];
+      task.src = t["src"] | "";
       task.list = t["list"] | "";
       task.id = t["id"] | "";
       task.title = t["title"] | "";
-      task.from = t["from"] | "";
+      task.sub = t["sub"] | "";
       task.due = t["due"] | "";
       task.done = t["done"] | false;
+      task.child = t["child"] | false;
     }
-    g.open = d["open"] | 0;
-    g.version++;
+    k.open = d["open"] | 0;
+    k.sched = d["sched"] | 0;
+    k.version++;
+  } else if (!strcmp(topic, "task")) {
+    model::TaskDetail &t = model::task_detail;
+    t.src = d["src"] | "";
+    t.list = d["list"] | "";
+    t.id = d["id"] | "";
+    t.found = d["found"] | false;
+    t.title = d["title"] | "";
+    t.notes = d["notes"] | "";
+    t.version++;
   } else if (!strcmp(topic, "call")) {
     model::Call &c = model::call;
     c.app = d["app"] | "";
@@ -513,6 +539,7 @@ void handleState(const char *topic, JsonObjectConst d) {
     c.hand = d["hand"] | -1;
     c.deafened = d["deafened"] | false;
     c.can_mic = c.can_camera = c.can_hand = c.can_deafen = c.can_leave = c.can_react = false;
+    c.can_whiteboard = c.can_annotate = false;
     for (const char *what : d["can"].as<JsonArrayConst>()) {
       if (!what) continue;
       if (!strcmp(what, "mic")) c.can_mic = true;
@@ -521,9 +548,42 @@ void handleState(const char *topic, JsonObjectConst d) {
       else if (!strcmp(what, "deafen")) c.can_deafen = true;
       else if (!strcmp(what, "leave")) c.can_leave = true;
       else if (!strcmp(what, "react")) c.can_react = true;
+      else if (!strcmp(what, "whiteboard")) c.can_whiteboard = true;
+      else if (!strcmp(what, "annotate")) c.can_annotate = true;
     }
     c.note = d["note"] | "";
     c.volume = d["volume"] | -1;
+    model::Draw &w = c.draw;
+    JsonObjectConst draw = d["draw"];
+    w.mode = draw ? (draw["mode"] | "") : "";
+    w.tool_count = w.color_count = w.kind_count = 0;
+    w.weight_max = 0;
+    if (draw) {
+      for (const char *tool : draw["tools"].as<JsonArrayConst>()) {
+        if (tool && w.tool_count < model::Draw::kMaxTools) w.tools[w.tool_count++] = tool;
+      }
+      w.tool = draw["tool"] | "";
+      for (const char *color : draw["colors"].as<JsonArrayConst>()) {
+        if (color && w.color_count < model::Draw::kMaxColors) w.colors[w.color_count++] = strtoul(color, nullptr, 16);
+      }
+      w.color = draw["color"] | -1;
+      w.width = draw["width"] | -1;
+      w.weight = draw["weight"] | -1;
+      w.weight_min = draw["weight_min"] | 0;
+      w.weight_max = draw["weight_max"] | 0;
+      for (JsonObjectConst kind : draw["kinds"].as<JsonArrayConst>()) {
+        if (w.kind_count >= model::Draw::kMaxKinds) break;
+        w.kind_ids[w.kind_count] = kind["id"] | "";
+        w.kind_names[w.kind_count] = kind["name"] | "";
+        w.kind_count++;
+      }
+      w.kind = draw["kind"] | "";
+      w.can_color = draw["can_color"] | false;
+      w.can_width = draw["can_width"] | false;
+      w.undo = draw["undo"] | false;
+      w.redo = draw["redo"] | false;
+      w.save = draw["save"] | false;
+    }
     c.version++;
   } else if (!strcmp(topic, "pc")) {
     model::pc.locked = d["locked"] | false;
@@ -1006,15 +1066,38 @@ void obsidian(const char *what) {
 
 void openNote(const char *path) { act("obs.open", "path", path); }
 void joinMeeting(const char *id) { act("cal.join", "id", id); }
-void openMail() { act("mail.open"); }
 
-void setTaskDone(const char *list, const char *id, bool done) {
+void setTaskDone(const char *src, const char *list, const char *id, bool done) {
   JsonDocument doc;
   doc["t"] = "act";
   doc["a"] = "task.done";
+  doc["src"] = src;
   doc["list"] = list;
   doc["id"] = id;
   doc["done"] = done;
+  send(doc);
+}
+
+void addTask(const char *src, const char *list, const char *title, const char *due) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "task.add";
+  doc["src"] = src;
+  doc["list"] = list;
+  doc["title"] = title;
+  doc["due"] = due;
+  send(doc);
+}
+
+void refreshTasks() { act("task.refresh"); }
+
+void openTask(const char *src, const char *list, const char *id) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "task.open";
+  doc["src"] = src;
+  doc["list"] = list;
+  doc["id"] = id;
   send(doc);
 }
 

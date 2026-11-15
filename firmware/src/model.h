@@ -246,6 +246,26 @@ struct Toast {
 struct Settings {
   uint32_t clock_after_s = 10 * 60;  // idle this long: the clock screen (0: never)
   uint32_t off_after_s = 30 * 60;    // idle this long: backlight off (0: never)
+  uint32_t cheat_hold_s = 10;        // a layer key held this long: the cheat sheet (0: only from the pill)
+};
+
+// Zoom's whiteboard or annotation tools, while they're open.
+struct Draw {
+  static constexpr int kMaxTools = 8, kMaxColors = 24, kMaxKinds = 4;
+  String mode;  // "annotate", "whiteboard"; "" when not drawing
+  String tools[kMaxTools];
+  int tool_count = 0;
+  String tool;
+  uint32_t colors[kMaxColors];  // 0xRRGGBB
+  int color_count = 0;
+  int color = -1;  // index, -1 unknown
+  int width = -1;  // 0 thin … 3 bulk, -1 unknown (annotation)
+  int weight = -1, weight_min = 0, weight_max = 0;  // a whiteboard tool's weight slider; weight_max 0: none
+  String kind_ids[kMaxKinds], kind_names[kMaxKinds];  // the current tool's kinds (the laser's, the eraser's)
+  int kind_count = 0;
+  String kind;
+  bool can_color = false, can_width = false;  // the colors and the four widths apply to the current tool
+  bool undo = false, redo = false, save = false;
 };
 
 // A call in Teams, Zoom, Discord, Webex or a browser.
@@ -259,8 +279,10 @@ struct Call {
   int hand = -1;    // 1 raised, 0 not, -1 unknown
   bool deafened = false;
   bool can_mic = false, can_camera = false, can_hand = false, can_deafen = false, can_leave = false, can_react = false;
+  bool can_whiteboard = false, can_annotate = false;  // Zoom
   String note;  // a setup hint
   int volume = -1;  // the app's volume in the mixer
+  Draw draw;
   uint32_t version = 0;
 };
 
@@ -404,27 +426,55 @@ struct Event {
   bool join = false;  // has a Meet/Zoom/Teams link
 };
 
-struct MailTask {
-  String list, id;
-  String title;
-  String from;
-  String due;  // "2026-11-07", or ""
-  bool done = false;
-};
-
 struct Google {
   static constexpr int kMaxEvents = 8;
-  static constexpr int kMaxTasks = 6;
   String status;  // "ok", "setup" (no OAuth client yet), "signin", "error"
   Event events[kMaxEvents];
   int event_count = 0;
-  MailTask tasks[kMaxTasks];
-  int task_count = 0;
-  int open = 0;
   uint32_t version = 0;
 
   // The first timed event that hasn't ended, or null.
   const Event *next(int64_t now) const;
+};
+
+// Capture's Tasks card: every source's lists and open tasks (Google Tasks for now).
+struct TaskList {
+  String src, id;  // the source ("google") and the list's id within it
+  String name;
+  bool show = true;  // has a chip on the deck (else only its dated tasks show, under Scheduled)
+};
+
+struct Task {
+  String src, list, id;
+  String title;
+  String sub;  // the notes' first line, or ""
+  String due;  // "2026-11-07", or ""
+  bool done = false;   // ticked from the deck today
+  bool child = false;  // a subtask
+};
+
+struct Tasks {
+  static constexpr int kMaxLists = 8;
+  static constexpr int kMax = 40;
+  String status;  // "ok", "setup" (no Google OAuth client yet), "signin", "error"; "" before the first read
+  TaskList lists[kMaxLists];
+  int list_count = 0;
+  Task list[kMax];  // open first, soonest due first
+  int count = 0;
+  int open = 0;   // all open tasks on the deck (dated, or in a shown list), also those past kMax
+  int sched = 0;  // the open ones with a due date
+  uint32_t version = 0;
+
+  // The list's name, or "" for one not known.
+  const char *listName(const String &src, const String &id) const;
+};
+
+// One task in full, sent when the deck opens it (task.open): its whole title and notes.
+struct TaskDetail {
+  String src, list, id;
+  bool found = false;  // the companion still has it
+  String title, notes;
+  uint32_t version = 0;
 };
 
 struct Clock {
@@ -459,6 +509,8 @@ extern Keymap keymap;
 extern Clips clips;
 extern Obsidian obsidian;
 extern Google google;
+extern Tasks tasks;
+extern TaskDetail task_detail;
 extern uint32_t bench_requests;  // the companion asked to time a full redraw of every page
 extern Zones zones;
 extern Clock clock;

@@ -56,7 +56,7 @@ struct {
 } toast;
 
 lv_obj_t *tabview;
-constexpr uint32_t kDevTab = 2;
+constexpr uint32_t kDevTab = kDevPage;
 constexpr uint32_t kToastMs = 4000;
 
 constexpr uint32_t kPreviewHoldMs = 800;
@@ -613,7 +613,7 @@ void update() {
   dev::update();
   windows::update();
   numpad::update();
-  capture::update();
+  capture::update();  // with its Tasks card
   ctxbar::update();
   call::update();
   fitBar();  // after the call pill too: it sits among the others

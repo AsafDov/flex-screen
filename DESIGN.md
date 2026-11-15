@@ -69,7 +69,7 @@ renders under 12px.
 | 12 | Clipboard stack | Capture | Companion | Clipboard listener keeps the last 20 text clips plus pins; tap = paste. Skips clips that password managers mark as excluded from history |
 | 13 | Obsidian | Capture | Companion | Vault `DoorsOfStone`: today's note (`obsidian://` URI), Clipboard → Inbox (append to the file), recent notes (from `.obsidian/workspace.json`), quick capture |
 | 14 | Calendar | Status bar, Today | Companion | Google Calendar API (read-only, every calendar ticked in Google Calendar): next-meeting countdown, today's list, Join button from the Meet/Teams/Zoom link |
-| 15 | Action items from mail | Today, Capture | Companion | Google Tasks, the list the `todo` skill fills from mail triage; tap = mark done |
+| 15 | Tasks | Capture, Today | Companion | Open tasks from the task sources (Google Tasks first; `ITaskProvider` takes more): Scheduled (every dated task) or one of the lists chosen in the tray, grouped by due day; tap = tick off, + = add one with the on-screen keyboard. Today has a count pill |
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
 | 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (long press) and kept per app; settings.json's `contextBar` adds actions. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
@@ -110,7 +110,7 @@ companion/   C# / .NET 10 tray app; also installs the Claude Code hooks (--insta
 vscode-ext/  TypeScript VS Code extension
 install/     install kit for another PC: build-dist.ps1, install/uninstall scripts
 dist/        build-dist.ps1's output (flex-screen.zip)
-docs/        user guides (google-setup.md: Calendar, Tasks and mail; also in the install kit)
+docs/        user guides (google-setup.md: Calendar and Tasks; also in the install kit)
 simulator/   the firmware UI on the PC (MSVC), with a Python driver, feature tests and screenshot tours
 qmk/         (phase 6) Corne keymap addition (layer report) for vial-qmk
 ```
@@ -456,9 +456,37 @@ Gotchas found after phase 6:
   local API on ws://127.0.0.1:8124 (protocol 2.0.0, as Stream Deck uses), with real
   mute/camera/hand state, leave and reactions, once "Manage API" is on in Teams'
   privacy settings and the first action is allowed there (the token is DPAPI-encrypted).
-  Zoom has no API: Alt+A/V/Y/Q go to its meeting window (`ZPContentViewWndClass`) and
-  the focus comes back; leaving still needs confirming in Zoom, since a host's dialog
-  also offers "End for all". Discord's API needs approval for voice control, so mic is
+  Zoom has no API, and no shortcuts for its drawing tools, but its toolbars name every
+  button and its state for screen readers (firmware 0.18.0, `ZoomControl.cs`, checked on
+  Zoom Workplace 7.1.9): the meeting toolbar (`ZPControlPanelClass`, or
+  `ZPFloatToolbarClass` while sharing) gives mute ("Mute, currently unmuted, Alt+A…" vs
+  "Unmute…"), video, Whiteboards and Annotate; the annotation toolbar
+  (`ZPAnnotatePanelClass`) and its menus (`ZPMenuClass` by title: Draw, Color, Stamp,
+  Spotlight, Clear Drawing) give every tool with its check. These native ones are read
+  through MSAA and pressed by posting a click to the window at the button's spot, which
+  leaves the mouse alone and takes no focus; Escape posted to a menu closes it without
+  ending the annotation. The whiteboard is a WebView2 page in the meeting window
+  (`Chrome_WidgetWin_1` "Zoom Whiteboard"), read through UI Automation in one cached
+  pass (~15 ms): a tool's ExpandCollapse picks it and opens its panel, then folds it
+  again; the selected tool has `_selected_` in its class, and the eraser's group is
+  named "Stroke eraser" or "Pixel eraser". Panels (firmware 0.18.1): the pen has 24
+  swatches, the marker 6 (see-through, so the same names are other colors), both a
+  Weight slider 1–20; the laser (in the header, left out when the window is narrow)
+  has a menu of 6 dark colors (`colorMenuItem`, chosen by `_selected_`); the eraser
+  has its kind switch, and a Weight slider only as the pixel eraser. Colors and
+  weights only show in an open panel, so the companion notes each panel when it's
+  open (Zoom's or its own), opens an unseen tool's panel once for a moment, and keeps
+  the eraser's per kind. Palettes are known by name per tool, sampled on screen;
+  printing Zoom's window doesn't capture its web content, so a color Zoom adds later is
+  sampled from the screen only where Zoom is what's showing. Closing a blank board asks "save this blank whiteboard?",
+  answered Discard. All of it runs on one STA thread, a step at a time. Zoom
+  Workplace's own window (`ZPPTMainFrmWndClassEx`) names its navigation tabs "Home 1 of
+  6", "Chat 3 of 6" (MSAA page tabs), and Home is a web page whose instant-meeting
+  button is "Meet" ("Back to meeting" while in one): the context bar's New meeting and
+  Chat press those. Raise hand is
+  still Alt+Y into the meeting window (Zoom 7's `ConfMultiTabContentWndClass`, or the
+  floating toolbar while sharing); leaving still needs confirming in Zoom, since a
+  host's dialog also offers "End for all". Discord's API needs approval for voice control, so mic is
   Windows' mute and Deafen also mutes Discord in the mixer.
 - Keyboard layers after the 12-column fix: LT keys count as held after 200 ms, or once
   another key is pressed and released inside them (QMK's permissive hold). Counting any
@@ -856,13 +884,133 @@ Gotchas found after phase 6:
     loading the built companion, setting an app to the level it had. Not flashed: the
     deck wasn't on this PC.
 
+- Companion: the layer pill and cheat sheet follow whichever Corne is in use (reported:
+  two Cornes plugged in, the deck only followed one of them):
+  - Both answer VIA on raw HID: W-CORNE (the wireless receiver, 55D4:0461) and
+    Cornelious RP2040-Zero (wired, FEED:C0E1), same Vial keyboard id, 8 layers, 4x12. The
+    companion opened the first that answered and stopped looking.
+  - Now every VIA keyboard is opened (new ones looked for every 5 s) and polled, each
+    with its own held keys, toggles and default layer, so a layer toggled on one
+    stays with that keyboard. The deck shows the one a key last went down on: its
+    cheat sheet (when the layout differs), then its layer. The other's state is
+    kept, so switching back shows its layer straight away. If the shown one goes, the other
+    takes over.
+  - Cornelious is Vial-locked (W-CORNE is unlocked), and a locked Vial keyboard answers
+    the held-keys query with no keys held, so it can't move the layer until it's unlocked
+    (the Vial app's Security > Unlock, holding r0c0 + r3c9; it stays unlocked until it
+    restarts). No firmware change is needed for it. The companion logs the lock state
+    when it opens a keyboard, and checks a locked one again every 30 s.
+  - Checked: the built companion's log with both plugged in (both opened, Cornelious
+    reported locked, W-CORNE shown); the simulator with the two keyboards' kbd and
+    keymap messages in turn (pill NAV then BASE, cheat sheet after a 10 s hold). Not
+    checked: typing on Cornelious once it's unlocked. Deck firmware unchanged.
+
+- Companion and deck firmware: how long a layer key is held before the cheat sheet shows
+  is a setting, and the tray opens the settings file (asked for: "a configure option to
+  open the configuration/settings file, and one of the configurations should be the time
+  to present the cheat sheet"):
+  - settings.json's `cheatSheetSeconds` (default 10, 0 to 600; 0: the sheet only opens
+    from the layer pill) goes to the deck in the `settings` message as `cheat_hold_s`,
+    which replaces cheat.cpp's fixed 10 s. A companion that doesn't send it leaves 10 s.
+  - The tray's **Open settings file** writes in the everyday settings the file doesn't
+    have (palette, idle, layerNames, cheatSheetSeconds) at their current values, so
+    they're there to change, then opens it in the app set for .json (Notepad if none).
+    A file with a mistake in it is opened as it is, to be fixed. Writing the file drops its
+    comments, as the Deck colors menu already did.
+  - Checked: AddMissing run against this PC's settings.json (only `palette` in it) wrote
+    the four, a change to 3 read back as 3, then the file was put back; the simulator's
+    133 checks, with new ones for a 6 s setting (not at 2 s, shown at 6.5 s) and 0 (not
+    after 60 s). Firmware 0.16.5 (the phone over Bluetooth, meant for
+    0.17.0, was taken out again: Gadgetbridge didn't pass the phone's notifications on).
+
+- Tasks on Capture, firmware 0.17.0 (asked for: "a task manager integrated with my google.tasks.
+  Needs to pull tasks from several places, one being Google Tasks itself … The AR from mail
+  should be gone … see all tasks, mark them finished, and a button to create tasks"):
+  - The mail action items are gone: Capture's *From mail* card (and its Open Gmail
+    button), Today's "n to do from mail" pill, and the `tasks` field of the `google`
+    message. GoogleSource reads only the calendar now and lends its sign-in
+    (`SendAsync`) to the task source; the consent already covered Tasks read and write,
+    so nobody signs in again.
+  - Companion: `TaskSource` merges `ITaskProvider`s (id, name, read, tick, add; a task is
+    source, list, id, title, notes, due, done, parent). `GoogleTasks` is the first: every
+    list, open tasks with paging, subtasks, PATCH to tick, POST to add. Read every 2 min,
+    right after each change, and on the deck's ↻. Tasks ticked from the deck stay, ticked,
+    until midnight, so a wrong tap can be undone. A failed tick sends the snapshot again
+    with a new `rev`, since the deck skips a state line it has just seen and would keep
+    its own early tick.
+  - Deck: a Tasks card on Capture, where the mail card was (a tab of its own was tried
+    first and turned down: "I do not want another tab.. it should be in the capture tab").
+    The clipboard (236 px) and Obsidian (186 px) cards got narrower to make room. Header
+    with the open count, refresh and +; the lists as chips with open counts; the tasks
+    grouped Overdue / Today / Tomorrow / This week / Later / No date / Done, each row with
+    its list (in All), day and the notes' first line; the whole row ticks it. + opens a
+    full-screen form with LVGL's keyboard, list chips (starting on the list on show) and
+    due chips (none, today, tomorrow). Today's pill opens Capture.
+  - Checked: the simulator's 147 checks (new: grouping, filters, tick/untick, refresh,
+    the form typing on the keyboard, Add with list and due, Cancel, signed out); on the
+    deck, the user's 24 open tasks shown, a task added through the companion's `/test`
+    hook appeared under Today in Projects, ticking it marked it completed in Google
+    Tasks (the test task was deleted after). Not checked: tapping on the real panel. The line is
+    capped at 40 tasks and 7000 bytes (Hebrew is escaped six bytes a letter).
+- Claude's questions off the approval banner (companion only, firmware unchanged)
+  - Reported: "when I answered a question for claude, the approbe deny notification still
+    stays". Claude Code runs the PermissionRequest hook for AskUserQuestion too, so the deck
+    showed Approve/Deny for a question. Answering at the PC adds the answers to the tool's
+    input, so PostToolUse's input no longer equalled the request's and nothing settled it
+    until the turn ended (or 575 s passed).
+  - Now AskUserQuestion is never held for the deck (Approve can't pick an answer): the
+    session's "input" state gives the pill's *needs you* and the "Claude has a question"
+    toast instead. And a request settles when every field it asked about matches what the
+    tool ran with, so extra fields added at the PC (a question's answers, a plan's file)
+    don't keep it up.
+  - Checked against the running companion with made-up hooks: an AskUserQuestion request
+    returned at once (204); an ExitPlanMode request went as soon as PostToolUse came with
+    an extra input field, and the deck showed no banner after.
+- Scheduled and chosen lists on the Tasks card, firmware 0.17.1 (asked for: "i want the
+  option to only have the scheduled and stared and chosen list to have there"):
+  - The card opens on **Scheduled** (every open task with a due date, from any list), in
+    place of All; then a chip for each list chosen in the tray's new *Task lists on the
+    deck* menu (settings.json `hiddenTaskLists`, "src/id"; new lists show until unticked).
+    An unticked list's undated tasks aren't sent; its dated ones still are, for Scheduled.
+    `tasks` gives each list `show` and a `sched` count; Today's pill counts what's sent.
+  - No Starred: the Tasks API has no starred field (checked in its discovery document),
+    so the user chose to leave it out.
+  - + from Scheduled starts on the first shown list, due today, so the new task shows
+    where it was added. A list unticked while on show sends the card back to Scheduled.
+    `tasks` goes again whenever settings.json changes, so editing `hiddenTaskLists` by
+    hand works too.
+  - Checked: the simulator's 154 checks (new: Scheduled leaves out undated tasks, a
+    hidden list has no chip but its dated task shows, + from Scheduled adds to the first
+    list due today, a list hidden while on show goes back to Scheduled); on the deck,
+    firmware 0.17.1 opened on Scheduled (4 open), and putting the first list in
+    `hiddenTaskLists` took its chip away while its dated tasks stayed (then put back).
+    Not checked: clicking the tray menu itself, tapping on the panel.
+- A task's popup and plainer Scheduled rows, firmware 0.17.2 (asked for: "The scheduled
+  tasks should only show the task name, date due and status, with days overdue if
+  overdue. clicking a task should pop up the contents of it."):
+  - Scheduled rows: the title, then "Fri 6 Nov  ·  2 days overdue" (or "To do", "Done");
+    no list name or notes. A list's own rows keep the day and the notes' first line.
+  - Tapping a row opens the task over everything: the whole title, list, due day and
+    status (amber when overdue), the notes (scrolling when long), **Mark done** / **Mark
+    not done** and **Close**; a tap beside it closes it. The box at the row's start is
+    now its own 44 px button that ticks without opening.
+  - The notes come only when asked (`task.open` → `task`), so the `tasks` line keeps its
+    40 tasks: the companion sends the whole title and the notes without the todo tag,
+    up to 1500 characters and under 7000 bytes. "Loading…" until they arrive.
+  - Checked: the simulator's checks (new: Scheduled rows, the box ticks without opening,
+    a tap opens the popup and asks for the notes, title and notes fill in, Mark done,
+    overdue status, no notes, tap beside and Close); on the deck, firmware 0.17.2 shows
+    "Sun 15 Nov · To do" rows under Scheduled, and the companion took a `task.open` for
+    a real task through `/test`. Not checked: the popup on the real panel (it needs a tap).
+
 ## Decisions
 
 - Touch version of the board (confirmed).
 - Terminal = the last few commands run, each tap-to-replay (saved command buttons were
   dropped on request: the build command changes all the time), run status with
   finish/fail alerts for long builds.
-- Calendar = Google Calendar. Action items = Google Tasks as filled by the `todo` skill.
+- Calendar = Google Calendar. Tasks = Google Tasks, all of it (the mail-only "action
+  items" card was dropped on 2026-11-15: "not good enough"); more sources to come.
 - Keyboard layer = the layers of the Corne (QMK, programmed with Vial). The G915 TKL has
   no layers to show.
 - Changes are confirmed on the real board. Since 2026-11-08 there is also a simulator

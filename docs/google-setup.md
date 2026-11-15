@@ -1,16 +1,15 @@
-# Connect Google Calendar, Tasks and mail
+# Connect Google Calendar and Tasks
 
 What the deck shows once Google is connected:
 
 - **Status bar:** the next meeting with a countdown, amber from five minutes out.
 - **Today:** *Up next* with a **Join** button for Meet, Zoom and Teams links; *Recent* can hold a
-  meeting you joined; the bar at the bottom counts mail action items.
-- **Capture:** *From mail*, the action items made from your email, with sender and due day.
-  Tap the box to tick one off in Google Tasks; **Open Gmail** opens Gmail in the browser.
+  meeting you joined; a pill counts your open tasks and those due today.
+- **Capture:** *Tasks*: your scheduled tasks and the lists you chose, by when they're due. Tap
+  one to tick it off; **+** adds one (see [Tasks on the deck](#tasks-on-the-deck)).
 
-The deck reads your calendar (read-only) and your Google Tasks (it can tick tasks off). It
-doesn't read Gmail itself: the mail items are Google Tasks that the `todo` skill makes from
-your inbox (see [Mail on the deck](#mail-on-the-deck)).
+The deck reads your calendar (read-only) and your Google Tasks (it can tick tasks off and add
+new ones).
 
 It takes about ten minutes, once. Part 1 is done once per Google account; part 2 on each PC.
 
@@ -69,18 +68,28 @@ project, so no one else's app ever holds access to your account.
 The sign-in is stored on the PC encrypted for your Windows account (`google-token.bin` next to
 the client file), so it's useless anywhere else.
 
-## Mail on the deck
+## Tasks on the deck
 
-The deck shows Google Tasks whose notes contain a `[todo src=gmail:…]` tag: the action items
-the `todo` skill creates when it goes through your inbox with Claude (Gmail and Google Tasks
-connected to Claude). From those notes it also takes a `From: Name <address>` line for the
-sender and the task's due date. Ticking one on the deck marks it completed in Google Tasks;
-it stays shown, struck through, until midnight.
+The Tasks card on the Capture page shows the signed-in account's Google Tasks (up to 40 on
+the deck, soonest due first; the counts include the rest). A task's notes give the grey line
+under its title (their first line; the `todo` skill's `[todo src=…]` tag is left out).
 
-So the *From mail* card fills once two things are true: the deck is connected (part 2), and
-the `todo` skill has run (for example through `personal-assistant` or `todo`). A task you add
-by hand shows too if you put such a tag in its notes. **Open Gmail** just opens
-mail.google.com.
+- **Scheduled** (where the card opens): every open task with a due date, from every list.
+- **One list:** a chip for each list you chose. In the tray icon's menu, **Task lists on the
+  deck** has every list, ticked ones get a chip (all of them at first). An unticked list's
+  undated tasks don't come to the deck at all; its dated ones still show under Scheduled.
+- There's no *Starred*: Google's Tasks API doesn't tell apps which tasks are starred.
+
+- **Open one:** tap it for its whole title, list, due day, status (to do, done, or how many
+  days overdue) and notes, with **Mark done**.
+- **Tick one off:** tap the box at its start (or **Mark done** in it). Google Tasks marks it
+  completed; the deck keeps it, struck through, until midnight, and ticking it again marks
+  it not done.
+- **Add one:** **+**, type the title on the deck's keyboard, pick the list (the one
+  on show to begin with; from Scheduled, the first list and due today) and when it's due, then **Add** (or the keyboard's ✓). A toast
+  says which list it went to.
+- The companion reads Google Tasks every 2 minutes, at once after a change from the deck,
+  and when you tap ↻.
 
 ## More than one Google account
 
@@ -88,8 +97,8 @@ mail.google.com.
   account. To add another account's calendar, in that account: Google Calendar → Settings →
   the calendar → **Share with specific people** → add your main address with **See all event
   details**; accept the invite in the main account. A meeting on both calendars shows once.
-- **Mail:** forward the other account's mail to the main one (Gmail → Settings → **Forwarding
-  and POP/IMAP**), so the `todo` skill sees it.
+- **Tasks:** Google Tasks can't be shared between accounts; the deck shows the signed-in
+  account's.
 
 ## On another PC
 
@@ -117,5 +126,6 @@ The companion's log says what Google answered: tray icon → **Open log**, lines
 | Log: `token request failed: invalid_grant` | The sign-in was revoked or expired; the companion drops it. Connect again from the tray. |
 | *Error 403: access_denied* in the browser | The app is in *Testing* and this account isn't a test user: publish it (step 4), or add the account under **Audience** → **Test users**. |
 | Deck: *Calendar unavailable* | Google couldn't be reached right now; the last data stays shown. |
-| *From mail* says *Nothing from mail to do* | Connected and working; there are no open tasks with the `[todo src=gmail:…]` tag yet. Run the `todo` skill. |
+| Tasks: *Google Tasks can't be reached right now* | The Tasks API refused or Google couldn't be reached; the log's `tasks: google:` line says which. Enable the Google Tasks API (part 1, step 2) if that's what it says. |
+| Toast: *Couldn't add the task to Google Tasks* | As above; the log has Google's reason. |
 | An event from another calendar is missing | Tick that calendar in Google Calendar's list (left side, *My calendars* / *Other calendars*). |

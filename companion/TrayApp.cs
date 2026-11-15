@@ -43,11 +43,13 @@ sealed class TrayApp : ApplicationContext
     readonly DeckShot _shot = new();
     readonly ObsidianSource _obsidian = new();
     readonly GoogleSource _google = new();
+    readonly TaskSource _tasks;
     readonly CallSource _calls;
     readonly ZoneSource _zones;
     readonly RecentActions _recent = new();
     readonly Shortcuts _shortcuts;
     readonly ContextBar _context;
+    readonly System.Threading.Timer _meetingTick;
     readonly ClaudeApprovals _approvals = new();
     readonly ClaudeUsage _usage = new();
     readonly HashSet<string> _iconsSent = [];
@@ -90,6 +92,24 @@ sealed class TrayApp : ApplicationContext
             foreach (ToolStripMenuItem item in colors.DropDownItems) item.Checked = (string?)item.Tag == Settings.Palette;
         };
         menu.Items.Add(colors);
+        // Which task lists get a chip on the deck; the rest show only their dated tasks, under Scheduled.
+        var taskLists = new ToolStripMenuItem("Task lists on the deck");
+        taskLists.DropDownItems.Add(new ToolStripMenuItem("No task lists yet") { Enabled = false });
+        taskLists.DropDownOpening += (_, _) =>
+        {
+            taskLists.DropDownItems.Clear();
+            var hidden = Settings.HiddenTaskLists;
+            foreach (var list in _tasks!.Current.Lists)  // set further down; the menu opens later
+            {
+                var key = $"{list.Source}/{list.Id}";
+                var item = new ToolStripMenuItem(list.Name) { Checked = !hidden.Contains(key) };
+                item.Click += (_, _) => ToggleTaskList(key);
+                taskLists.DropDownItems.Add(item);
+            }
+            if (taskLists.DropDownItems.Count == 0) taskLists.DropDownItems.Add(new ToolStripMenuItem("No task lists yet") { Enabled = false });
+        };
+        menu.Items.Add(taskLists);
+        menu.Items.Add("Open settings file", null, (_, _) => OpenSettings());
         menu.Items.Add("Open log", null, (_, _) => OpenLog());
         menu.Items.Add("Quit", null, (_, _) => Quit());
         _icon = new NotifyIcon { Icon = MakeIcon(), Text = "flex-screen", ContextMenuStrip = menu, Visible = true };
@@ -168,12 +188,21 @@ sealed class TrayApp : ApplicationContext
         _obsidian.Changed += o => _link.Send(ObsidianMessage(o));
         _obsidian.Toast += SendToast;
         _google.Changed += g => _link.Send(GoogleMessage(g));
+        _tasks = new TaskSource(new GoogleTasks(_google));
+        _tasks.Changed += t => _link.Send(TasksMessage(t, _tasks.Revision));
+        _tasks.Toast += SendToast;
+        _google.SignedIn += () => _ = _tasks.RefreshAsync();
         _calls = new CallSource(_devices, _mixer);
         _calls.Changed += c => _link.Send(CallMessage(c));
         _calls.Toast += SendToast;
         _mixer.Changed += _ => { if (_calls.Current.Active) _link.Send(CallMessage(_calls.Current)); };
         _context = new ContextBar(_windows, () => _calls.Current, RunContextAction, ClaudeInWindow, _vscode.RunCommand, () => _usage.Label,
-                                  () => _vscode.Current?.ClaudeInFront == true);
+                                  () => _vscode.Current?.ClaudeInFront == true, NextMeeting, () => _devices.Mic.Muted,
+                                  () => _usage.SignedOut);
+        _google.Changed += _ => _context.Refresh();
+        _devices.MicChanged += _ => _context.Refresh();
+        // The next meeting's key counts down ("· 12m").
+        _meetingTick = new System.Threading.Timer(_ => _context.Refresh(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
         _usage.Changed += () => _context.Refresh();
         _server.ClaudeUsage += _usage.Report;
         _context.Changed += _ => SendContext();
@@ -223,6 +252,7 @@ sealed class TrayApp : ApplicationContext
         _clipboard.Start();
         _obsidian.Start();
         _google.Start();
+        _tasks.Start();
         _calls.Start();
         _usage.Start();
         _shortcuts.Refresh();
@@ -251,7 +281,11 @@ sealed class TrayApp : ApplicationContext
     {
         _link.Send(new { t = "ping" });
         _link.Send(PcMessage());
-        if (Settings.Version != _settingsSent) SendSettings();
+        if (Settings.Version != _settingsSent)
+        {
+            SendSettings();
+            _link.Send(TasksMessage(_tasks.Current, _tasks.Revision));  // hiddenTaskLists edited by hand
+        }
         _shortcuts.Refresh();
         _context.Refresh();
         if (DateTime.UtcNow - _timeSentAt > TimeResync) SendTime();
@@ -290,7 +324,8 @@ sealed class TrayApp : ApplicationContext
             DevicesMessage(_devices.Devices), MicMessage(_devices.Mic), ClaudeMessage(_claude.Current),
             TermMessage(_dev.Term), BuildMessage(_dev.Build), RecentMessage(_dev.Recent), GitMessage(_git.Current),
             KeymapMessage(_keyboard.Map), KeyboardMessage(_keyboard.Current), ClipsMessage(_clipboard.Shown),
-            ObsidianMessage(_obsidian.Current), GoogleMessage(_google.Current), CallMessage(_calls.Current),
+            ObsidianMessage(_obsidian.Current), GoogleMessage(_google.Current), TasksMessage(_tasks.Current, _tasks.Revision),
+            CallMessage(_calls.Current),
         ];
         foreach (var message in messages)
         {
@@ -447,6 +482,25 @@ sealed class TrayApp : ApplicationContext
             can = c.Can,
             note = c.Note,
             volume = c.Active ? _calls.Volume : -1,
+            draw = c.Draw is not { } d ? null : new
+            {
+                mode = d.Mode,
+                tools = d.Tools,
+                tool = d.Tool,
+                colors = d.Colors,
+                color = d.Color,
+                width = d.Width,
+                kinds = d.Kinds.Select(k => new { id = k.Id, name = k.Name }),
+                kind = d.Kind,
+                can_color = d.CanColor,
+                can_width = d.CanWidth,
+                undo = d.Undo,
+                redo = d.Redo,
+                save = d.Save,
+                weight = d.Weight,
+                weight_min = d.WeightMin,
+                weight_max = d.WeightMax,
+            },
         },
     };
 
@@ -490,10 +544,79 @@ sealed class TrayApp : ApplicationContext
                 allday = e.AllDay,
                 join = e.Join.Length > 0,
             }),
-            tasks = g.Tasks.Select(t => new { list = t.List, id = t.Id, title = t.Title, from = t.From, due = t.Due, done = t.Done }),
-            open = g.Tasks.Count(t => !t.Done),
         },
     };
+
+    void ToggleTaskList(string key)
+    {
+        var hidden = Settings.HiddenTaskLists.ToHashSet();
+        if (!hidden.Remove(key)) hidden.Add(key);
+        Settings.Set("hiddenTaskLists", new JsonArray(hidden.Order().Select(k => (JsonNode?)JsonValue.Create(k)).ToArray()));
+        _link.Send(TasksMessage(_tasks.Current, _tasks.Revision));
+    }
+
+    const int MaxDeckTasks = 40;
+    const int MaxTasksBytes = 7000;  // the deck takes lines up to 8 KB
+
+    /// <summary>
+    /// Capture's Tasks card: the lists (those chosen for the deck first, with show set), and as
+    /// many tasks (soonest due first) as fit in a line: every task in a chosen list, and the
+    /// dated ones from the rest, for Scheduled.
+    /// </summary>
+    static object TasksMessage(TasksState s, int revision)
+    {
+        var hidden = Settings.HiddenTaskLists;
+        bool Shown(string src, string list) => !hidden.Contains($"{src}/{list}");
+        var lists = s.Lists.OrderBy(l => Shown(l.Source, l.Id) ? 0 : 1)
+            .Select(l => new { src = l.Source, id = l.Id, name = OneLine(l.Name, 40), show = Shown(l.Source, l.Id) }).ToList();
+        var wanted = s.Tasks.Where(t => t.Due.Length > 0 || Shown(t.Source, t.List)).ToList();
+        var tasks = wanted.Take(MaxDeckTasks).Select(t => new
+        {
+            src = t.Source, list = t.List, id = t.Id, title = OneLine(t.Title, 90), sub = TaskSubtitle(t.Notes),
+            due = t.Due, done = t.Done, child = t.Parent.Length > 0,
+        }).ToList();
+        object Message() => new
+        {
+            t = "state",
+            topic = "tasks",
+            d = new { rev = revision, status = s.Status, lists, tasks, open = wanted.Count(t => !t.Done), sched = wanted.Count(t => !t.Done && t.Due.Length > 0) },
+        };
+        // Hebrew goes as \uXXXX, six bytes a letter: drop tasks from the end until it fits.
+        while (tasks.Count > 0 && System.Text.Json.JsonSerializer.Serialize(Message()).Length > MaxTasksBytes) tasks.RemoveAt(tasks.Count - 1);
+        return Message();
+    }
+
+    const int MaxNoteChars = 1500;
+
+    /// <summary>
+    /// One task in full, for the deck's task popup (asked for with task.open): the whole
+    /// title and the notes, without the todo skill's "[todo src=…]" tag. Sent only on request,
+    /// so the tasks line stays small; cut to fit a line (Hebrew is six bytes a letter).
+    /// </summary>
+    void SendTaskDetail(string src, string list, string id)
+    {
+        var task = _tasks.Current.Tasks.FirstOrDefault(t => t.Source == src && t.List == list && t.Id == id);
+        var title = task == null ? "" : OneLine(task.Title, 300);
+        var notes = task == null ? "" : TaskNotes(task.Notes);
+        object Message() => new { t = "state", topic = "task", d = new { src, list, id, found = task != null, title, notes } };
+        while (notes.Length > 0 && System.Text.Json.JsonSerializer.Serialize(Message()).Length > MaxTasksBytes)
+            notes = notes[..(notes.Length * 3 / 4)].TrimEnd() + "…";
+        _link.Send(Message());
+    }
+
+    static string TaskNotes(string notes)
+    {
+        var lines = notes.Replace("\r", "").Split('\n').Where(l => !l.TrimStart().StartsWith("[todo", StringComparison.Ordinal));
+        var text = string.Join("\n", lines).Trim();
+        return text.Length > MaxNoteChars ? text[..(MaxNoteChars - 1)] + "…" : text;
+    }
+
+    /// <summary>The notes' first line worth showing: the todo skill's "[todo src=…]" tag is left out.</summary>
+    static string TaskSubtitle(string notes)
+    {
+        var line = notes.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0 && !l.StartsWith("[todo", StringComparison.Ordinal));
+        return line == null ? "" : OneLine(line, 60);
+    }
 
     static string OneLine(string text, int max)
     {
@@ -532,7 +655,7 @@ sealed class TrayApp : ApplicationContext
     {
         _settingsSent = Settings.Version;
         var (clock, off) = Settings.Idle;
-        _link.Send(new { t = "settings", palette = Settings.Palette, idle_clock_s = (int)(clock * 60), idle_off_s = (int)(off * 60) });
+        _link.Send(new { t = "settings", palette = Settings.Palette, idle_clock_s = (int)(clock * 60), idle_off_s = (int)(off * 60), cheat_hold_s = (int)Math.Round(Settings.CheatSheetSeconds) });
     }
 
     /// <summary>Whether the PC is locked and how long since its last keyboard or mouse input: the deck's idle screen.</summary>
@@ -748,8 +871,10 @@ sealed class TrayApp : ApplicationContext
         }
     }
 
-    // Deck actions a test may trigger: none of them runs anything.
-    static readonly HashSet<string> TestActions = ["win.focus", "win.close", "icon.need", "zone.snap", "zone.layout", "claude.approve", "claude.deny"];
+    // Deck actions a test may trigger: none of them runs anything on the PC. The task ones
+    // change the user's own tasks, as the deck's Tasks card does (for checking it end to end).
+    static readonly HashSet<string> TestActions = ["win.focus", "win.close", "icon.need", "zone.snap", "zone.layout", "claude.approve", "claude.deny",
+                                                   "task.done", "task.add", "task.refresh", "task.open"];
 
     /// <summary>For testing without touching the deck: a deck action, or "bench" passed on to the deck.</summary>
     void OnTestMessage(JsonNode message)
@@ -816,6 +941,7 @@ sealed class TrayApp : ApplicationContext
             case "key.text": KeyInput.Type((string?)message["text"] ?? ""); break;
             case "pc.lock": LockWorkStation(); break;
             case "call.mic": _calls.ToggleMic(); break;
+            case "call.camera" when !_calls.Current.Active: SendToast(new Toast("attention", "Camera: not in a call")); break;
             case "call.camera": _ = Task.Run(_calls.ToggleCamera); break;  // Zoom's shortcuts wait on focus changes
             case "call.hand": _ = Task.Run(_calls.ToggleHand); break;
             case "call.leave": _ = Task.Run(_calls.Leave); break;
@@ -823,12 +949,34 @@ sealed class TrayApp : ApplicationContext
             case "call.react": _calls.React((string?)message["type"] ?? "like"); break;
             case "call.volume": _calls.SetVolume((int?)message["v"] ?? 0); break;
             case "call.focus": _calls.Focus(); break;
+            case "call.whiteboard": _calls.Whiteboard(); break;
+            case "call.share": _calls.Share(); break;
+            case "call.chat": _calls.Chat(); break;
+            case "claude.login": ClaudeUsage.SignIn(); break;
+            case "meet.next": _link.Send(new { t = "page", i = 0 }); break;  // Today, with Up next
+            case "meet.join":
+                var meetingApp = (string?)message["type"] ?? "";
+                if (NextMeeting(meetingApp) is { } joinable) Act("cal.join", new JsonObject { ["id"] = joinable.Id });
+                else SendToast(new Toast("attention", $"No {meetingApp switch { "zoom" => "Zoom", "teams" => "Teams", "discord" => "Discord", _ => "" }} meeting coming up"));
+                break;
+            case "meet.new": _calls.NewMeeting((string?)message["type"] ?? ""); break;
+            case "meet.chat": _calls.OpenChat((string?)message["type"] ?? ""); break;
+            case "call.annotate": _calls.Annotate(); break;
+            case "draw.tool" or "draw.color" or "draw.width" or "draw.weight" or "draw.kind" or "draw.undo" or "draw.redo" or "draw.clear"
+                or "draw.save" or "draw.close":
+                _calls.Draw(action[5..], id);
+                break;
             case "clip.paste": _clipboard.Paste(id); break;
             case "clip.pin": _clipboard.TogglePin(id); break;
             case "clip.clear": _clipboard.Clear(); break;
             case "obs.today": _obsidian.OpenToday(); break;
             case "obs.open": _obsidian.OpenNote((string?)message["path"] ?? ""); break;
-            case "task.done": _ = _google.SetDoneAsync((string?)message["list"] ?? "", id, (bool?)message["done"] ?? true); break;
+            case "task.done": _ = _tasks.SetDoneAsync((string?)message["src"] ?? "", (string?)message["list"] ?? "", id, (bool?)message["done"] ?? true); break;
+            case "task.add":
+                _ = _tasks.AddAsync((string?)message["src"] ?? "", (string?)message["list"] ?? "", (string?)message["title"] ?? "", (string?)message["due"] ?? "");
+                break;
+            case "task.refresh": _ = _tasks.RefreshAsync(); break;
+            case "task.open": SendTaskDetail((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
             case "cal.join": OpenUrl(_google.Current.Events.FirstOrDefault(e => e.Id == id)?.Join ?? ""); break;
             case "mail.open": OpenUrl("https://mail.google.com/"); break;
             case "zone.snap": _zones.Snap((int?)message["mon"] ?? -1, (int?)message["zone"] ?? -1, (long?)message["hwnd"] ?? 0); break;
@@ -1000,6 +1148,13 @@ sealed class TrayApp : ApplicationContext
         _link.Send(new { t = "state", topic = "shortcuts", d = new { list } });
     }
 
+    /// <summary>The calendar's next timed meeting in that app ("zoom", "teams", "discord": by its link) that isn't over.</summary>
+    CalendarEvent? NextMeeting(string app)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return _google.Current.Events.Where(e => !e.AllDay && e.End > now && GoogleSource.MeetingApp(e.Join) == app).MinBy(e => e.Start);
+    }
+
     /// <summary>A context bar action: a deck action, or one with a type ("call.react:like").</summary>
     void RunContextAction(string action)
     {
@@ -1097,6 +1252,31 @@ sealed class TrayApp : ApplicationContext
             if (fresh && _windows.FindIcon(bar.Icon) is { } pixels) SendIcon(pixels);
         }
         _link.Send(new { t = "state", topic = "context", d });
+    }
+
+    /// <summary>
+    /// settings.json in the user's editor, with the everyday settings it doesn't have yet
+    /// written in at their current values, so they can be seen and changed. Saving applies
+    /// them: the file is re-read when it changes.
+    /// </summary>
+    static void OpenSettings()
+    {
+        try
+        {
+            Settings.AddMissing();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            Log.Write($"settings: opened as it is ({e.Message})");  // a mistake in the file: opened to be fixed
+        }
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Settings.FilePath) { UseShellExecute = true });
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            System.Diagnostics.Process.Start("notepad.exe", $"\"{Settings.FilePath}\"");  // no app set for .json
+        }
     }
 
     static void OpenLog() =>

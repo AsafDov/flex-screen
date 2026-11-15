@@ -45,6 +45,8 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Turn it off from the tray icon: **Approve Claude from the deck**.
 - The status bar's Claude pill says **needs you** for a question too: Claude's question box,
   a plan waiting for approval, or a turn that ends asking you something in the Claude app.
+  A question gets no banner (Approve or Deny can't answer it; pick the answer on the PC),
+  and a banner goes as soon as you answer at the PC instead.
 
 ### Context bar (on every page but the Numpad)
 - A strip above the tabs with keys for the app in front on the PC, in that app's color. The
@@ -87,7 +89,9 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   signs in on its own and leaves the file alone), the companion runs Claude Code's own
   `claude -p /usage` in the background, at most every 20 minutes, which reads the figure
   and renews the token. That renewal only works while Claude Code's sign-in lasts; when
-  it ends, run `claude auth login` once and the key fills in again. For Claude Code on a
+  it ends the key says **Sign in**, and tapping it opens `claude auth login` in a console
+  window (it goes on in the browser); the figure comes back within a couple of minutes.
+  The Claude app's own sign-in is separate and can't be read. For Claude Code on a
   Remote-SSH server, the server's hooks run its `/usage` there and send the figure (see
   VS Code Remote-SSH below).
 - **Long-press a key** to pick another action for its place from that app's list (VS Code
@@ -116,7 +120,7 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   session, a sound output picked. Tap one to do it again; a window that has closed since
   brings up another window of its app, or starts the app. Most recent on the left; doing
   something already listed moves it there instead of adding it twice.
-- How many action items are waiting from mail.
+- How many tasks are open and how many are due today or overdue; tap it for Capture.
 
 ### Audio
 - Now playing with large art, progress, shuffle and repeat.
@@ -143,12 +147,31 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   to maximize. A monitor picker for multi-monitor setups.
 
 ### Capture
-- Action items from mail: the Google Tasks your `todo` skill makes from email, with sender
-  and due day; tick them off from the deck. **Open Gmail** button.
+- Tasks (see below), the clipboard and Obsidian side by side.
 - Clipboard history: your newest text copies plus pins. Tap to paste into the focused
   window, hold to pin, Clear. Copies that password managers mark as private are never
   recorded, and the history is stored encrypted for your Windows account.
 - Obsidian: open today's daily note, or one of the five most recent notes.
+
+### Tasks (on Capture)
+- Your Google Tasks, as chips along the top with how many are open in each: **Scheduled**
+  (every task with a due date, from any list) and then the lists you chose for the deck
+  (the tray icon's **Task lists on the deck**; all of them until you untick some). A list
+  shows its undated tasks too. Grouped by when they're due: overdue, today, tomorrow, this
+  week, later, no date. Under Scheduled a row is just the title, the due day and its
+  status (to do, done, or how many days overdue); in a list it's the day and the first
+  line of its notes. Subtasks are indented.
+- Tap a task to open it: its whole title, list, due day, status and notes, with **Mark
+  done** and **Close** (or tap beside it).
+- Tap the box at a task's start to tick it off in Google Tasks straight away. It stays on
+  the page, struck through, until midnight, so ticking it again undoes it.
+- **+** opens a form with an on-screen keyboard: the title, which list (the one on
+  show to begin with; from Scheduled, the first list, due today) and when it's due (no
+  date, today or tomorrow).
+- No *Starred*: Google's Tasks API doesn't say which tasks are starred.
+- The ↻ button reads Google again now; otherwise the companion reads it every 2 minutes
+  and right after every change from the deck.
+- Built to take more sources besides Google Tasks later (the companion's `ITaskProvider`).
 
 ### Numpad
 - A full USB keypad, with keys that repeat while held, editing keys, and `( ) , =`.
@@ -159,13 +182,37 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - When an app is using the microphone (Teams, Zoom, Discord, Webex, a browser), a call
   panel pops up with what that app allows: mute, camera, raise hand, reactions, leave,
   volume, and bring the call forward. Hide turns it into a status-bar pill.
-- Teams through its local API (real mute, camera and hand state); Zoom through its
-  keyboard shortcuts; Discord's deafen through the mixer.
+- Teams through its local API (real mute, camera and hand state); Zoom through its own
+  toolbar buttons (real mute and camera state, even while sharing); Discord's deafen
+  through the mixer. A Zoom meeting counts as a call even when joined without audio.
+- Zoom drawing: **Whiteboard** opens a new whiteboard, **Annotate** starts annotating the
+  screen you're sharing. While either is open the panel turns into a tool panel:
+  - Whiteboard: Laser, Pen, Marker, Eraser, Pan, Select. Each tool shows its own colors
+    (the pen's 24, the marker's 6, the laser's 6) and the pen, marker and pixel eraser a
+    weight slider; the eraser switches between whole stroke and pixel. Zoom hides the
+    laser when the meeting window is narrow, and so does the deck.
+  - Annotation: Laser (Zoom's spotlight, or its arrow), Pen, Marker, Fading pen, Eraser,
+    Select, with Zoom's 15 colors and four line widths.
+  - Both: Undo, Redo, Clear (hold), Save (annotation), Mic, Camera and Stop/Close.
+    "Call" in its corner flips back to the call's controls and "Draw" returns.
+- Meeting apps' context bar (Zoom, Teams, Discord): that app's next meeting on your
+  calendar, told by its link (a zoom.us link for Zoom, a Teams link for Teams, a Discord
+  invite or event for Discord; "12m · Standup", tap for Today's Up next), Join (that
+  one), Mute and
+  Camera (showing the call's state; Mute is Windows' mic outside a call), New meeting
+  (Zoom's instant meeting, Teams' new-meeting form, Discord's Start call in the open DM)
+  and Chat (Zoom's Team Chat, Teams' Chat; the meeting's chat during one). In a meeting
+  Share and Leave join them. Discord has no camera key (Discord has no shortcut for it)
+  and keeps Deafen. Zoom's bank also holds Participants, Reactions, Whiteboard, Annotate,
+  Raise hand, Record, Full screen and quick reactions (hold a key to swap).
 
 ### Keyboard layer cheat sheet
-- Hold a layer key for ten seconds and the deck shows that layer laid out like your
-  keyboard, read straight from the Vial keyboard's own layout and keymap. Letting go
+- Hold a layer key for ten seconds (`cheatSheetSeconds` in [Settings](#settings)) and the
+  deck shows that layer laid out like your keyboard, read straight from the Vial keyboard's own layout and keymap. Letting go
   hides it; tapping the layer pill keeps it open.
+- With more than one Vial keyboard plugged in, the pill and cheat sheet follow the one
+  you last typed on. A keyboard Vial has locked can't report its layer: unlock it once
+  in the Vial app (Security > Unlock) and it stays unlocked until it's unplugged.
 
 ### The deck itself
 - Idle: a dim clock after 10 minutes without input on the deck or the PC, screen off
@@ -205,10 +252,9 @@ Unzip `dist\flex-screen.zip` on the PC and run `install.cmd`. It installs the co
 removes them. [install/README.txt](install/README.txt) covers the optional parts: Google
 Calendar and Tasks, Teams calls and per-PC settings.
 
-### Google Calendar, Tasks and mail
+### Google Calendar and Tasks
 [docs/google-setup.md](docs/google-setup.md) walks through it: your own Google sign-in app
-(once), connecting each PC from the tray, how mail action items reach the deck, more than one
-Google account, and troubleshooting.
+(once), connecting each PC from the tray, more than one Google account, and troubleshooting.
 
 ### VS Code Remote-SSH
 Working on a Linux server from the deck's PC: the extension runs on the PC even in a
@@ -228,14 +274,19 @@ made-up data: `simulator\build.ps1` builds it (needs Visual Studio's C++ build t
 `simulator\test_deck.py` taps through every feature. See [simulator/README.md](simulator/README.md).
 
 ### Settings
-Optional, per PC, in `%LOCALAPPDATA%\flex-screen\settings.json`:
+Optional, per PC, in `%LOCALAPPDATA%\flex-screen\settings.json`. The tray icon's **Open
+settings file** opens it, with the everyday settings it doesn't have yet (colors, idle
+times, layer names, cheat sheet time) written in at their current values. Saved changes
+apply straight away.
 
 ```jsonc
 {
   "palette": "base",                                   // or "vibrant", "ember", "violet"
   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
   "layerNames": ["BASE", "NAV", "SYMBOL"],             // your keyboard's layers
+  "cheatSheetSeconds": 10,                             // hold a layer key this long for its cheat sheet; 0: only from the pill
   "obsidianVault": "C:\\path\\to\\vault",               // if it isn't found by itself
+  "hiddenTaskLists": ["google/MTIzNDU2"],              // task lists left off the deck (the tray's Task lists on the deck)
   "shortcuts": [                                       // the launcher's tiles, up to 12
     { "name": "Gmail", "url": "https://mail.google.com" },
     { "name": "Spotify", "app": "Spotify" },             // a Start menu app, by its name there
@@ -288,7 +339,7 @@ A key is `keys` (pressed in that app's window; `"g, i"` presses one after the ot
 | `vscode-ext/` | The VS Code extension |
 | `protocol/` | [v0.md](protocol/v0.md): every message between the parts |
 | `install/` | Install kit builder and install/uninstall scripts |
-| `docs/` | Guides: [connecting Google Calendar, Tasks and mail](docs/google-setup.md) |
+| `docs/` | Guides: [connecting Google Calendar and Tasks](docs/google-setup.md) |
 | `backup/` | Factory firmware backup and restore steps |
 | `simulator/` | The deck's UI on the PC, with feature tests and screenshot tours ([README](simulator/README.md)) |
 

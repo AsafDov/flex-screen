@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.16.4";
+constexpr const char *kFirmwareVersion = "0.18.1";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -77,9 +77,14 @@ void pinClip(const char *id);    // pins or unpins
 void clearClips();               // all but the pins
 void obsidian(const char *what);  // "today": the daily note
 void openNote(const char *path);
-void setTaskDone(const char *list, const char *id, bool done);  // in Google Tasks
+// Tasks (model::tasks), by source ("google"), list and id: ticked off or back on; a new
+// one (`list` "" for the source's default, `due` "yyyy-MM-dd" or ""); read again now.
+void setTaskDone(const char *src, const char *list, const char *id, bool done);
+void addTask(const char *src, const char *list, const char *title, const char *due);
+void refreshTasks();
+// Asks for a task's whole title and notes (model::task_detail).
+void openTask(const char *src, const char *list, const char *id);
 void joinMeeting(const char *id);  // opens the event's Meet/Zoom/Teams link
-void openMail();
 
 // Characters, typed by the companion as Unicode (so "(" doesn't depend on the keyboard
 // layout); without it, as US-layout keys.

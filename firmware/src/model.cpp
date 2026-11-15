@@ -28,6 +28,8 @@ Keymap keymap;
 Clips clips;
 Obsidian obsidian;
 Google google;
+Tasks tasks;
+TaskDetail task_detail;
 uint32_t bench_requests = 0;
 Zones zones;
 Clock clock;
@@ -54,6 +56,13 @@ const Event *Google::next(int64_t now) const {
     if (!events[i].all_day && events[i].end > now) return &events[i];
   }
   return nullptr;
+}
+
+const char *Tasks::listName(const String &src, const String &id) const {
+  for (int i = 0; i < list_count; i++) {
+    if (lists[i].src == src && lists[i].id == id) return lists[i].name.c_str();
+  }
+  return "";
 }
 
 int64_t utcNow() {

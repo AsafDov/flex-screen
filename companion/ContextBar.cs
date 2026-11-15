@@ -152,17 +152,46 @@ sealed class ContextBar
         K("search", "Search", "search", "Ctrl+E"), K("goto", "Go to", "switch", "Ctrl+G"),
     ];
 
+    // ---- meeting apps: the same keys first in Teams, Zoom and Discord
+
+    /// <summary>
+    /// The app's next meeting on the calendar, by its link (its key shows "12m · Standup"; a tap
+    /// shows Today on the deck), Join (that one), Mute and Camera (the call's, showing its
+    /// state; Mute is Windows' mic outside a call), and the app's own New meeting.
+    /// </summary>
+    static Item[] MeetingItems(string app) =>
+    [
+        A("meet-next", "No meetings", "calendar", $"meet.next:{app}"), A("meet-join", "Join", "phone", $"meet.join:{app}"),
+        A("mute", "Mute", "mic", "call.mic"), A("camera", "Camera", "video", "call.camera"),
+        A("meet-new", "New meeting", "plus", $"meet.new:{app}"),
+    ];
+
+    static readonly string[] MeetingDefault = ["meet-next", "meet-join", "mute", "camera", "meet-new"];
+
     // In a meeting: the call panel's own controls (Teams' API), reactions, and sharing.
     static readonly Item[] TeamsCallItems =
     [
-        A("mute", "Mute", "mic-off", "call.mic"), A("camera", "Camera", "video", "call.camera"), A("hand", "Raise hand", "hand", "call.hand"),
+        .. MeetingItems("teams"), A("meet-chat", "Chat", "chat", "call.chat"), A("hand", "Raise hand", "hand", "call.hand"),
         K("share", "Share", "screen", "Ctrl+Shift+E"), A("leave", "Leave", "leave", "call.leave"), A("show-call", "Show call", "window", "call.focus"),
         A("react-like", "Like", "thumbs-up", "call.react:like"), A("react-love", "Love", "heart", "call.react:love"),
         A("react-applause", "Applause", "hand", "call.react:applause"), A("react-laugh", "Laugh", "smile", "call.react:laugh"),
         A("react-wow", "Wow", "surprise", "call.react:wow"),
     ];
 
-    /// <summary>By the exe's name, lower case; a Teams meeting by "ms-teams:call".</summary>
+    // A Zoom meeting: the call panel's controls (pressed on Zoom's own toolbar) and its meeting shortcuts.
+    static readonly Item[] ZoomCallItems =
+    [
+        .. MeetingItems("zoom"), A("meet-chat", "Chat", "chat", "call.chat"), A("share", "Share", "screen", "call.share"),
+        A("leave", "Leave", "leave", "call.leave"), K("participants", "Participants", "users", "Alt+U"),
+        K("reactions", "Reactions", "smile", "Ctrl+Shift+Y"), A("whiteboard", "Whiteboard", "whiteboard", "call.whiteboard"),
+        A("annotate", "Annotate", "pen", "call.annotate"), A("hand", "Raise hand", "hand", "call.hand"),
+        K("record", "Record", "target", "Alt+R"), K("full-screen", "Full screen", "expand", "Alt+F"),
+        K("clap", "Clap", "hand", "Alt+Shift+4"), K("thumbs-up", "Thumbs up", "thumbs-up", "Alt+Shift+5"),
+        K("heart", "Heart", "heart", "Alt+Shift+6"), K("laugh", "Laugh", "smile", "Alt+Shift+7"),
+        A("show-call", "Show call", "window", "call.focus"),
+    ];
+
+    /// <summary>By the exe's name, lower case; a meeting by "ms-teams:call" or "zoom:call".</summary>
     static readonly Dictionary<string, AppSet> BuiltIn = new()
     {
         ["code"] = new AppSet(0x2F9BF0,
@@ -256,12 +285,19 @@ sealed class ContextBar
             K("search", "Search", "search", "Ctrl+K"), K("back5", "Back 5 s", "back", "Shift+Left"), K("ahead5", "Ahead 5 s", "forward", "Shift+Right"),
             K("louder", "Louder", "volume", "Ctrl+Up"), K("quieter", "Quieter", "minus", "Ctrl+Down"),
         ], ["prev", "play", "next", "like", "shuffle", "search"]),
-        ["ms-teams"] = new AppSet(0x6264A7, TeamsItems, ["activity", "chat", "calendar", "new-chat", "search"]),
-        ["teams"] = new AppSet(0x6264A7, TeamsItems, ["activity", "chat", "calendar", "new-chat", "search"]),
-        ["ms-teams:call"] = new AppSet(0x6264A7, [.. TeamsCallItems, .. TeamsItems], ["mute", "camera", "hand", "react-like", "share", "leave"]),
-        ["teams:call"] = new AppSet(0x6264A7, [.. TeamsCallItems, .. TeamsItems], ["mute", "camera", "hand", "react-like", "share", "leave"]),
+        ["ms-teams"] = new AppSet(0x6264A7, [.. MeetingItems("teams"), .. TeamsItems], [.. MeetingDefault, "chat"]),
+        ["teams"] = new AppSet(0x6264A7, [.. MeetingItems("teams"), .. TeamsItems], [.. MeetingDefault, "chat"]),
+        ["ms-teams:call"] = new AppSet(0x6264A7, [.. TeamsCallItems, .. TeamsItems], [.. MeetingDefault, "meet-chat", "share", "leave"]),
+        ["teams:call"] = new AppSet(0x6264A7, [.. TeamsCallItems, .. TeamsItems], [.. MeetingDefault, "meet-chat", "share", "leave"]),
+        // Zoom Workplace's own window, between meetings: its Chat is Team Chat.
+        ["zoom"] = new AppSet(0x2D8CFF, [.. MeetingItems("zoom"), A("meet-chat", "Chat", "chat", "meet.chat:zoom"), K("search", "Search", "search", "Ctrl+F")],
+                              [.. MeetingDefault, "meet-chat"]),
+        ["zoom:call"] = new AppSet(0x2D8CFF, ZoomCallItems, [.. MeetingDefault, "meet-chat", "share", "leave"]),
+        // Discord has no camera key and no meetings: New meeting is "Start call" in the open DM.
         ["discord"] = new AppSet(0x5865F2,
         [
+            A("meet-next", "No meetings", "calendar", "meet.next:discord"), A("meet-join", "Join", "phone", "meet.join:discord"),
+            K("meet-new", "Start call", "phone", "Ctrl+'"),
             K("switch", "Switch", "switch", "Ctrl+K"), K("prev-channel", "Prev channel", "up", "Alt+Up"),
             K("next-channel", "Next channel", "down", "Alt+Down"), K("unread", "Unread", "unread", "Alt+Shift+Down"),
             K("prev-server", "Prev server", "up", "Ctrl+Alt+Up"), K("next-server", "Next server", "down", "Ctrl+Alt+Down"),
@@ -269,7 +305,7 @@ sealed class ContextBar
             K("deafen", "Deafen", "headphones", "Ctrl+Shift+D"), K("inbox", "Inbox", "bell", "Ctrl+I"), K("pins", "Pins", "pin", "Ctrl+P"),
             K("upload", "Upload", "upload", "Ctrl+Shift+U"), K("emoji", "Emoji", "smile", "Ctrl+E"), K("members", "Members", "users", "Ctrl+U"),
             K("answer", "Answer call", "phone", "Ctrl+Enter"),
-        ], ["switch", "prev-channel", "next-channel", "unread", "mute", "deafen"]),
+        ], ["meet-next", "meet-join", "mute", "deafen", "meet-new", "switch"]),
     };
 
     const int Neutral = 0x8A94A6;  // an icon without a color of its own
@@ -283,6 +319,9 @@ sealed class ContextBar
     readonly Func<string, bool> _vscode;                          // runs a VS Code command; false without an extension that can
     readonly Func<string> _usage;                                 // "5h 42%", or "" while unknown
     readonly Func<bool> _claudeInCode;                            // VS Code shows Claude Code's chat tab
+    readonly Func<string, CalendarEvent?> _nextMeeting;           // an app's next meeting on the calendar, not over yet
+    readonly Func<bool> _micMuted;                                // Windows' microphone mute
+    readonly Func<bool> _claudeSignedOut;                         // Claude Code has no sign-in to read usage with
     readonly object _gate = new();
     readonly Dictionary<string, List<string>> _layouts;  // app key → action ids, as arranged on the deck
     DeckWindow? _front;  // the app window in front last (kept while the desktop or the taskbar has it)
@@ -294,8 +333,11 @@ sealed class ContextBar
 
     public ContextBar(WindowSource windows, Func<CallState> call, Action<string> act,
                       Func<long, (string Model, string Effort)> claude, Func<string, bool> vscode, Func<string> usage,
-                      Func<bool> claudeInCode)
+                      Func<bool> claudeInCode, Func<string, CalendarEvent?> nextMeeting, Func<bool> micMuted, Func<bool> claudeSignedOut)
     {
+        _claudeSignedOut = claudeSignedOut;
+        _nextMeeting = nextMeeting;
+        _micMuted = micMuted;
         _usage = usage;
         _claudeInCode = claudeInCode;
         _windows = windows;
@@ -384,7 +426,9 @@ sealed class ContextBar
         }
         else
         {
-            if (BuiltIn.ContainsKey($"{exe}:call") && _call() is { Active: true, App: "teams" }) key = $"{exe}:call";
+            // The app's meeting keys while it's in a call (not another app's).
+            var callApp = exe is "ms-teams" or "teams" ? "teams" : exe;
+            if (BuiltIn.ContainsKey($"{exe}:call") && _call() is { Active: true } call && call.App == callApp) key = $"{exe}:call";
             builtIn = BuiltIn.GetValueOrDefault(key);
         }
         var mine = FromSettings(config as JsonObject, exe, front.App);
@@ -401,7 +445,21 @@ sealed class ContextBar
     /// <summary>Model and Effort show the Claude session's own, in the window the bar is for; Usage the 5-hour window's.</summary>
     Item Live(Item item, DeckWindow front)
     {
-        if (item.Id == "claude-usage") return _usage() is { Length: > 0 } used ? item with { Name = used } : item;
+        switch (item.Id)
+        {
+            case "meet-next": return item with { Name = MeetingLabel(_nextMeeting(item.Target.Split(':').Last()), DateTimeOffset.UtcNow) };
+            case "mute" when item.Target == "call.mic":
+                var muted = _call() is { Active: true } inCall ? inCall.MicMuted : _micMuted();
+                return item with { Name = muted ? "Muted" : "Mute", Glyph = muted ? "mic-off" : "mic" };
+            case "camera" when item.Target == "call.camera" && _call() is { Active: true, Camera: >= 0 } withCamera:
+                return item with { Name = withCamera.Camera == 1 ? "Cam on" : "Cam off" };
+        }
+        if (item.Id == "claude-usage")
+        {
+            if (_usage() is { Length: > 0 } used) return item with { Name = used };
+            // Nothing to read the figure with: the key signs Claude Code in instead.
+            return _claudeSignedOut() ? item with { Name = "Sign in", Glyph = "lock", Kind = "action", Target = "claude.login" } : item;
+        }
         if (item.Kind != "pick") return item;
         var (model, effort) = _claude(front.Id);
         return item.Target switch
@@ -410,6 +468,15 @@ sealed class ContextBar
             "effort" when effort.Length > 0 => item with { Name = Efforts.FirstOrDefault(e => e.Id == effort).Name ?? effort },
             _ => item,
         };
+    }
+
+    /// <summary>"12m · Standup", "Now · …", "3h · …": the time first, so a long title only cuts its own end; "No meetings" without one.</summary>
+    public static string MeetingLabel(CalendarEvent? next, DateTimeOffset now)
+    {
+        if (next == null) return "No meetings";
+        if (next.Start <= now) return $"Now · {next.Title}";
+        var minutes = (int)Math.Ceiling((next.Start - now).TotalMinutes);
+        return minutes < 60 ? $"{minutes}m · {next.Title}" : $"{minutes / 60}h · {next.Title}";
     }
 
     /// <summary>"claude-opus-5-5[1m]" → "Opus 5.5"; "claude-sonnet-4-5-20250929" → "Sonnet 4.5"; "" stays "".</summary>

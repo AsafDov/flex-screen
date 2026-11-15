@@ -40,6 +40,9 @@ ICONS = {
     "pin": 0xF08D, "smile": 0xF118, "users": 0xF0C0, "zoom-in": 0xF00E, "zoom-out": 0xF010,
     "tab": 0xF2D2, "moon": 0xF186, "approve": 0xF058, "deny": 0xF057, "brain": 0xF5DC, "gauge": 0xF3FD,
     "chart": 0xF201, "reply": 0xF3E5, "thumbs-up": 0xF164, "surprise": 0xF5C2,
+    # Zoom's drawing tools (the call panel, Zoom's context bar)
+    "pen": 0xF304, "highlighter": 0xF591, "eraser": 0xF12D, "select": 0xF5CB, "magic": 0xF0D0,
+    "whiteboard": 0xF51B, "broom": 0xF51A,
 }
 
 

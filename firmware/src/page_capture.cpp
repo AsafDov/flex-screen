@@ -1,33 +1,26 @@
 #include "page_capture.h"
 
 #include <stdlib.h>
-#include <time.h>
 
 #include "model.h"
+#include "page_tasks.h"
 #include "pc.h"
 #include "ui_kit.h"
 
 namespace ui::capture {
 namespace {
 
-constexpr int kObsidianW = 218;
-constexpr int kTaskRows = 5;
+constexpr int kObsidianW = 186;
+constexpr int kClipsW = 236;
 constexpr uint32_t kObsidian = 0xB48CFF;  // Obsidian's purple, from the design canvas
 constexpr uint32_t kOnObsidian = 0x1A1030;
-constexpr uint32_t kTickMs = 30000;  // ages ("4m") and due days
-constexpr uint32_t kBox = 0x7D8794;
-
-struct TaskRow {
-  lv_obj_t *root, *check, *mark, *title, *sub;
-};
+constexpr uint32_t kTickMs = 30000;  // ages ("4m")
 
 struct ClipRow {
   lv_obj_t *root, *icon, *swatch, *text, *age;
 };
 
 struct {
-  lv_obj_t *open_badge, *mail_note, *mail_header, *open_mail;
-  TaskRow tasks[kTaskRows];
   ClipRow clips[model::Clips::kMax];
   lv_obj_t *clip_note, *clip_hint;
   lv_obj_t *vault_title, *obsidian_note;
@@ -35,7 +28,7 @@ struct {
   lv_obj_t *recent[model::Obsidian::kMaxRecent], *recent_text[model::Obsidian::kMaxRecent];
 } w;
 
-uint32_t google_seen = UINT32_MAX, clips_seen = UINT32_MAX, obsidian_seen = UINT32_MAX;
+uint32_t clips_seen = UINT32_MAX, obsidian_seen = UINT32_MAX;
 int connected_seen = -1;
 int32_t height_seen = -1;  // the page's: the context bar coming or going changes what fits
 lv_obj_t *page_obj;
@@ -44,18 +37,6 @@ uint32_t tick_ms = 0;
 int indexOf(lv_event_t *e) { return int(intptr_t(lv_event_get_user_data(e))); }
 
 // ---- actions
-
-void onTask(lv_event_t *e) {
-  const int i = indexOf(e);
-  model::Google &g = model::google;
-  if (i >= g.task_count) return;
-  model::MailTask &t = g.tasks[i];
-  t.done = !t.done;  // tick it now; Google confirms on the next refresh
-  g.version++;
-  pc::setTaskDone(t.list.c_str(), t.id.c_str(), t.done);
-}
-
-void onOpenMail(lv_event_t *) { pc::openMail(); }
 
 void onClipTap(lv_event_t *e) {
   const int i = indexOf(e);
@@ -94,58 +75,9 @@ lv_obj_t *note(lv_obj_t *parent) {
   return l;
 }
 
-void buildMail(lv_obj_t *row) {
-  lv_obj_t *c = card(row);
-  lv_obj_set_flex_grow(c, 1);
-  lv_obj_set_height(c, LV_PCT(100));
-  flexCol(c, 4);
-  lv_obj_t *h = w.mail_header = header(c, "FROM MAIL");
-  w.open_badge = card(h, kAmberBg, kAmberBg);
-  lv_obj_set_size(w.open_badge, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-  lv_obj_set_style_pad_hor(w.open_badge, 8, 0);
-  lv_obj_set_style_pad_ver(w.open_badge, 2, 0);
-  lv_obj_set_style_radius(w.open_badge, 10, 0);
-  label(w.open_badge, "", &small_font, 0xF5C36B);
-  w.mail_note = note(c);
-
-  for (int i = 0; i < kTaskRows; i++) {
-    TaskRow &r = w.tasks[i];
-    r.root = box(c);
-    lv_obj_set_size(r.root, LV_PCT(100), 52);
-    lv_obj_set_style_border_side(r.root, LV_BORDER_SIDE_TOP, 0);
-    lv_obj_set_style_border_color(r.root, hex(kBorder), 0);
-    lv_obj_set_style_border_width(r.root, 1, 0);
-    flexRow(r.root, 6);
-    r.check = button(r.root, 40, 40, kSurface, onTask, reinterpret_cast<void *>(intptr_t(i)));
-    lv_obj_set_style_radius(r.check, 10, 0);
-    r.mark = card(r.check, kSurface, kBox);
-    lv_obj_set_size(r.mark, 22, 22);
-    lv_obj_set_style_pad_all(r.mark, 0, 0);
-    lv_obj_set_style_radius(r.mark, 6, 0);
-    lv_obj_set_style_border_width(r.mark, 2, 0);
-    lv_obj_center(r.mark);
-    lv_obj_center(label(r.mark, "", &small_font, kText));
-    lv_obj_t *text = box(r.root);
-    lv_obj_set_flex_grow(text, 1);
-    lv_obj_set_height(text, LV_SIZE_CONTENT);
-    flexCol(text, 0);
-    r.title = label(text, "", &body_font, kText);
-    ellipsize(r.title);
-    r.sub = label(text, "", &small_font, kMuted);
-    ellipsize(r.sub);
-  }
-
-  lv_obj_t *gap = box(c);
-  lv_obj_set_flex_grow(gap, 1);
-  lv_obj_t *open = w.open_mail = button(c, LV_PCT(100), 40, kRaised, onOpenMail);
-  lv_obj_set_style_radius(open, 12, 0);
-  lv_obj_center(label(open, LV_SYMBOL_ENVELOPE "  Open Gmail", &small_font, kText));
-}
-
 void buildClipboard(lv_obj_t *row) {
   lv_obj_t *c = card(row);
-  lv_obj_set_flex_grow(c, 1);
-  lv_obj_set_height(c, LV_PCT(100));
+  lv_obj_set_size(c, kClipsW, LV_PCT(100));
   flexCol(c, 6);
   // The hint sits at the bottom, away from Clear: tapping "TAP TO PASTE" up there hit Clear.
   lv_obj_t *h = header(c, "CLIPBOARD");
@@ -208,72 +140,6 @@ void buildObsidian(lv_obj_t *row) {
 }
 
 // ---- updating
-
-// "today", "tomorrow", "Thu", or "8 Nov" for a due date.
-void dueText(const String &due, char *out, size_t n) {
-  out[0] = '\0';
-  const int64_t now = model::localNow();
-  if (due.length() < 10 || now == 0) return;
-  struct tm d = {};
-  d.tm_year = atoi(due.c_str()) - 1900;
-  d.tm_mon = atoi(due.c_str() + 5) - 1;
-  d.tm_mday = atoi(due.c_str() + 8);
-  const int64_t due_day = int64_t(mktime(&d)) / 86400;  // the deck's own zone is UTC: these are plain day numbers
-  const int64_t today = now / 86400;
-  const int64_t days = due_day - today;
-  if (days < 0) snprintf(out, n, "overdue");
-  else if (days == 0) snprintf(out, n, "due today");
-  else if (days == 1) snprintf(out, n, "due tomorrow");
-  else if (days < 7) strftime(out, n, "due %a", &d);
-  else strftime(out, n, "due %e %b", &d);
-}
-
-void updateMail() {
-  const model::Google &g = model::google;
-  const bool online = pc::connected();
-  const bool ok = online && g.status == "ok";
-  setHidden(w.open_badge, !ok || g.open == 0);
-  setTextf(lv_obj_get_child(w.open_badge, 0), "%d open", g.open);
-  const char *why = !online                 ? "PC offline"
-                    : g.status == "setup"   ? "Connect Google in the companion: tray icon, \"Connect Google Calendar and Tasks\"."
-                    : g.status == "signin"  ? "Sign in to Google from the companion's tray menu."
-                    : g.status == "error" && g.task_count == 0 ? "Google can't be reached right now."
-                    : ok && g.task_count == 0 ? "Nothing from mail to do."
-                                              : "";
-  setText(w.mail_note, why);
-  setHidden(w.mail_note, why[0] == '\0');
-  for (int i = 0; i < kTaskRows; i++) {
-    TaskRow &r = w.tasks[i];
-    const bool used = online && i < g.task_count;
-    setHidden(r.root, !used);
-    if (!used) continue;
-    const model::MailTask &t = g.tasks[i];
-    setText(r.title, t.title.c_str());
-    setTextColor(r.title, t.done ? kMuted : kText);
-    char due[24];
-    dueText(t.due, due, sizeof(due));
-    const bool urgent = !t.done && (!strcmp(due, "overdue") || !strcmp(due, "due today"));
-    if (t.done) setText(r.sub, "Done");
-    else if (t.from.length() && due[0]) setTextf(r.sub, "%s · %s", t.from.c_str(), due);
-    else setText(r.sub, t.from.length() ? t.from.c_str() : due);
-    setTextColor(r.sub, urgent ? 0xF5C36B : kMuted);
-    setBgColor(r.mark, t.done ? 0x4A525C : kSurface);
-    setBorderColor(r.mark, t.done ? 0x4A525C : kBox);
-    setText(lv_obj_get_child(r.mark, 0), t.done ? LV_SYMBOL_OK : "");
-  }
-  // Only the rows that fit above Open Gmail: five ran past the card's bottom and pushed the
-  // button off it (seen in the simulator). The badge still counts them all.
-  lv_obj_t *card = lv_obj_get_parent(w.open_mail);
-  lv_obj_update_layout(card);
-  const int32_t gap = lv_obj_get_style_pad_row(card, LV_PART_MAIN);
-  int32_t room = lv_obj_get_content_height(card) - lv_obj_get_height(w.mail_header) - lv_obj_get_height(w.open_mail) - 2 * gap;
-  if (!lv_obj_is_hidden(w.mail_note)) room -= lv_obj_get_height(w.mail_note) + gap;
-  for (TaskRow &r : w.tasks) {
-    if (lv_obj_is_hidden(r.root)) continue;
-    room -= lv_obj_get_height(r.root) + gap;
-    if (room < 0) setHidden(r.root, true);
-  }
-}
 
 const char *clipIcon(const String &kind) {
   if (kind == "link") return LV_SYMBOL_UPLOAD;
@@ -363,15 +229,15 @@ void build(lv_obj_t *page) {
   lv_obj_set_scrollable(page, false);
   flexRow(page, kGap);
   lv_obj_set_flex_align(page, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-  buildMail(page);
+  tasks::build(page);
   buildClipboard(page);
   buildObsidian(page);
-  updateMail();
   updateClips();
   updateObsidian();
 }
 
 void update() {
+  tasks::update();
   const int connected = pc::connected() ? 1 : 0;
   const bool tick = millis() - tick_ms >= kTickMs;
   if (tick) tick_ms = millis();
@@ -379,10 +245,6 @@ void update() {
   const bool link = connected != connected_seen || height != height_seen;  // either way, everything again
   connected_seen = connected;
   height_seen = height;
-  if (link || tick || model::google.version != google_seen) {
-    google_seen = model::google.version;
-    updateMail();
-  }
   if (link || tick || model::clips.version != clips_seen) {
     clips_seen = model::clips.version;
     updateClips();

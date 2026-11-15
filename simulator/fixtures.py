@@ -180,17 +180,13 @@ def day() -> dict[str, dict]:
             {'name': 'Inbox', 'path': 'Inbox.md'},
             {'name': 'Groceries', 'path': 'Home/Groceries.md'},
         ]},
-        'google': {'status': 'ok', 'open': 3,
+        'google': {'status': 'ok',
                    'events': [
                        {'id': 'e1', 'title': 'Standup', 'start': NOW + 18 * MIN, 'end': NOW + 33 * MIN, 'allday': False, 'join': True},
                        {'id': 'e2', 'title': 'Design review with Dana', 'start': NOW + 3 * HOUR, 'end': NOW + 4 * HOUR, 'allday': False, 'join': True},
                        {'id': 'e3', 'title': 'To-do: Reset DreamHost email and SFTP password', 'start': NOW + 8 * HOUR, 'end': NOW + 9 * HOUR, 'allday': False, 'join': False},
-                   ],
-                   'tasks': [
-                       {'list': 'L1', 'id': 't1', 'title': 'Reply to the landlord about the boiler', 'from': 'Yossi Cohen', 'due': '2026-11-08', 'done': False},
-                       {'list': 'L1', 'id': 't2', 'title': 'Send the signed lease', 'from': 'Dana Levi', 'due': '2026-11-09', 'done': False},
-                       {'list': 'L1', 'id': 't3', 'title': 'Pay the Arnona bill', 'from': 'Hadera Municipality', 'due': '', 'done': False},
                    ]},
+        'tasks': tasks(),
         'call': {'app': ''},
         'pc': {'locked': False, 'idle': 5},
         'kbd': {'present': True, 'name': 'W-CORNE', 'layer': 0, 'label': 'BASE', 'held_ms': -1, 'key': -1},
@@ -247,10 +243,13 @@ def stress() -> dict[str, dict]:
     d['clips']['list'][4]['text'] = LONG
     d['obsidian']['recent'][2]['name'] = 'Kingkiller reread notes, part two: the Chandrian and the Amyr'
     d['google']['events'][0].update(title=LONG, start=NOW - 5 * MIN, end=NOW + 25 * MIN)
-    d['google']['tasks'] = [{'list': 'L1', 'id': f't{i}', 'title': LONG if i == 0 else f'Task number {i} from mail',
-                             'from': 'Someone With A Long Name <someone@example.com>', 'due': '2026-11-0' + str(5 + i), 'done': i == 3}
-                            for i in range(6)]
-    d['google']['open'] = 5
+    d['tasks']['lists'] = d['tasks']['lists'][:3] + [{'src': 'google', 'id': f'L{i}', 'name': f'A list with a rather long name {i}', 'show': True} for i in range(4, 9)]
+    d['tasks']['tasks'] = [{'src': 'google', 'list': f'L{1 + i % 8}', 'id': f't{i}', 'title': LONG if i == 0 else f'Task number {i}',
+                            'sub': 'Someone With A Long Name <someone@example.com>' if i % 3 == 0 else '',
+                            'due': '' if i > 30 else f'2026-11-{1 + i // 2:02d}', 'done': i == 3, 'child': i % 5 == 1}
+                           for i in range(40)]
+    d['tasks']['open'] = 57
+    d['tasks']['sched'] = 48
     d['mixer']['apps'][4]['name'] = 'Microsoft Teams (work or school)'
     d['devices']['out'].append({'id': 'o4', 'name': 'Realtek Digital Output (Optical)', 'detail': 'Realtek(R) Audio', 'sel': False})
     d['vol'] = {'v': 100, 'muted': True}
@@ -280,7 +279,8 @@ def empty() -> dict[str, dict]:
         'zones': {'mons': [], 'layouts': []},
         'clips': {'list': []},
         'obsidian': {'found': False, 'recent': []},
-        'google': {'status': 'setup', 'events': [], 'tasks': [], 'open': 0},
+        'google': {'status': 'setup', 'events': []},
+        'tasks': {'rev': 0, 'status': 'setup', 'lists': [], 'tasks': [], 'open': 0, 'sched': 0},
         'call': {'app': ''},
         'pc': {'locked': False, 'idle': 5},
         'kbd': {'present': False},
@@ -288,9 +288,68 @@ def empty() -> dict[str, dict]:
     }
 
 
+def tasks() -> dict:
+    """Google Tasks on the 8th: three lists on the deck and one kept off it (Someday, whose
+    dated task still comes, for Scheduled), one task overdue, three today, a subtask."""
+    lists = [{'src': 'google', 'id': 'L1', 'name': 'My Tasks', 'show': True}, {'src': 'google', 'id': 'L2', 'name': 'Home', 'show': True},
+             {'src': 'google', 'id': 'L3', 'name': 'flex-screen', 'show': True}, {'src': 'google', 'id': 'L4', 'name': 'Someday', 'show': False}]
+
+    def t(i: int, lst: str, title: str, due: str = '', sub: str = '', child: bool = False) -> dict:
+        return {'src': 'google', 'list': lst, 'id': f't{i}', 'title': title, 'sub': sub, 'due': due, 'done': False, 'child': child}
+    items = [
+        t(1, 'L2', 'Reply to the landlord about the boiler', '2026-11-06', 'From: Yossi Cohen'),
+        t(2, 'L1', 'Send the signed lease', '2026-11-08', 'From: Dana Levi'),
+        t(3, 'L2', 'Pay the Arnona bill', '2026-11-08'),
+        t(10, 'L4', 'Call the plumber', '2026-11-08'),
+        t(4, 'L3', 'Tasks page on the deck', '2026-11-09'),
+        t(5, 'L3', 'Sort the tasks by due day', '2026-11-09', child=True),
+        t(6, 'L1', 'Book the car service', '2026-11-12'),
+        t(7, 'L1', 'Renew the passport', '2026-12-01', 'Appointment at the post office'),
+        t(8, 'L2', 'Fix the balcony light'),
+        t(9, 'L3', 'הוספת מקורות נוספים'),
+    ]
+    return {'rev': 1, 'status': 'ok', 'lists': lists, 'tasks': items, 'open': len(items), 'sched': sum(1 for i in items if i['due'])}
+
+
 def call(app: str = 'teams') -> dict:
-    can = {'teams': ['mic', 'camera', 'hand', 'leave', 'react'], 'zoom': ['mic', 'camera', 'hand', 'leave'],
+    can = {'teams': ['mic', 'camera', 'hand', 'leave', 'react'], 'zoom': ['mic', 'camera', 'hand', 'whiteboard', 'leave'],
            'discord': ['mic', 'deafen', 'leave'], 'browser': ['mic']}[app]
     return {'app': app, 'name': {'teams': 'Teams', 'zoom': 'Zoom', 'discord': 'Discord', 'browser': 'Chrome'}[app],
             'secs': 754, 'mic_muted': False, 'camera': 1 if 'camera' in can else -1, 'hand': 0 if 'hand' in can else -1,
             'deafened': False, 'can': can, 'note': '', 'volume': 70}
+
+
+# Zoom's palettes, as the companion sends them (ZoomControl.cs).
+ANNOTATE_COLORS = ['FFFFFF', 'F42E2E', 'FFD43C', '3BC255', '1A73E8', 'B57CF2', 'FF5BB4', 'FF8A1F', 'A6D93A', '62D3F5',
+                   '5A5A5A', '9E1B1B', '8A5A2B', '1E7A35', '1D3E9E']
+BOARD_COLORS = ['FFFFFF', 'EDEDED', 'DEDEDE', '939393', '585858', '000000', '0072C6', '00B342', 'FFFF00', 'FF9000', 'FF0000',
+                '792BA6', '00B3F6', '7ED235', 'EBFF54', 'FFBE00', 'FF32B4', 'E100FF', 'B2EAFF', 'CCFF9F', 'F7FFBB', 'FFE599',
+                'FFB6E4', 'F6B3FF']
+# The whiteboard marker's and laser's own palettes (Zoom Workplace 7.1.9).
+MARKER_COLORS = ['FBFFA2', 'D8FFBA', 'C4FFFA', 'E6D3FF', 'FFD9F4', 'FFE8C8']
+LASER_COLORS = ['D70F1E', '005AC8', 'D08D00', '339951', '5300F9', '6E7680']
+
+
+def zoom_draw(mode: str = 'annotate', tool: str = 'pen') -> dict:
+    """A Zoom meeting with the annotation tools (on a shared screen) or a whiteboard open."""
+    c = call('zoom')
+    c['can'] = ['mic', 'camera', 'hand', 'annotate', 'leave'] if mode == 'annotate' else ['mic', 'camera', 'hand', 'whiteboard', 'leave']
+    kinds, kind, weight = [], '', {}
+    if mode == 'annotate':
+        tools = ['spotlight', 'pen', 'highlighter', 'vanish', 'eraser', 'select']
+        inks = ('pen', 'highlighter', 'vanish')
+        colors = ANNOTATE_COLORS if tool in inks else []
+        if tool == 'spotlight':
+            kinds, kind = [{'id': 'spotlight', 'name': 'Spotlight'}, {'id': 'arrow', 'name': 'Arrow'}], 'spotlight'
+    else:
+        tools = ['laser', 'pen', 'highlighter', 'eraser', 'grab', 'select']
+        inks = ()
+        colors = {'pen': BOARD_COLORS, 'highlighter': MARKER_COLORS, 'laser': LASER_COLORS}.get(tool, [])
+        if tool in ('pen', 'highlighter', 'eraser'):  # the pixel eraser has a weight, the whole-stroke one not
+            weight = {'weight': 6, 'weight_min': 1, 'weight_max': 20}
+        if tool == 'eraser':
+            kinds, kind = [{'id': 'stroke', 'name': 'Whole stroke'}, {'id': 'pixel', 'name': 'Pixel'}], 'pixel'
+    c['draw'] = {'mode': mode, 'tools': tools, 'tool': tool, 'colors': colors, 'color': 1 if colors else -1,
+                 'width': 1, 'kinds': kinds, 'kind': kind, 'can_color': bool(colors), 'can_width': tool in inks,
+                 'undo': True, 'redo': False, 'save': mode == 'annotate', **weight}
+    return c

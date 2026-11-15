@@ -27,10 +27,10 @@ After installing
   - The Dev page lists the last commands run in VS Code's terminal; tap one to run it again.
 
 Google Calendar and Tasks (optional, once)
-  google-setup.md in this folder is the full guide, with screens to look for, how mail
-  items reach the deck, and troubleshooting. In short:
-  The Today and Capture pages read your calendar and the todo skill's mail tasks with your
-  own Google OAuth client:
+  google-setup.md in this folder is the full guide, with screens to look for and
+  troubleshooting. In short:
+  The Today and Capture pages read your calendar and Google Tasks (ticking off and adding
+  tasks too) with your own Google OAuth client:
   1. In Google Cloud Console (console.cloud.google.com), APIs & Services: enable the
      Google Calendar API and the Google Tasks API.
   2. OAuth consent screen: user type External, then Publish app (In production), or the
@@ -44,8 +44,7 @@ Google Calendar and Tasks (optional, once)
   The sign-in is kept encrypted for your Windows account only.
   The deck shows every calendar ticked in Google Calendar. To add another Google account's
   calendar, share it with this account (in the other account: Google Calendar > Settings >
-  the calendar > Share with specific people > "See all event details"), and accept. For
-  that account's mail, forward it to this one (Gmail > Settings > Forwarding and POP/IMAP).
+  the calendar > Share with specific people > "See all event details"), and accept.
 
 VS Code Remote-SSH (working on a Linux server from this PC)
   The extension runs on this PC even in a Remote-SSH window, so the deck gets the server's

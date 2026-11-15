@@ -24,7 +24,7 @@ target_include_directories(lvgl PUBLIC ${SIM} ${LIBDEPS}/lvgl)
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE)
 target_compile_options(lvgl PRIVATE ${COMMON_OPTIONS} /W0)
 
-set(FIRMWARE_SOURCES approval call cheat ctxbar icons idle launcher model page_audio page_capture page_dev page_numpad page_today
+set(FIRMWARE_SOURCES approval call cheat ctxbar icons idle launcher model page_audio page_capture page_dev page_numpad page_tasks page_today
     page_windows pc ui ui_kit)
 list(TRANSFORM FIRMWARE_SOURCES PREPEND ${FW}/src/)
 list(TRANSFORM FIRMWARE_SOURCES APPEND .cpp)

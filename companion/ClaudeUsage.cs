@@ -42,6 +42,9 @@ sealed class ClaudeUsage
 
     public Usage? Current { get; private set; }
 
+    /// <summary>Claude Code has no sign-in on this PC to read with (the Usage key offers one then).</summary>
+    public bool SignedOut { get; private set; }
+
     /// <summary>Raised (on a timer thread) when a new reading arrives.</summary>
     public event Action? Changed;
 
@@ -106,11 +109,17 @@ sealed class ClaudeUsage
                 // Code's own /usage, run headless, gives the figure and renews the token as it goes.
                 if (DateTime.UtcNow - _lastHeadless >= HeadlessEvery && await HeadlessUsage() is { } read)
                 {
-                    var moved = Current == null || Math.Round(Current.FiveHour) != Math.Round(read.FiveHour);
+                    var moved = Current == null || Math.Round(Current.FiveHour) != Math.Round(read.FiveHour) || SignedOut;
                     Current = read;
+                    SignedOut = false;
                     Note("");
                     if (moved) Changed?.Invoke();
                     return;
+                }
+                if (!SignedOut && Label.Length == 0)
+                {
+                    SignedOut = true;
+                    Changed?.Invoke();
                 }
                 Note("no Claude sign-in to read usage with: sign in to Claude Code (claude auth login)");
                 wait = TimeSpan.FromMinutes(2);
@@ -147,8 +156,9 @@ sealed class ClaudeUsage
             DateTime? resets = DateTime.TryParse((string?)json["five_hour"]?["resets_at"], null,
                                                  System.Globalization.DateTimeStyles.AdjustToUniversal, out var r) ? r : null;
             var usage = new Usage((double)five, resets, (double?)json["seven_day"]?["utilization"], DateTime.UtcNow);
-            var changed = Current == null || Math.Round(Current.FiveHour) != Math.Round(usage.FiveHour);
+            var changed = Current == null || Math.Round(Current.FiveHour) != Math.Round(usage.FiveHour) || SignedOut;
             Current = usage;
+            SignedOut = false;
             Note("");
             if (changed) Changed?.Invoke();
         }
@@ -219,6 +229,26 @@ sealed class ClaudeUsage
             Log.Write($"claude: headless /usage: {e.Message}");
             return null;
         }
+    }
+
+    /// <summary>Claude Code's own sign-in (claude auth login) in a console window of its own; it opens the browser.</summary>
+    public static void SignIn()
+    {
+        if (FindClaude() is not { } exe) return;
+        // A console of its own: the companion has none, so cmd gets a new window.
+        var start = new System.Diagnostics.ProcessStartInfo("cmd.exe") { UseShellExecute = false };
+        start.ArgumentList.Add("/k");
+        start.ArgumentList.Add(exe);
+        start.ArgumentList.Add("auth");
+        start.ArgumentList.Add("login");
+        // As from a plain prompt, not as part of the Claude session that may have started the companion.
+        foreach (var name in start.Environment.Keys.Where(k => k.StartsWith("CLAUDE", StringComparison.OrdinalIgnoreCase) ||
+                                                               k.StartsWith("ANTHROPIC", StringComparison.OrdinalIgnoreCase) ||
+                                                               k.EndsWith("_OAUTH", StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            start.Environment.Remove(name);
+        }
+        System.Diagnostics.Process.Start(start)?.Dispose();
     }
 
     /// <summary>Claude Code's executable: the native install's, else the newest one VS Code's Claude extension carries, else npm's.</summary>

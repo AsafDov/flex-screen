@@ -1,4 +1,5 @@
-// Today: clock, now playing with master volume, and (from phase 5) calendar and mail.
+// Today: clock, now playing with master volume, the calendar, recent actions and the tasks
+// count (opens Tasks).
 #pragma once
 
 #include <lvgl.h>

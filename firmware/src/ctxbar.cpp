@@ -13,13 +13,13 @@
 namespace ui::ctxbar {
 namespace {
 
-constexpr int kNumpadPage = 5;
 constexpr int kH = 46;
 constexpr int kSlot = kH + 8;  // the pages' bottom padding: the bar and the gap above it
 constexpr int kX = 10, kW = 800 - 2 * kX;
 constexpr int kY = 480 - kBarH - 6 - kH;  // 6 px above the tab bar
 constexpr int kPadL = 10, kPadR = 5;
 constexpr int kChipW = 112;
+constexpr int kChipPad = 4;  // the app's name and icon, a key to its page: its pressed color's edge
 constexpr int kKeyGap = 6;
 constexpr int kKeyH = 36;
 constexpr int kKeysW = kW - 2 - kPadL - kPadR - kChipW - kKeyGap - 1 - 2 - kKeyGap;  // border, chip, divider
@@ -45,7 +45,7 @@ struct KeyView {
 
 struct {
   lv_obj_t *pages;
-  lv_obj_t *bar, *image, *letter, *app, *divider;
+  lv_obj_t *bar, *chip, *image, *letter, *app, *divider;
   KeyView keys[model::Context::kMax];
   lv_obj_t *plus, *plus_icon;
 } w;
@@ -283,6 +283,29 @@ void onKey(lv_event_t *e) {
 }
 
 void onKeyHold(lv_event_t *e) { openMenu(indexOf(e)); }
+
+// The deck's page for the app in front: the one with the rest of its controls.
+int pageFor(const String &key) {
+  const int colon = key.indexOf(':');
+  const String exe = colon < 0 ? key : key.substring(0, colon);
+  const String site = colon < 0 ? String() : key.substring(colon + 1);
+  if (site == "claude") return kDevPage;  // Claude Code's chat in VS Code
+  if (site == "youtube") return kAudioPage;
+  if (site == "gmail" || site == "calendar" || site == "call") return kTodayPage;
+  static const char *const dev[] = {"code", "claude", "windowsterminal", "devenv", "cursor", "powershell", "cmd", "pwsh"};
+  static const char *const audio[] = {"spotify", "discord", "vlc", "foobar2000", "applemusic"};
+  static const char *const today[] = {"ms-teams", "teams", "outlook", "olk", "zoom"};
+  static const char *const capture[] = {"obsidian", "notepad", "onenote", "snippingtool"};
+  for (const char *x : dev) if (exe == x) return kDevPage;
+  for (const char *x : audio) if (exe == x) return kAudioPage;
+  for (const char *x : today) if (exe == x) return kTodayPage;
+  for (const char *x : capture) if (exe == x) return kCapturePage;
+  return kWindowsPage;  // Explorer, browsers and the rest: the window switcher
+}
+
+void onChip(lv_event_t *) {
+  if (model::context.key.length()) showPage(pageFor(model::context.key));
+}
 void onPlus(lv_event_t *) { openMenu(model::context.count); }
 
 void fill() {
@@ -294,6 +317,7 @@ void fill() {
   lv_obj_set_style_bg_grad_color(w.bar, mix(color, kSurface, 26), 0);  // 10 %
   lv_obj_set_style_border_color(w.bar, mix(color, kSurface, 140), 0);
   lv_obj_set_style_bg_color(w.divider, mix(color, kSurface, 115), 0);
+  lv_obj_set_style_bg_color(w.chip, mix(color, kSurface, 115), LV_STATE_PRESSED);
 
   setText(w.app, c.app.c_str());
   const lv_image_dsc_t *icon = icons::get(c.icon);
@@ -385,7 +409,7 @@ void build(lv_obj_t *screen, lv_obj_t *pages) {
   lv_obj_set_size(w.bar, kW, kH);
   lv_obj_set_style_radius(w.bar, 12, 0);
   lv_obj_set_style_pad_ver(w.bar, 0, 0);
-  lv_obj_set_style_pad_left(w.bar, kPadL, 0);
+  lv_obj_set_style_pad_left(w.bar, kPadL - kChipPad, 0);
   lv_obj_set_style_pad_right(w.bar, kPadR, 0);
   lv_obj_set_style_bg_grad_dir(w.bar, LV_GRAD_DIR_HOR, 0);
   lv_obj_set_style_bg_main_stop(w.bar, 0, 0);
@@ -393,8 +417,16 @@ void build(lv_obj_t *screen, lv_obj_t *pages) {
   flexRow(w.bar, kKeyGap);
 
   lv_obj_t *chip = box(w.bar);
-  lv_obj_set_size(chip, kChipW, LV_PCT(100));
+  lv_obj_set_size(chip, kChipW + kChipPad, kKeyH);  // its padding taken from the bar's
   flexRow(chip, 8);
+  // A tap on the app's name goes to its page (Spotify to Audio, VS Code to Dev…).
+  lv_obj_set_clickable(chip, true);
+  lv_obj_add_event_cb(chip, onChip, LV_EVENT_CLICKED, nullptr);
+  lv_obj_set_style_radius(chip, 10, 0);
+  lv_obj_set_style_pad_left(chip, kChipPad, 0);
+  lv_obj_set_style_bg_opa(chip, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_bg_opa(chip, LV_OPA_COVER, LV_STATE_PRESSED);
+  w.chip = chip;
   lv_obj_t *holder = box(chip);
   lv_obj_set_size(holder, icons::kSize, icons::kSize);
   w.image = lv_image_create(holder);

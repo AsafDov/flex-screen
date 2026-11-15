@@ -1,5 +1,5 @@
-// Capture: action items from mail (Google Tasks the todo skill made), the clipboard stack,
-// and Obsidian (today's note, quick capture, clipboard to Inbox, recent notes).
+// Capture: tasks (page_tasks), the clipboard stack and Obsidian (today's note, quick
+// capture, clipboard to Inbox, recent notes).
 #pragma once
 
 #include <lvgl.h>

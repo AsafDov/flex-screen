@@ -13,50 +13,60 @@ namespace FlexScreen.Companion;
 /// <param name="Join">A Meet, Zoom or Teams link, or "".</param>
 record CalendarEvent(string Id, string Title, DateTimeOffset Start, DateTimeOffset End, bool AllDay, string Join);
 
-/// <param name="From">The mail's sender, from the task's notes.</param>
-/// <param name="Due">"yyyy-MM-dd", or "".</param>
-record MailTask(string List, string Id, string Title, string From, string Due, bool Done);
-
 /// <param name="Status">"ok", "setup" (no OAuth client file yet), "signin" (not connected), "error", or "" before the first read.</param>
-record GoogleState(string Status, IReadOnlyList<CalendarEvent> Events, IReadOnlyList<MailTask> Tasks);
+record GoogleState(string Status, IReadOnlyList<CalendarEvent> Events);
 
 /// <summary>
 /// Google Calendar (today's and tomorrow's events on every calendar ticked in Google
-/// Calendar, so a calendar another account shares with this one shows too) and Google Tasks
-/// (the open tasks the todo skill made from mail, tagged "[todo src=gmail:…]"), read with
-/// the user's own OAuth client. Signing in is a one-time browser consent from the tray
+/// Calendar, so a calendar another account shares with this one shows too), read with the
+/// user's own OAuth client; the sign-in also covers Google Tasks, which GoogleTasks reads
+/// through <see cref="SendAsync"/>. Signing in is a one-time browser consent from the tray
 /// menu; the refresh token is kept encrypted for this Windows user (DPAPI).
 /// </summary>
 sealed class GoogleSource
 {
     const int MaxEvents = 8;
-    const int MaxTasks = 6;
     const string Scopes = "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/tasks";
-    const string MailTag = "[todo src=gmail:";
     static readonly TimeSpan Every = TimeSpan.FromMinutes(5);
     static readonly string Folder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flex-screen");
     public static readonly string ClientPath = Path.Combine(Folder, "google-client.json");
     static readonly string TokenPath = Path.Combine(Folder, "google-token.bin");
-    static readonly Regex MeetingLink = new(@"https://[\w.-]*(zoom\.us/j|teams\.microsoft\.com/l/meetup-join|meet\.google\.com)/[^\s""<>]+", RegexOptions.IgnoreCase);
-    static readonly Regex Sender = new(@"^From:\s*(.+?)\s*(<[^>]*>)?\s*$", RegexOptions.Multiline);
+    // Zoom (a meeting or someone's personal room), Teams (classic and short links, and Teams
+    // free), Meet, and Discord (an invite, an event, a channel).
+    static readonly Regex MeetingLink = new(
+        @"https://[\w.-]*(zoom\.us/(j|my)|teams\.microsoft\.com/(l/meetup-join|meet)|teams\.live\.com/meet|meet\.google\.com|" +
+        @"discord\.gg|discord\.com/(invite|events|channels))/[^\s""<>]+", RegexOptions.IgnoreCase);
+
+    /// <summary>Which app a meeting link opens in: "zoom", "teams", "meet", "discord", or "".</summary>
+    public static string MeetingApp(string link)
+    {
+        if (!Uri.TryCreate(link, UriKind.Absolute, out var uri)) return "";
+        var host = uri.Host.ToLowerInvariant();
+        if (host == "zoom.us" || host.EndsWith(".zoom.us")) return "zoom";
+        if (host.EndsWith("teams.microsoft.com") || host.EndsWith("teams.live.com")) return "teams";
+        if (host == "meet.google.com") return "meet";
+        if (host is "discord.gg" or "discord.com" or "www.discord.com") return "discord";
+        return "";
+    }
 
     readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
     readonly System.Threading.Timer _timer;
     readonly SemaphoreSlim _busy = new(1, 1);
-    readonly HashSet<string> _doneHere = [];  // completed from the deck, shown ticked for the rest of the day
-    DateTime _doneDay = DateTime.Today;
     string? _accessToken;
     DateTime _accessExpires;
 
     // Not "setup" until the first read says so: a slow first read (it timed out once, right
     // after a restart) left the deck asking to connect Google for minutes.
-    public GoogleState Current { get; private set; } = new("", [], []);
+    public GoogleState Current { get; private set; } = new("", []);
 
     /// <summary>Raised on a worker thread after each refresh that changed something.</summary>
     public event Action<GoogleState>? Changed;
 
     public event Action<Toast>? Toast;
+
+    /// <summary>Raised after a sign-in, so the other Google readers (Tasks) read again.</summary>
+    public event Action? SignedIn;
 
     public GoogleSource()
     {
@@ -118,6 +128,14 @@ sealed class GoogleSource
             ? new Toast("ok", "Connected to Google Calendar and Tasks")
             : new Toast("error", $"Google didn't grant {string.Join(" and ", missing)} access. Connect again and tick every box."));
         await RefreshAsync();
+        SignedIn?.Invoke();
+    }
+
+    /// <summary>"ok" when signed in, else "setup" (no OAuth client file) or "signin".</summary>
+    public async Task<string> AuthStatusAsync()
+    {
+        if (!HasClient) return "setup";
+        return await EnsureTokenAsync() ? "ok" : "signin";
     }
 
     public async Task RefreshAsync()
@@ -127,17 +145,15 @@ sealed class GoogleSource
         {
             if (!HasClient)
             {
-                Publish(new GoogleState("setup", [], []));
+                Publish(new GoogleState("setup", []));
                 return;
             }
             if (!await EnsureTokenAsync())
             {
-                Publish(new GoogleState("signin", [], []));
+                Publish(new GoogleState("signin", []));
                 return;
             }
-            var events = await EventsAsync();
-            var tasks = await TasksAsync();
-            Publish(new GoogleState("ok", events, tasks));
+            Publish(new GoogleState("ok", await EventsAsync()));
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
@@ -150,35 +166,9 @@ sealed class GoogleSource
         }
     }
 
-    /// <summary>Ticks a task off (or back on) in Google Tasks.</summary>
-    public async Task SetDoneAsync(string list, string id, bool done)
-    {
-        try
-        {
-            if (!await EnsureTokenAsync()) return;
-            var body = done ? new JsonObject { ["status"] = "completed" } : new JsonObject { ["status"] = "needsAction", ["completed"] = null };
-            using var request = new HttpRequestMessage(HttpMethod.Patch,
-                $"https://tasks.googleapis.com/tasks/v1/lists/{Uri.EscapeDataString(list)}/tasks/{Uri.EscapeDataString(id)}")
-            {
-                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
-            };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-            using var reply = await _http.SendAsync(request);
-            reply.EnsureSuccessStatusCode();
-            if (done) _doneHere.Add(id);
-            else _doneHere.Remove(id);
-            Publish(Current with { Tasks = Current.Tasks.Select(t => t.Id == id ? t with { Done = done } : t).ToList() });
-        }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
-        {
-            Log.Write($"google: can't update the task: {e.Message}");
-            Toast?.Invoke(new Toast("error", "Couldn't update the task in Google Tasks"));
-        }
-    }
-
     void Publish(GoogleState state)
     {
-        var changed = state.Status != Current.Status || !state.Events.SequenceEqual(Current.Events) || !state.Tasks.SequenceEqual(Current.Tasks);
+        var changed = state.Status != Current.Status || !state.Events.SequenceEqual(Current.Events);
         Current = state;
         if (changed) Changed?.Invoke(state);
     }
@@ -263,43 +253,18 @@ sealed class GoogleSource
         return MeetingLink.Match(text) is { Success: true } m ? WebUtility.HtmlDecode(m.Value) : "";
     }
 
-    async Task<List<MailTask>> TasksAsync()
-    {
-        if (_doneDay != DateTime.Today)
-        {
-            _doneHere.Clear();
-            _doneDay = DateTime.Today;
-        }
-        var lists = await GetAsync("https://tasks.googleapis.com/tasks/v1/users/@me/lists?maxResults=100");
-        var tasks = new List<MailTask>();
-        foreach (var l in lists?["items"] as JsonArray ?? [])
-        {
-            var list = (string?)l?["id"];
-            if (list == null) continue;
-            var json = await GetAsync($"https://tasks.googleapis.com/tasks/v1/lists/{Uri.EscapeDataString(list)}/tasks?maxResults=100&showCompleted=false");
-            foreach (var t in json?["items"] as JsonArray ?? [])
-            {
-                var notes = (string?)t?["notes"] ?? "";
-                if (!notes.Contains(MailTag)) continue;
-                var id = (string?)t?["id"] ?? "";
-                const bool done = false;
-                var from = Sender.Match(notes) is { Success: true } m ? m.Groups[1].Value.Trim('"', ' ') : "";
-                var due = (string?)t?["due"] is { Length: >= 10 } d ? d[..10] : "";
-                tasks.Add(new MailTask(list, id, (string?)t?["title"] ?? "", from, due, done));
-            }
-        }
-        // Ticked off from the deck today: still shown, struck through.
-        tasks.AddRange(Current.Tasks.Where(t => t.Done && _doneHere.Contains(t.Id) && tasks.All(o => o.Id != t.Id)));
-        // Open first, soonest due first (no date last).
-        return tasks.OrderBy(t => t.Done).ThenBy(t => t.Due.Length == 0).ThenBy(t => t.Due).Take(MaxTasks).ToList();
-    }
+    Task<JsonNode?> GetAsync(string url) => SendAsync(HttpMethod.Get, url);
 
-    async Task<JsonNode?> GetAsync(string url)
+    /// <summary>An authorized Google API request (signed in first, if need be); the reply's
+    /// JSON, or null for an empty reply. Throws HttpRequestException, with Google's reason.</summary>
+    public async Task<JsonNode?> SendAsync(HttpMethod method, string url, JsonNode? body = null)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!await EnsureTokenAsync()) throw new HttpRequestException("not signed in to Google");
+        using var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+        if (body != null) request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
         using var reply = await _http.SendAsync(request);
-        var body = await reply.Content.ReadAsStringAsync();
+        var text = await reply.Content.ReadAsStringAsync();
         if (!reply.IsSuccessStatusCode)
         {
             // Google says why (the API isn't enabled in the Cloud project, a scope wasn't
@@ -308,7 +273,7 @@ sealed class GoogleSource
             string? reason = null;
             try
             {
-                var error = JsonNode.Parse(body)?["error"];
+                var error = JsonNode.Parse(text)?["error"];
                 reason = (string?)error?["message"] ?? (string?)error?["status"];
             }
             catch (System.Text.Json.JsonException)
@@ -316,7 +281,7 @@ sealed class GoogleSource
             }
             throw new HttpRequestException($"{api} API: {(int)reply.StatusCode} {reason ?? reply.ReasonPhrase}", null, reply.StatusCode);
         }
-        return JsonNode.Parse(body);
+        return string.IsNullOrWhiteSpace(text) ? null : JsonNode.Parse(text);
     }
 
     async Task<bool> EnsureTokenAsync()

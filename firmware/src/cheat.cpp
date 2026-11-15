@@ -9,7 +9,6 @@
 namespace ui::cheat {
 namespace {
 
-constexpr uint32_t kHoldMs = 10000;  // from the layer key's press
 constexpr int kW = 788, kH = 480 - kBarH - 10;
 constexpr int kPad = 14, kBorderW = 2;
 constexpr int kHeadH = 30;
@@ -183,7 +182,9 @@ void update() {
   const bool ready = pc::connected() && k.present && w.count > 0;
   if (!ready) pinned = false;
   if (!k.held) dismissed = false;
-  const bool held_long = ready && k.held && millis() - k.held_at_ms >= kHoldMs && !(dismissed && dismissed_hold == k.held_at_ms);
+  // Held this long from the layer key's press (settings.json's cheatSheetSeconds; 0: never).
+  const uint32_t hold_ms = 1000UL * model::settings.cheat_hold_s;
+  const bool held_long = ready && k.held && hold_ms && millis() - k.held_at_ms >= hold_ms && !(dismissed && dismissed_hold == k.held_at_ms);
   const model::Keymap::Layer *layer = ready && (pinned || held_long) ? m.find(k.layer) : nullptr;
   const int key = k.held ? k.key : -1;
   if (layer && (layer->index != shown_layer || key != shown_key || pinned != shown_pinned)) {

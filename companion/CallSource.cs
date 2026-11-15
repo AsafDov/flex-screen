@@ -11,10 +11,12 @@ namespace FlexScreen.Companion;
 /// <param name="App">"teams", "zoom", "discord", "webex", "browser", or "" when there's no call.</param>
 /// <param name="Camera">1 on, 0 off, -1 unknown.</param>
 /// <param name="Hand">1 raised, 0 not, -1 the app can't say.</param>
-/// <param name="Can">What the deck can do in this app's call: "mic", "camera", "hand", "leave", "react", "deafen".</param>
+/// <param name="Can">What the deck can do in this app's call: "mic", "camera", "hand", "leave", "react", "deafen",
+/// "whiteboard", "annotate".</param>
 /// <param name="Note">A setup hint for the deck, or "".</param>
+/// <param name="Draw">Zoom: the whiteboard or annotation tools while they're open.</param>
 record CallState(string App, string Name, DateTime Since, bool MicMuted, int Camera, int Hand, bool Deafened,
-                 IReadOnlyList<string> Can, string Note)
+                 IReadOnlyList<string> Can, string Note, DrawState? Draw = null)
 {
     public static readonly CallState None = new("", "", DateTime.MinValue, false, -1, -1, false, [], "");
     public bool Active => App.Length > 0;
@@ -28,8 +30,10 @@ record CallState(string App, string Name, DateTime Since, bool MicMuted, int Cam
 /// <item>Teams: its local API (Settings › Privacy › Manage API), the one Stream Deck uses:
 /// real mute, camera and hand state, leave and reactions. The first action asks to pair
 /// in Teams; the token is kept encrypted.</item>
-/// <item>Zoom: its keyboard shortcuts, sent to the meeting window (Alt+A, Alt+V, Alt+Y,
-/// Alt+Q), then the focus goes back. Mute is Windows' microphone mute, which has a state.</item>
+/// <item>Zoom: its own toolbar buttons, pressed through accessibility (<see cref="ZoomControl"/>):
+/// mute and video with their real state, whiteboard, annotation and every drawing tool. A
+/// meeting is also noticed by its window, so one joined without audio still counts. Raise
+/// hand is Alt+Y, sent to the meeting window, then the focus goes back.</item>
 /// <item>Discord: Windows' microphone mute, and Deafen also mutes Discord in the mixer.</item>
 /// </list>
 /// </summary>
@@ -52,6 +56,7 @@ sealed class CallSource
 
     readonly DeviceSource _devices;
     readonly MixerSource _mixer;
+    readonly ZoomControl _zoom = new();
     readonly System.Threading.Timer _timer;
     readonly object _gate = new();
     DateTime _since = DateTime.MinValue;
@@ -78,6 +83,7 @@ sealed class CallSource
         _mixer = mixer;
         _timer = new System.Threading.Timer(_ => Poll(), null, Timeout.Infinite, Timeout.Infinite);
         _devices.MicChanged += _ => Poll();
+        _zoom.Changed += Poll;
     }
 
     public void Start() => _timer.Change(TimeSpan.Zero, Every);
@@ -90,6 +96,8 @@ sealed class CallSource
             var camera = InUse("webcam");
             var app = Apps.FirstOrDefault(a => a.Keys.Any(k => mic.Any(m => m.StartsWith(k, StringComparison.OrdinalIgnoreCase) ||
                                                                             m.EndsWith(k, StringComparison.OrdinalIgnoreCase))));
+            _zoom.Poll();
+            if (app.App == null && _zoom.Current.InMeeting) app = Apps.First(a => a.App == "zoom");  // joined without audio
             var cameraOn = app.App != null && app.Keys.Any(k => camera.Any(c => c.StartsWith(k, StringComparison.OrdinalIgnoreCase) ||
                                                                              c.EndsWith(k, StringComparison.OrdinalIgnoreCase)));
             if (Process.GetProcessesByName("ms-teams").Length > 0) _ = EnsureTeamsAsync();
@@ -138,7 +146,16 @@ sealed class CallSource
                         _teams?.State == WebSocketState.Open ? "Tap a control once, then allow flex-screen in Teams"
                                                              : "For camera, hand and leave: Teams › Settings › Privacy › Manage API › Enable API");
                 case "zoom":
-                    return new CallState(app, name, _since, systemMuted, cameraOn ? 1 : 0, -1, false, ["mic", "camera", "hand", "leave"], "");
+                {
+                    var zoom = _zoom.Current;
+                    var list = new List<string> { "mic", "camera", "hand" };
+                    if (zoom.CanWhiteboard) list.Add("whiteboard");
+                    if (zoom.CanAnnotate || zoom.Draw?.Mode == "annotate") list.Add("annotate");
+                    list.Add("leave");
+                    // Windows' mute silences Zoom too, so either one counts.
+                    return new CallState(app, name, _since, systemMuted || zoom.Muted == 1, zoom.Video >= 0 ? zoom.Video : cameraOn ? 1 : 0, -1,
+                                         false, list, "", zoom.Draw);
+                }
                 case "discord":
                     return new CallState(app, name, _since, systemMuted, cameraOn ? 1 : 0, -1, _deafened, ["mic", "deafen"], "");
                 default:
@@ -149,7 +166,7 @@ sealed class CallSource
 
     void Publish(CallState state)
     {
-        var key = $"{state.App}|{state.MicMuted}|{state.Camera}|{state.Hand}|{state.Deafened}|{string.Join(",", state.Can)}|{state.Note}";
+        var key = $"{state.App}|{state.MicMuted}|{state.Camera}|{state.Hand}|{state.Deafened}|{string.Join(",", state.Can)}|{state.Note}|{state.Draw?.Key}";
         Current = state;
         if (key == _key) return;
         _key = key;
@@ -162,7 +179,8 @@ sealed class CallSource
     {
         var c = Current;
         if (c.App == "teams" && c.Can.Contains("mic") && c.Note.Length == 0) TeamsAction("toggle-mute");
-        else _devices.ToggleMicMute();
+        else if (c.App == "zoom" && !_devices.Mic.Muted) _zoom.ToggleMic(_devices.ToggleMicMute);
+        else _devices.ToggleMicMute();  // also Zoom muted by Windows: unmuting that is what brings the voice back
     }
 
     public void ToggleCamera()
@@ -170,7 +188,7 @@ sealed class CallSource
         switch (Current.App)
         {
             case "teams": TeamsAction("toggle-video"); break;
-            case "zoom": ZoomKey('V'); break;
+            case "zoom": _zoom.ToggleVideo(() => ZoomKey('V')); break;
         }
     }
 
@@ -189,10 +207,71 @@ sealed class CallSource
         {
             case "teams": TeamsAction("leave-call"); break;
             case "zoom":
-                ZoomKey('Q');  // Zoom asks to confirm; a host also gets "End for all", so it isn't pressed for them
+                _zoom.Leave(() => ZoomKey('Q'));  // Zoom asks to confirm; a host also gets "End for all", so it isn't pressed for them
                 Toast?.Invoke(new Toast("attention", "Confirm leaving in Zoom"));
                 break;
         }
+    }
+
+    /// <summary>The meeting's chat: Zoom's chat panel, Teams' (through its API).</summary>
+    public void Chat()
+    {
+        switch (Current.App)
+        {
+            case "zoom": _zoom.ToggleMeetingChat(); break;
+            case "teams": TeamsAction("toggle-ui", new JsonObject { ["type"] = "chat" }); break;
+        }
+    }
+
+    /// <summary>A new meeting in that app: Zoom's instant meeting, Teams' new-meeting form.</summary>
+    public void NewMeeting(string app)
+    {
+        switch (app)
+        {
+            case "zoom":
+                _zoom.NewMeeting(why => Toast?.Invoke(new Toast("attention", why)));
+                break;
+            case "teams":
+                try
+                {
+                    Process.Start(new ProcessStartInfo("msteams:/l/meeting/new") { UseShellExecute = true })?.Dispose();
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                    Toast?.Invoke(new Toast("attention", "Teams isn't installed"));
+                }
+                break;
+        }
+    }
+
+    /// <summary>Zoom Workplace's own chat (outside a meeting).</summary>
+    public void OpenChat(string app)
+    {
+        if (app == "zoom") _zoom.OpenChat();
+    }
+
+    /// <summary>Zoom: share the screen (Zoom's picker opens), or stop sharing.</summary>
+    public void Share()
+    {
+        if (Current.App == "zoom") _zoom.Share();
+    }
+
+    /// <summary>Zoom: a new whiteboard, from the meeting toolbar.</summary>
+    public void Whiteboard()
+    {
+        if (Current.App == "zoom") _zoom.OpenWhiteboard();
+    }
+
+    /// <summary>Zoom: annotate the screen being shared, or stop.</summary>
+    public void Annotate()
+    {
+        if (Current.App == "zoom") _zoom.ToggleAnnotate();
+    }
+
+    /// <summary>Zoom's drawing tools: "tool", "color", "width", "weight", "kind" (with the id, index or value), "undo", "redo", "clear", "save", "close".</summary>
+    public void Draw(string what, string id)
+    {
+        if (Current.App == "zoom") _zoom.Draw(what, id);
     }
 
     public void React(string type)
@@ -249,18 +328,27 @@ sealed class CallSource
     static IntPtr ZoomMeetingWindow()
     {
         var pids = Process.GetProcessesByName("Zoom").Select(p => (uint)p.Id).ToHashSet();
-        var found = IntPtr.Zero;
+        IntPtr found = IntPtr.Zero, sharing = IntPtr.Zero;
         EnumWindows((hwnd, _) =>
         {
             GetWindowThreadProcessId(hwnd, out var pid);
             if (!pids.Contains(pid) || !IsWindowVisible(hwnd)) return true;
             var cls = new StringBuilder(64);
             GetClassName(hwnd, cls, cls.Capacity);
-            if (cls.ToString() != "ZPContentViewWndClass") return true;  // the meeting window, not Zoom's home
-            found = hwnd;
-            return false;
+            // The meeting window (Zoom 7's tabbed one, or the older one), not Zoom's home; while
+            // sharing it's hidden and the floating meeting controls take the shortcuts.
+            switch (cls.ToString())
+            {
+                case "ConfMultiTabContentWndClass" or "ZPContentViewWndClass":
+                    found = hwnd;
+                    return false;
+                case "ZPFloatToolbarClass":
+                    sharing = hwnd;
+                    break;
+            }
+            return true;
         }, IntPtr.Zero);
-        return found;
+        return found != IntPtr.Zero ? found : sharing;
     }
 
     // ---- what's using the microphone and camera

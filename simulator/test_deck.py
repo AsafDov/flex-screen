@@ -96,8 +96,9 @@ def test_today(d: Deck) -> None:
     mark = d.mark()
     d.drag(60, 336, 200, 336)
     check('today: volume slider sets the volume', did(d, mark, 'vol.set') is not None)
-    tap(d, 'to do from mail')
-    check('today: the mail bar opens Capture', on_screen(d, 'FROM MAIL'))
+    check('today: the tasks pill counts open and due', on_screen(d, '10 to do · 4 due'))
+    tap(d, '10 to do')
+    check('today: the tasks pill opens Capture', on_screen(d, 'SCHEDULED', exact=True))
     d.page(0)
     d.shot(os.path.join(OUT, 'today.png'))
 
@@ -176,13 +177,124 @@ def test_capture(d: Deck) -> None:
     expect_act(d, 'capture: tap a clip pastes it', 'ssh deck', 'clip.paste', id='c1')
     expect_act(d, 'capture: hold a clip pins it', '#5AB4FF', 'clip.pin', hold=True, id='c4')
     expect_act(d, 'capture: Clear', 'Clear', 'clip.clear', exact=True)
-    title = label(d, 'Send the signed lease')  # its box is just left of the title
-    expect_act(d, 'capture: ticking a mail task', 'Send the signed lease', 'task.done', dx=-(title['w'] // 2 + 26) if title else 0,
-               list='L1', id='t2', done=True)
-    expect_act(d, 'capture: Open Gmail', 'Open Gmail', 'mail.open')
+    check('capture: no mail tasks any more', not on_screen(d, 'FROM MAIL') and not on_screen(d, 'Open Gmail'))
     expect_act(d, "capture: Obsidian today's note", "Today's note", 'obs.today')
     expect_act(d, 'capture: a recent note', 'Inbox', 'obs.open', exact=True, path='Inbox.md')
     d.shot(os.path.join(OUT, 'capture.png'))
+
+
+def keyboard_key(d: Deck, row: int, units_before: float, units: float, row_units: float) -> tuple[int, int] | None:
+    """Where a key of LVGL's keyboard is: its row (of 4), and its place in the row in the
+    keyboard's width units (letters are 4, "1#" 5, backspace 7 on the top row of 52)."""
+    kb = next((n for n in shown(d) if n['c'] == 'keyboard'), None)
+    if not kb:
+        return None
+    return (kb['x'] + int(kb['w'] * (units_before + units / 2) / row_units), kb['y'] + int(kb['h'] * (row + 0.5) / 4))
+
+
+PLUS, REFRESH = '\uf067', '\uf021'
+
+
+def test_tasks(d: Deck) -> None:
+    d.page(4)
+    check('tasks: Capture opens on Scheduled, the dated tasks grouped by day',
+          all(on_screen(d, t) for t in ('SCHEDULED', 'OVERDUE', 'TODAY', 'TOMORROW', 'Reply to the landlord', 'Send the signed lease')))
+    check('tasks: Scheduled and the lists on the deck are filters',
+          all(on_screen(d, t, exact=True) for t in ('Scheduled  8', 'My Tasks  3', 'Home  3', 'flex-screen  3')))
+    check('tasks: a list kept off the deck has no chip', not on_screen(d, 'Someday'))
+    check('tasks: but its dated tasks are under Scheduled', on_screen(d, 'Call the plumber'))
+    check('tasks: Scheduled leaves out the undated', not on_screen(d, 'Fix the balcony light'))
+    check('tasks: a Scheduled row is its title, due day and status',
+          on_screen(d, 'Fri 6 Nov  ·  2 days overdue', exact=True) and on_screen(d, 'Sun 8 Nov  ·  To do', exact=True)
+          and not on_screen(d, 'From: Yossi Cohen'))
+    d.shot(os.path.join(OUT, 'tasks.png'))
+
+    def tick_box(title: str) -> None:  # the box left of the title
+        n = label(d, title)
+        if n:
+            d.tap(n['x'] - 26, n['y'] + n['h'] // 2)
+
+    mark = d.mark()
+    tick_box('Send the signed lease')
+    check('tasks: the box ticks a task off', did(d, mark, 'task.done', src='google', list='L1', id='t2', done=True) is not None,
+          str(d.acts(mark)))
+    check('tasks: a ticked task moves to Done', on_screen(d, 'DONE', exact=True) and on_screen(d, 'Sun 8 Nov  ·  Done', exact=True))
+    check('tasks: and opens nothing', not on_screen(d, 'Mark not done'))
+    mark = d.mark()
+    tick_box('Send the signed lease')
+    check('tasks: ticking it again unticks it', did(d, mark, 'task.done', id='t2', done=False) is not None)
+
+    expect_act(d, 'tasks: tapping a task opens it', 'Send the signed lease', 'task.open', src='google', list='L1', id='t2')
+    check('tasks: the popup says its list, due day and status',
+          on_screen(d, 'My Tasks  ·  Due Sun 8 Nov  ·  To do', exact=True) and on_screen(d, 'Mark done') and on_screen(d, 'Loading'))
+    d.state('task', {'src': 'google', 'list': 'L1', 'id': 't2', 'found': True, 'title': 'Send the signed lease to the agent',
+                     'notes': 'From: Dana Levi\nSign pages 3 and 7, then scan it.'})
+    check('tasks: then its whole title and notes',
+          on_screen(d, 'Send the signed lease to the agent', exact=True) and on_screen(d, 'Sign pages 3 and 7'))
+    d.shot(os.path.join(OUT, 'tasks-open.png'))
+    expect_act(d, 'tasks: Mark done ticks it off', 'Mark done', 'task.done', id='t2', done=True)
+    check('tasks: and closes the popup', not on_screen(d, 'Sign pages 3 and 7'))
+    mark = d.mark()
+    tick_box('Send the signed lease')
+    did(d, mark, 'task.done', id='t2', done=False)
+
+    expect_act(d, 'tasks: an overdue task opens too', 'Reply to the landlord', 'task.open', id='t1')
+    d.state('task', {'src': 'google', 'list': 'L2', 'id': 't1', 'found': True, 'title': 'Reply to the landlord about the boiler', 'notes': ''})
+    check('tasks: it says how late it is, and when there are no notes',
+          on_screen(d, 'Home  ·  Due Fri 6 Nov  ·  2 days overdue', exact=True) and on_screen(d, 'No notes.', exact=True))
+    mark = d.mark()
+    d.tap(30, 240)
+    check('tasks: a tap beside it closes it, and reaches nothing underneath',
+          not on_screen(d, 'No notes.', exact=True) and not d.acts(mark), str(d.acts(mark)))
+    tap(d, 'Reply to the landlord')
+    tap(d, 'Close', exact=True)
+    check('tasks: Close closes it', not on_screen(d, 'No notes.', exact=True))
+    expect_act(d, 'tasks: refresh asks the companion', REFRESH, 'task.refresh', exact=True)
+
+    tap(d, 'Home  3', exact=True)
+    check('tasks: a list on its own, undated too', on_screen(d, 'HOME', exact=True) and on_screen(d, 'Pay the Arnona bill')
+          and on_screen(d, 'Fix the balcony light') and not on_screen(d, 'Send the signed lease'))
+
+    tap(d, PLUS, exact=True)
+    check('tasks: New task opens the form with a keyboard', on_screen(d, 'Tomorrow', exact=True)
+          and any(n['c'] == 'keyboard' for n in shown(d)))
+    d.shot(os.path.join(OUT, 'tasks-new.png'))
+    for i in range(3):  # q, w, e: the top row's second to fourth keys
+        key = keyboard_key(d, 0, 5 + 4 * i, 4, 52)
+        if key:
+            d.tap(*key)
+    check('tasks: the keys type into it', on_screen(d, 'qwe', exact=True))
+    tap(d, 'Tomorrow', exact=True)
+    expect_act(d, 'tasks: Add sends it to the list on show, due tomorrow', 'Add', 'task.add',
+               src='google', list='L2', title='qwe', due='2026-11-09')
+    check('tasks: and the form closes', not on_screen(d, 'Tomorrow', exact=True))
+
+    tap(d, PLUS, exact=True)
+    mark = d.mark()
+    tap(d, 'Cancel', exact=True)
+    check('tasks: Cancel closes the form and adds nothing',
+          not on_screen(d, 'Tomorrow', exact=True) and did(d, mark, 'task.add', timeout=0.5) is None)
+    tap(d, 'Scheduled  ')
+    tap(d, PLUS, exact=True)
+    for i in range(3):
+        key = keyboard_key(d, 0, 5 + 4 * i, 4, 52)
+        if key:
+            d.tap(*key)
+    expect_act(d, 'tasks: from Scheduled, Add goes to the first list, due today', 'Add', 'task.add',
+               src='google', list='L1', title='qwe', due='2026-11-08')
+
+    tap(d, 'Home  3', exact=True)
+    hidden = fixtures.tasks()
+    hidden['rev'] = 8
+    hidden['lists'][1]['show'] = False
+    d.state('tasks', hidden)
+    check('tasks: a list taken off the deck loses its chip, back to Scheduled',
+          on_screen(d, 'SCHEDULED', exact=True) and not on_screen(d, 'Home  3', exact=True))
+    d.state('tasks', fixtures.tasks())
+
+    d.state('tasks', {'rev': 9, 'status': 'signin', 'lists': [], 'tasks': [], 'open': 0})
+    check('tasks: signed out, it says how to connect', on_screen(d, 'Sign in to Google'))
+    d.shot(os.path.join(OUT, 'tasks-signin.png'))
 
 
 def test_numpad(d: Deck) -> None:
@@ -235,6 +347,141 @@ def test_call(d: Deck) -> None:
     check('call: ends', not on_screen(d, 'Leave', exact=True))
 
 
+def zoom_buttons(d: Deck, h: int) -> list[dict]:
+    """The call panel's buttons of that height, as shown, top to bottom, left to right (36:
+    kinds and swatches, 78: the line widths). Only the panel's: the page under it has its own."""
+    nodes, inside, panel_depth, hidden_depth, found = d.tree(), False, 0, None, []
+    for n in nodes:
+        if inside and n['d'] <= panel_depth:
+            break
+        if not inside:
+            inside = (n['x'], n['y'], n['w'], n['h']) == (10, 50, 780, 380) and not n.get('hidden')
+            panel_depth = n['d']
+            continue
+        if hidden_depth is not None and n['d'] > hidden_depth:
+            continue
+        hidden_depth = n['d'] if n.get('hidden') else None
+        if hidden_depth is None and n['h'] == h and n.get('c') == 'button':
+            found.append(n)
+    return sorted(found, key=lambda n: (n['y'], n['x']))
+
+
+def tap_node(d: Deck, n: dict, hold: bool = False) -> None:
+    (d.hold if hold else d.tap)(n['x'] + n['w'] // 2, n['y'] + n['h'] // 2)
+
+
+def tool_order(d: Deck) -> list[str]:
+    """The drawing tools' names as shown, left to right."""
+    names = {'Laser', 'Pen', 'Marker', 'Fading', 'Eraser', 'Pan', 'Select', 'Sticky', 'Shapes', 'Text', 'Mouse', 'Stamp', 'Line'}
+    row = [n for n in shown(d) if n.get('text') in names and n['y'] < 200]
+    return [n['text'] for n in sorted(row, key=lambda n: n['x'])]
+
+
+def slider_in_panel(d: Deck) -> dict | None:
+    return next((n for n in shown(d) if n.get('c') == 'slider' and n['y'] > 120 and n['w'] > 300), None)
+
+
+def test_zoom(d: Deck) -> None:
+    d.page(0)
+    muted = fixtures.call('zoom')
+    muted['mic_muted'] = True
+    d.state('call', muted)
+    d.settle()
+    check('zoom: the panel has Whiteboard', on_screen(d, 'Whiteboard', exact=True))
+    d.shot(os.path.join(OUT, 'call-zoom-muted.png'))
+    expect_act(d, 'zoom: whiteboard', 'Whiteboard', 'call.whiteboard', exact=True)
+
+    d.state('call', fixtures.zoom_draw('annotate'))
+    d.settle()
+    order = tool_order(d)
+    check('zoom: annotation tools, in order', order == ['Laser', 'Pen', 'Marker', 'Fading', 'Eraser', 'Select'], str(order))
+    check('zoom: Save while annotating', on_screen(d, 'Save', exact=True))
+    d.shot(os.path.join(OUT, 'zoom-annotate.png'))
+    expect_act(d, 'zoom: pick the highlighter', 'Marker', 'draw.tool', exact=True, id='highlighter')
+    expect_act(d, 'zoom: the laser is the spotlight', 'Laser', 'draw.tool', exact=True, id='spotlight')
+    swatches = [n for n in zoom_buttons(d, 36) if n['w'] < 100]
+    check('zoom: 15 annotation colors', len(swatches) == 15, str(len(swatches)))
+    if len(swatches) > 4:
+        mark = d.mark()
+        tap_node(d, swatches[4])
+        check('zoom: pick a color', did(d, mark, 'draw.color', id='4') is not None, str(d.acts(mark)))
+    widths = zoom_buttons(d, 78)
+    check('zoom: four line widths when annotating', len(widths) == 4, str(len(widths)))
+    if len(widths) == 4:
+        mark = d.mark()
+        tap_node(d, widths[3])
+        check('zoom: pick a width', did(d, mark, 'draw.width', id='3') is not None, str(d.acts(mark)))
+    check('zoom: no weight slider when annotating', slider_in_panel(d) is None)
+    mark = d.mark()
+    tap(d, 'Clear', exact=True)
+    check('zoom: a tap on Clear only says to hold', on_screen(d, 'Hold', exact=True) and did(d, mark, 'draw.clear', timeout=0.5) is None)
+    time.sleep(2.2)
+    check('zoom: the hint goes back to Clear', on_screen(d, 'Clear', exact=True))
+    expect_act(d, 'zoom: holding Clear clears', 'Clear', 'draw.clear', exact=True, hold=True)
+    expect_act(d, 'zoom: undo', 'Undo', 'draw.undo', exact=True)
+    expect_act(d, 'zoom: mic while drawing', 'Mic', 'call.mic', exact=True)
+    expect_act(d, 'zoom: stop annotating', 'Stop', 'draw.close', exact=True)
+    tap(d, 'Call')
+    check('zoom: the call controls while drawing', on_screen(d, 'Leave', exact=True) and not on_screen(d, 'Marker', exact=True))
+    expect_act(d, 'zoom: Annotate stops it', 'Annotate', 'call.annotate', exact=True)
+    tap(d, 'Draw')
+    check('zoom: back to the tools', on_screen(d, 'Marker', exact=True))
+
+    d.state('call', fixtures.zoom_draw('annotate', 'spotlight'))
+    d.settle()
+    check('zoom: the laser has its kinds, no colors',
+          on_screen(d, 'Spotlight', exact=True) and on_screen(d, 'Arrow', exact=True) and not [n for n in zoom_buttons(d, 36) if n['w'] < 100])
+    d.shot(os.path.join(OUT, 'zoom-laser.png'))
+    expect_act(d, 'zoom: laser arrow', 'Arrow', 'draw.kind', exact=True, id='arrow')
+
+    d.state('call', fixtures.zoom_draw('whiteboard', 'pen'))
+    d.settle()
+    order = tool_order(d)
+    check('zoom: whiteboard tools, in order', order == ['Laser', 'Pen', 'Marker', 'Eraser', 'Pan', 'Select'], str(order))
+    check('zoom: no Save on a whiteboard', not on_screen(d, 'Save', exact=True))
+    swatches = [n for n in zoom_buttons(d, 36) if n['w'] < 100]
+    check('zoom: 24 pen colors', len(swatches) == 24, str(len(swatches)))
+    check('zoom: no width buttons on a whiteboard', not zoom_buttons(d, 78))
+    slider = slider_in_panel(d)
+    check('zoom: the pen has a weight slider', slider is not None and on_screen(d, 'Weight', exact=True))
+    d.shot(os.path.join(OUT, 'zoom-whiteboard.png'))
+    if slider:
+        mark = d.mark()
+        d.tap(slider['x'] + slider['w'] * 3 // 4, slider['y'] + slider['h'] // 2)
+        hit = did(d, mark, 'draw.weight')
+        check('zoom: the slider sets the weight', hit is not None and 13 <= int(hit.get('id', 0)) <= 17, str(d.acts(mark)))
+
+    d.state('call', fixtures.zoom_draw('whiteboard', 'highlighter'))
+    d.settle()
+    swatches = zoom_buttons(d, 36)  # no kinds on the marker: every one is a swatch
+    check("zoom: the marker shows its own colors", len(swatches) == len(fixtures.MARKER_COLORS), str(len(swatches)))
+    check('zoom: the marker has a weight slider', slider_in_panel(d) is not None)
+    d.shot(os.path.join(OUT, 'zoom-marker.png'))
+
+    d.state('call', fixtures.zoom_draw('whiteboard', 'eraser'))
+    d.settle()
+    check('zoom: the eraser has kinds and a weight, no colors', on_screen(d, 'Pixel', exact=True) and slider_in_panel(d) is not None
+          and not [n for n in zoom_buttons(d, 36) if n['w'] < 100])
+    d.shot(os.path.join(OUT, 'zoom-eraser.png'))
+    expect_act(d, 'zoom: whole-stroke eraser', 'Whole stroke', 'draw.kind', exact=True, id='stroke')
+
+    d.state('call', fixtures.zoom_draw('whiteboard', 'laser'))
+    d.settle()
+    swatches = zoom_buttons(d, 36)
+    check('zoom: the laser shows its colors, no weight', len(swatches) == len(fixtures.LASER_COLORS) and slider_in_panel(d) is None,
+          str(len(swatches)))
+    d.shot(os.path.join(OUT, 'zoom-board-laser.png'))
+    expect_act(d, 'zoom: close the board', 'Close board', 'draw.close', exact=True)
+    tap(d, 'Call')
+    mark = d.mark()
+    tap(d, 'Whiteboard', exact=True)
+    check('zoom: Whiteboard with a board open goes back to its tools',
+          on_screen(d, 'Pan', exact=True) and did(d, mark, 'call.whiteboard', timeout=0.5) is None)
+    d.state('call', {'app': ''})
+    d.settle()
+    check('zoom: ends', not on_screen(d, 'Pan', exact=True))
+
+
 def test_cheat_sheet(d: Deck) -> None:
     d.page(0)
     held = dict(fixtures.day()['kbd'], layer=1, label='NAV', held_ms=3000, key=16)
@@ -248,6 +495,22 @@ def test_cheat_sheet(d: Deck) -> None:
     d.state('kbd', fixtures.day()['kbd'])
     d.settle()
     check('cheat sheet: letting go hides it', not on_screen(d, 'Tap the layer pill'))
+    # settings.json's cheatSheetSeconds
+    d.settings('base', cheat_s=6)
+    d.state('kbd', dict(held, held_ms=2000))
+    d.settle()
+    check('cheat sheet: set to 6 s, not after 2 s', not on_screen(d, 'Tap the layer pill'))
+    d.state('kbd', dict(held, held_ms=6500))
+    d.settle()
+    check('cheat sheet: set to 6 s, after 6.5 s', on_screen(d, 'Tap the layer pill'))
+    d.state('kbd', fixtures.day()['kbd'])
+    d.settings('base', cheat_s=0)
+    d.state('kbd', dict(held, held_ms=60000))
+    d.settle()
+    check('cheat sheet: set to 0, never from holding', not on_screen(d, 'Tap the layer pill'))
+    d.state('kbd', fixtures.day()['kbd'])
+    d.settings('base')
+    d.settle()
 
 
 def test_idle(d: Deck) -> None:
@@ -312,7 +575,7 @@ def test_launcher(d: Deck) -> None:
     check('launcher: the button again closes it', not launcher_open(d))
 
     tap(d, 'Capture', below=436)
-    check('launcher: the tabs still switch pages', on_screen(d, 'FROM MAIL'))
+    check('launcher: the tabs still switch pages', on_screen(d, 'CLIPBOARD'))
     d.tap(*fixtures.LAUNCHER)
     check('launcher: it opens over any page', launcher_open(d) and on_screen(d, 'Gmail', exact=True))
     d.tap(*fixtures.LAUNCHER)
@@ -356,9 +619,18 @@ def bar_key(d: Deck, name: str) -> dict | None:
 
 
 def overlapping_bar(d: Deck) -> list[str]:
-    """Page content that runs into the context bar."""
-    return [f"{n.get('text') or n['c']}@{n['y']}+{n['h']}" for n in shown(d)
-            if n['c'] in ('label', 'button', 'image', 'slider', 'bar') and n['y'] < BAR_TOP - 2 and n['y'] + n['h'] > BAR_TOP + 2]
+    """Page content that runs into the context bar. A row of a list that scrolls, past its
+    list's bottom, is cut off there (LVGL clips children to their parent): not counted."""
+    out, bottoms = [], {}  # the ancestors' bottom edges, by depth
+    for n in shown(d):
+        bottoms = {k: v for k, v in bottoms.items() if k < n['d']}
+        clipped = any(b < BAR_TOP - 2 for k, b in bottoms.items() if k > 0)  # depth 0 is the screen
+        bottoms[n['d']] = n['y'] + n['h']
+        if clipped or n['c'] not in ('label', 'button', 'image', 'slider', 'bar'):
+            continue
+        if n['y'] < BAR_TOP - 2 and n['y'] + n['h'] > BAR_TOP + 2:
+            out.append(f"{n.get('text') or n['c']}@{n['y']}+{n['h']}")
+    return out
 
 
 def test_context_bar(d: Deck) -> None:
@@ -380,6 +652,21 @@ def test_context_bar(d: Deck) -> None:
     check('context bar: not on the Numpad', not bar_key(d, 'Build'))
     d.page(0)
     check('context bar: back on the other pages', bar_key(d, 'Build') is not None)
+    chip = bar_key(d, 'VS Code')
+    if chip:
+        d.tap(chip['x'] + chip['w'] // 2, chip['y'] + chip['h'] // 2)
+        d.settle()
+    check("context bar: the app's name goes to its page (VS Code: Dev)", on_screen(d, 'TERMINAL'))
+    d.state('context', {**fixtures.day()['context'], 'app': 'Explorer', 'key': 'explorer', 'icon': ''})
+    d.settle()
+    chip = bar_key(d, 'Explorer')
+    if chip:
+        d.tap(chip['x'] + chip['w'] // 2, chip['y'] + chip['h'] // 2)
+        d.settle()
+    check("context bar: the app's name goes to its page (Explorer: Windows)", on_screen(d, 'Show desktop'))
+    d.state('context', fixtures.day()['context'])
+    d.page(0)
+    d.settle()
 
     chrome = {'app': 'Chrome', 'icon': 'ic-chrome', 'color': 0x34A853, 'keys': [
         {'id': f'c{i}', 'name': name, 'glyph': glyph} for i, (name, glyph) in enumerate([
@@ -565,8 +852,8 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_numpad,
-                     test_toast, test_call, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_picker, test_idle, test_offline):
+        for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_numpad,
+                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_picker, test_idle, test_offline):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)

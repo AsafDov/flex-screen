@@ -44,6 +44,9 @@ sealed class ClaudeApprovals
     public async Task<string?> Ask(JsonNode hook, string project, string detail, bool deckConnected)
     {
         if (!deckConnected || !Settings.ApproveFromDeck) return null;
+        // A question is answered by picking an option, at the PC: Approve or Deny can't answer
+        // it. The deck says "Claude has a question" instead (the session's state).
+        if ((string?)hook["tool_name"] == "AskUserQuestion") return null;
         var request = new Request(
             $"p{Interlocked.Increment(ref _next)}", (string?)hook["session_id"] ?? "", project, (string?)hook["tool_name"] ?? "tool",
             detail, hook["tool_input"]?.DeepClone(), hook["permission_suggestions"] is JsonArray { Count: > 0 } s ? s.DeepClone() : null,
@@ -84,9 +87,18 @@ sealed class ClaudeApprovals
         List<Request> done;
         lock (_gate)
         {
-            done = _pending.Where(r => r.Session == session &&
-                                       (tool == null || (r.Tool == tool && JsonNode.DeepEquals(r.Input, input)))).ToList();
+            done = _pending.Where(r => r.Session == session && (tool == null || (r.Tool == tool && SameCall(r.Input, input)))).ToList();
         }
         foreach (var request in done) request.Answer.TrySetResult(null);
     }
+
+    /// <summary>
+    /// Whether the input a tool ran with is the one it asked about. What it ran with can carry
+    /// more (the answers added to a question's input once you've answered at the PC), so every
+    /// field asked about has to match, not the whole input.
+    /// </summary>
+    static bool SameCall(JsonNode? asked, JsonNode? ran) =>
+        asked is JsonObject a && ran is JsonObject r
+            ? a.All(field => r.TryGetPropertyValue(field.Key, out var value) && JsonNode.DeepEquals(field.Value, value))
+            : JsonNode.DeepEquals(asked, ran);
 }

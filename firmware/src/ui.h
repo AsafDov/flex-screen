@@ -12,7 +12,10 @@ void update();  // redraws whatever the model changed; call every loop
 // the PC's confirmation (which then takes over).
 void previewVolume(int level);
 
-// Switches to a page (0 Today, 1 Audio, 2 Dev, 3 Windows, 4 Capture, 5 Numpad).
+// The pages, in tab order.
+enum Page { kTodayPage, kAudioPage, kDevPage, kWindowsPage, kCapturePage, kNumpadPage };
+
+// Switches to a page (a Page).
 void showPage(int index);
 int currentPage();
 

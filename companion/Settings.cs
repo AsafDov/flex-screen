@@ -10,6 +10,8 @@ namespace FlexScreen.Companion;
 ///   "palette": "base",                                        // the deck's colors: "base", "vibrant", "ember" or "violet"
 ///   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
 ///   "layerNames": ["BASE", "NAV", "SYMBOL"],                  // the keyboard's layers, from 0
+///   "cheatSheetSeconds": 10,                                  // a layer key held this long shows the cheat sheet; 0: only from the pill
+///   "hiddenTaskLists": ["google/MTIzNDU2"],                   // task lists left off the deck (the tray's Task lists on the deck)
 ///   "obsidianVault": "C:\\Users\\me\\Notes\\MyVault",           // if it can't be found by itself
 ///   "shortcuts": [ { "name": "Gmail", "url": "https://mail.google.com" }, { "name": "Spotify", "app": "Spotify" } ]
 /// }
@@ -48,6 +50,16 @@ static class Settings
     public static (double Clock, double Off) Idle =>
         ((double?)Get("idle")?["clockAfterMinutes"] ?? 10, (double?)Get("idle")?["screenOffAfterMinutes"] ?? 30);
 
+    /// <summary>How long a layer key is held before the deck shows the cheat sheet; 0: only when the pill is tapped.</summary>
+    public static double CheatSheetSeconds => Math.Clamp((double?)Get("cheatSheetSeconds") ?? 10, 0, 600);
+
+    /// <summary>
+    /// Task lists kept off the deck's Tasks card ("source/list id"), set from the tray's Task
+    /// lists on the deck menu. Their dated tasks still show under Scheduled.
+    /// </summary>
+    public static IReadOnlySet<string> HiddenTaskLists =>
+        (Get("hiddenTaskLists") as JsonArray)?.Select(n => (string?)n ?? "").ToHashSet() ?? [];
+
     /// <summary>Changes when the file does, so the deck can be sent the new settings.</summary>
     public static DateTime Version
     {
@@ -55,6 +67,26 @@ static class Settings
         {
             Get("palette");
             lock (Gate) return _readTime;
+        }
+    }
+
+    /// <summary>
+    /// Writes the everyday settings the file doesn't have, at their current values (the
+    /// defaults), so the tray's Open settings file shows them. Keeps everything else.
+    /// </summary>
+    public static void AddMissing()
+    {
+        var (clock, off) = Idle;
+        (string Key, Func<JsonNode> Value)[] everyday =
+        [
+            ("palette", () => JsonValue.Create(Palette)),
+            ("idle", () => new JsonObject { ["clockAfterMinutes"] = clock, ["screenOffAfterMinutes"] = off }),
+            ("layerNames", () => new JsonArray(LayerNames.Select(n => (JsonNode?)JsonValue.Create(n)).ToArray())),
+            ("cheatSheetSeconds", () => JsonValue.Create(CheatSheetSeconds)),
+        ];
+        foreach (var (key, value) in everyday)
+        {
+            if (Get(key) == null) Set(key, value());
         }
     }
 

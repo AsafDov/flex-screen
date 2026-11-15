@@ -190,8 +190,8 @@ class Deck:
     def state(self, topic: str, d: dict) -> None:
         self.send({'t': 'state', 'topic': topic, 'd': d})
 
-    def settings(self, palette: str = 'base', clock_s: int = 600, off_s: int = 1800) -> None:
-        self.send({'t': 'settings', 'palette': palette, 'idle_clock_s': clock_s, 'idle_off_s': off_s})
+    def settings(self, palette: str = 'base', clock_s: int = 600, off_s: int = 1800, cheat_s: int = 10) -> None:
+        self.send({'t': 'settings', 'palette': palette, 'idle_clock_s': clock_s, 'idle_off_s': off_s, 'cheat_hold_s': cheat_s})
 
     def clock(self, epoch: int, tz_minutes: int = 120) -> None:
         self.send({'t': 'time', 'epoch': epoch, 'tz': tz_minutes})
