@@ -91,14 +91,25 @@ sealed class ObsidianSource
         return file;
     }
 
-    /// <summary>The newest daily note up to today (looking back a quarter of a year), or null.</summary>
-    public static string? LatestDailyNote(string root)
+    /// <summary>
+    /// The newest daily note up to today (looking back a quarter of a year), or null. Given the
+    /// day found last time, it looks only from today back to that day, and further only if
+    /// that note is gone: one or two looks instead of up to 92 (the vault may be on a cloud drive).
+    /// </summary>
+    public static (string Path, DateTime Day)? LatestDailyNote(string root, DateTime? known = null)
     {
         var daily = DailySettings(root);
-        for (var day = DateTime.Today; day > DateTime.Today.AddDays(-92); day = day.AddDays(-1))
+        var oldest = DateTime.Today.AddDays(-92);
+        var stop = known is { } k && k > oldest && k <= DateTime.Today ? k : oldest;
+        for (var pass = 0; pass < 2; pass++)
         {
-            var file = DailyNotePath(root, day, daily);
-            if (File.Exists(file)) return file;
+            for (var day = DateTime.Today; day >= stop && day > oldest; day = day.AddDays(-1))
+            {
+                var file = DailyNotePath(root, day, daily);
+                if (File.Exists(file)) return (file, day);
+            }
+            if (stop == oldest) break;
+            stop = oldest;  // the one found last time is gone: look all the way back
         }
         return null;
     }

@@ -461,6 +461,7 @@ struct Tasks {
   static constexpr int kMax = 40;
   String status;  // "ok", "setup" (no source connected), "signin", "error"; "" before the first read
   String from;    // the source the status is about ("Google Tasks"), or ""
+  String warn;    // with "ok": the sources that need signing in again ("Google Tasks and Jira"), or ""
   TaskList lists[kMaxLists];
   int list_count = 0;
   Task list[kMax];  // open first, soonest due first

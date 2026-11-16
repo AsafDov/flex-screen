@@ -36,7 +36,7 @@ int form_list = 0, form_due = 0;
 // The open task, over everything: its title, list, due day, status, what its source says
 // about it (project, key, priority…), its notes, and a button that opens it where it lives.
 struct {
-  lv_obj_t *scrim, *panel, *title, *meta, *source, *notes_box, *notes, *open, *open_text, *done, *done_text;
+  lv_obj_t *scrim, *panel, *body, *title, *meta, *source, *notes, *open, *open_text, *done, *done_text;
 } pop;
 String pop_src, pop_list, pop_id;  // pop_id "" when none is open
 uint32_t pop_tasks_seen = UINT32_MAX, pop_detail_seen = UINT32_MAX;
@@ -125,14 +125,14 @@ void dueText(const String &ymd, char *out, size_t n) {
   snprintf(out, n, "%s %d %s", weekday, d.tm_mday, month);
 }
 
-// "Done", "3 days overdue" or "To do"; for an issue that's only opened here (Jira, GitHub),
-// "" instead of "To do": its own status says more, and comes with it.
-void statusText(const model::Task &t, int64_t now_day, char *out, size_t n) {
+// "Done", "3 days overdue" or "To do"; for an issue that's only opened here (Jira, GitHub:
+// `tickable` false), "" instead of "To do": its own status says more, and comes with it.
+void statusText(const model::Task &t, bool tickable, int64_t now_day, char *out, size_t n) {
   const int64_t due = dayNumber(t.due);
   const int64_t late = due == INT64_MIN || now_day == INT64_MIN ? 0 : now_day - due;
   if (t.done) snprintf(out, n, "Done");
   else if (late > 0) snprintf(out, n, "%d day%s overdue", int(late), late == 1 ? "" : "s");
-  else snprintf(out, n, "%s", model::tasks.canTick(t) ? "To do" : "");
+  else snprintf(out, n, "%s", tickable ? "To do" : "");
 }
 
 // ---- actions
@@ -178,7 +178,8 @@ void showPopup() {
 
   char day[24], status[32], meta[200];
   dueText(t->due, day, sizeof(day));
-  statusText(*t, dayToday(), status, sizeof(status));
+  const bool tickable = model::tasks.canTick(*t);
+  statusText(*t, tickable, dayToday(), status, sizeof(status));
   const char *list = model::tasks.listName(t->src, t->list);
   snprintf(meta, sizeof(meta), "%s%s%s%s%s%s", list, list[0] ? "  ·  " : "", day[0] ? "Due " : "No due date", day,
            status[0] ? "  ·  " : "", status);
@@ -198,7 +199,7 @@ void showPopup() {
   setHidden(pop.open, !link);
   if (link) setText(pop.open_text, d.link.c_str());
 
-  setHidden(pop.done, !model::tasks.canTick(*t));
+  setHidden(pop.done, !tickable);
   setText(pop.done_text, t->done ? "Mark not done" : LV_SYMBOL_OK "  Mark done");
   setBgColor(pop.done, t->done ? kRaised : kAccent);
   setTextColor(pop.done_text, t->done ? kText : kOnAccent);
@@ -217,7 +218,7 @@ void onOpen(lv_event_t *e) {
   lv_obj_set_hidden(pop.panel, false);
   lv_obj_move_foreground(pop.scrim);
   lv_obj_move_foreground(pop.panel);
-  lv_obj_scroll_to_y(pop.notes_box, 0, LV_ANIM_OFF);
+  lv_obj_scroll_to_y(pop.body, 0, LV_ANIM_OFF);
   showPopup();
 }
 
@@ -439,28 +440,31 @@ void buildPopup() {
   lv_obj_set_scrollable(p, false);
   flexCol(p, 10);
 
-  pop.title = label(p, "", &title_font, kText);
+  // Everything but the buttons, scrolling as one when it's long (a long title, the source's
+  // line, long notes), so the buttons are always on the panel: 420 high at most, less the
+  // padding, a gap and the buttons' row.
+  lv_obj_t *body = pop.body = box(p);
+  lv_obj_set_size(body, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_style_max_height(body, 420 - 2 * 18 - 10 - 44, 0);
+  lv_obj_set_clickable(body, true);  // so a drag on it scrolls it
+  lv_obj_set_scrollable(body, true);
+  lv_obj_set_scroll_dir(body, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(body, LV_SCROLLBAR_MODE_ACTIVE);
+  flexCol(body, 10);
+
+  pop.title = label(body, "", &title_font, kText);
   lv_obj_set_width(pop.title, LV_PCT(100));
   lv_label_set_long_mode(pop.title, LV_LABEL_LONG_MODE_WRAP);
-  pop.meta = label(p, "", &small_font, kMuted);
+  pop.meta = label(body, "", &small_font, kMuted);
   lv_obj_set_width(pop.meta, LV_PCT(100));
   lv_label_set_long_mode(pop.meta, LV_LABEL_LONG_MODE_WRAP);
-  pop.source = label(p, "", &small_font, kSoftText);
+  pop.source = label(body, "", &small_font, kSoftText);
   lv_obj_set_width(pop.source, LV_PCT(100));
   lv_label_set_long_mode(pop.source, LV_LABEL_LONG_MODE_WRAP);
   lv_obj_set_hidden(pop.source, true);
-
-  // The notes, scrolling when long.
-  lv_obj_t *nb = pop.notes_box = box(p);
-  lv_obj_set_size(nb, LV_PCT(100), LV_SIZE_CONTENT);
-  lv_obj_set_style_max_height(nb, 180, 0);
-  lv_obj_set_clickable(nb, true);  // so a drag on it scrolls it
-  lv_obj_set_scrollable(nb, true);
-  lv_obj_set_scroll_dir(nb, LV_DIR_VER);
-  lv_obj_set_scrollbar_mode(nb, LV_SCROLLBAR_MODE_ACTIVE);
-  lv_obj_set_style_pad_ver(nb, 4, 0);
-  pop.notes = label(nb, "", &body_font, kSoftText);
+  pop.notes = label(body, "", &body_font, kSoftText);
   lv_obj_set_width(pop.notes, LV_PCT(100));
+  lv_obj_set_style_pad_ver(pop.notes, 4, 0);
   lv_label_set_long_mode(pop.notes, LV_LABEL_LONG_MODE_WRAP);
 
   lv_obj_t *row = box(p);
@@ -608,7 +612,7 @@ void addRow(int i, Group group, bool all, int64_t now_day) {
   if (all) {
     char status[32];
     dueText(t.due, day, sizeof(day));
-    statusText(t, now_day, status, sizeof(status));
+    statusText(t, tickable, now_day, status, sizeof(status));
     add(day);
     add(status);
     if (!tickable && !status[0]) add(t.sub.c_str());
@@ -693,6 +697,11 @@ void updateList() {
   else if (!any && list && !list->add) snprintf(why, sizeof(why), "Nothing assigned to you.");
   else if (!any) snprintf(why, sizeof(why), "Nothing to do. Tap + to add one.");
   else why[0] = '\0';
+  // The others read, but one source needs signing in again: said above their tasks, since
+  // its own would otherwise just be missing.
+  const bool warn = online && k.status == "ok" && k.warn.length() > 0;
+  if (warn) snprintf(why, sizeof(why), "Sign in to %s again (tray menu).", k.warn.c_str());  // short: the card is narrow
+  setTextColor(w.note, warn ? kUrgent : kMuted);
   setText(w.note, why);
   setHidden(w.note, why[0] == '\0');
 

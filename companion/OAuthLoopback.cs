@@ -7,8 +7,8 @@ namespace FlexScreen.Companion;
 
 /// <summary>
 /// A browser sign-in for a desktop app (OAuth's authorization code with PKCE): opens the
-/// provider's consent page and listens on localhost for its redirect. Microsoft To Do signs
-/// in this way (Google has its own copy in GoogleSource).
+/// provider's consent page and listens on localhost for its redirect. Google and Microsoft
+/// To Do sign in this way.
 /// </summary>
 static class OAuthLoopback
 {

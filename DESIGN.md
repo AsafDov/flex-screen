@@ -1042,6 +1042,23 @@ Gotchas found after phase 6:
     line and Open in Jira, which sends `task.link`; the issues list's + offers only lists
     that take tasks; a daily note task ticks; the signed-out and nothing-connected
     messages). Not checked: any source against its real service, nor on the deck.
+  - After a code review (2026-11-17): a source failing in any way (a mistyped site in
+    settings.json) is logged and keeps its last tasks, instead of stopping every source's
+    refresh. A source that needs signing in again while others read is said on the card
+    (`warn`, amber: "Sign in to Google Tasks again (tray menu)."), where before it just went
+    missing behind Obsidian's tasks. Obsidian notes are changed only once they've been
+    still for 2.5 s (Obsidian saves a moment after each keystroke), read and written back
+    at once, and tried again if anything wrote in between; a task is unticked in the note
+    it was read from (yesterday's, after today's note appears). The latest daily note is
+    looked for from today back to the last one found (the vault may be on a cloud drive).
+    The GitHub CLI is asked for a token every 5 minutes at most while it has none. The
+    task popup's title, details and notes scroll together above its buttons, so a long
+    title can't push them off. Google's sign-in now uses `OAuthLoopback` and `Secrets`
+    (same google-token.bin; its redirect address lost its trailing slash). Checked: 212
+    simulator checks (new: the sign-in notice, a long popup keeps its buttons), 18 checks
+    of the Obsidian note code on a throwaway vault, companion and firmware builds. The
+    cheat sheet check (`bar: layer pill pins the cheat sheet`) passes and fails from run
+    to run, on master's build too.
 
 ## Decisions
 

@@ -22,6 +22,7 @@ sealed class GitHubIssues : ITaskProvider
     const int MaxIssues = 50;
     const string List = "assigned";
     static readonly TimeSpan CliTokenFor = TimeSpan.FromMinutes(30);
+    static readonly TimeSpan NoCliTokenFor = TimeSpan.FromMinutes(5);  // no gh, or not signed in: not a process every read
 
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
     static readonly Regex PriorityLabel = new(@"^(p[0-4]|priority\W*\w+|sev(erity)?\W*\w+|critical|urgent|high|medium|low)$", RegexOptions.IgnoreCase);
@@ -48,6 +49,7 @@ sealed class GitHubIssues : ITaskProvider
         {
             Log.Write("tasks: github: 401, sign in again");
             _cliToken = null;
+            _cliTokenAt = DateTime.MinValue;  // ask gh again next time: it may have a new one
             return new TaskRead("signin", [], []);
         }
         var name = (string?)settings["name"] is { Length: > 0 } n ? n : "GitHub";
@@ -85,11 +87,11 @@ sealed class GitHubIssues : ITaskProvider
 
     static string ApiOf(string host) => host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ? "https://api.github.com" : $"https://{host}/api/v3";
 
-    /// <summary>The kept token, else the GitHub CLI's (read again every half hour).</summary>
+    /// <summary>The kept token, else the GitHub CLI's (asked again every half hour; every 5 minutes while it has none).</summary>
     async Task<string?> TokenAsync(string host)
     {
         if (Secrets.Load(TokenName) is { Length: > 0 } kept) return kept;
-        if (_cliToken != null && DateTime.UtcNow - _cliTokenAt < CliTokenFor) return _cliToken;
+        if (DateTime.UtcNow - _cliTokenAt < (_cliToken != null ? CliTokenFor : NoCliTokenFor)) return _cliToken;
         _cliToken = await CliTokenAsync(host);
         _cliTokenAt = DateTime.UtcNow;
         return _cliToken;

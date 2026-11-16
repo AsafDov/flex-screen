@@ -37,7 +37,7 @@ static class TaskMessages
             topic = "tasks",
             d = new
             {
-                rev = revision, status = s.Status, from = s.From, lists, tasks,
+                rev = revision, status = s.Status, from = s.From, warn = s.Warn, lists, tasks,
                 open = wanted.Count(t => !t.Done), sched = wanted.Count(t => !t.Done && t.Due.Length > 0),
             },
         };
@@ -80,9 +80,5 @@ static class TaskMessages
         return line == null ? "" : OneLine(line, 60);
     }
 
-    static string OneLine(string text, int max)
-    {
-        var line = string.Join(" ", text.Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries)).Trim();
-        return line.Length > max ? line[..(max - 1)] + "…" : line;
-    }
+    static string OneLine(string text, int max) => Strings.OneLine(text, max);
 }

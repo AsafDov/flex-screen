@@ -1,9 +1,6 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -31,7 +28,7 @@ sealed class GoogleSource
     static readonly string Folder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flex-screen");
     public static readonly string ClientPath = Path.Combine(Folder, "google-client.json");
-    static readonly string TokenPath = Path.Combine(Folder, "google-token.bin");
+    const string TokenName = "google-token";  // %LOCALAPPDATA%\flex-screen\google-token.bin (Secrets)
     // Zoom (a meeting or someone's personal room), Teams (classic and short links, and Teams
     // free), Meet, and Discord (an invite, an event, a channel).
     static readonly Regex MeetingLink = new(
@@ -82,35 +79,15 @@ sealed class GoogleSource
     {
         if (ReadClient() is not { } client) return;
         var (clientId, clientSecret) = client;
-        var port = FreePort();
-        var redirect = $"http://localhost:{port}/";
-        var verifier = Base64Url(RandomNumberGenerator.GetBytes(32));
-        var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
-        var state = Base64Url(RandomNumberGenerator.GetBytes(16));
+        var pending = OAuthLoopback.Prepare();
         var url = "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&access_type=offline&prompt=consent" +
-                  $"&client_id={Uri.EscapeDataString(clientId)}&redirect_uri={Uri.EscapeDataString(redirect)}" +
-                  $"&scope={Uri.EscapeDataString(Scopes)}&code_challenge={challenge}&code_challenge_method=S256&state={state}";
-        using var listener = new HttpListener();
-        listener.Prefixes.Add(redirect);
-        listener.Start();
-        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        var context = await listener.GetContextAsync().WaitAsync(TimeSpan.FromMinutes(5));
-        var query = System.Web.HttpUtility.ParseQueryString(context.Request.Url?.Query ?? "");
-        var ok = query["state"] == state && query["code"] is { Length: > 0 };
-        var page = Encoding.UTF8.GetBytes(ok ? "<p>flex-screen is connected to Google. You can close this tab.</p>"
-                                             : "<p>Google sign-in didn't complete. Try again from the flex-screen tray menu.</p>");
-        context.Response.ContentType = "text/html; charset=utf-8";
-        await context.Response.OutputStream.WriteAsync(page);
-        context.Response.Close();
-        if (!ok)
-        {
-            Log.Write($"google: sign-in failed ({query["error"] ?? "no code"})");
-            return;
-        }
+                  $"&client_id={Uri.EscapeDataString(clientId)}&redirect_uri={Uri.EscapeDataString(pending.Redirect)}" +
+                  $"&scope={Uri.EscapeDataString(Scopes)}&code_challenge={pending.Challenge}&code_challenge_method=S256&state={pending.State}";
+        if (await OAuthLoopback.CodeAsync(pending, url, "Google") is not { } code) return;
         var tokens = await PostTokenAsync(new Dictionary<string, string>
         {
-            ["grant_type"] = "authorization_code", ["code"] = query["code"]!, ["redirect_uri"] = redirect,
-            ["client_id"] = clientId, ["client_secret"] = clientSecret, ["code_verifier"] = verifier,
+            ["grant_type"] = "authorization_code", ["code"] = code, ["redirect_uri"] = pending.Redirect,
+            ["client_id"] = clientId, ["client_secret"] = clientSecret, ["code_verifier"] = pending.Verifier,
         });
         if ((string?)tokens?["refresh_token"] is not { Length: > 0 } refresh)
         {
@@ -307,7 +284,7 @@ sealed class GoogleSource
         if (!reply.IsSuccessStatusCode)
         {
             Log.Write($"google: token request failed: {(string?)json?["error"]}");
-            if ((string?)json?["error"] == "invalid_grant") File.Delete(TokenPath);  // revoked: sign in again
+            if ((string?)json?["error"] == "invalid_grant") Secrets.Delete(TokenName);  // revoked: sign in again
             return null;
         }
         return json;
@@ -328,33 +305,8 @@ sealed class GoogleSource
         }
     }
 
-    static void SaveRefreshToken(string token)
-    {
-        Directory.CreateDirectory(Folder);
-        File.WriteAllBytes(TokenPath, ProtectedBytes.Protect(Encoding.UTF8.GetBytes(token)));
-    }
+    // google-token.bin, as before Secrets: an existing sign-in still reads.
+    static void SaveRefreshToken(string token) => Secrets.Save(TokenName, token);
 
-    static string? LoadRefreshToken()
-    {
-        try
-        {
-            return File.Exists(TokenPath) ? Encoding.UTF8.GetString(ProtectedBytes.Unprotect(File.ReadAllBytes(TokenPath))) : null;
-        }
-        catch (Exception e) when (e is IOException or CryptographicException)
-        {
-            return null;
-        }
-    }
-
-    static int FreePort()
-    {
-        var socket = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        socket.Start();
-        var port = ((IPEndPoint)socket.LocalEndpoint).Port;
-        socket.Stop();
-        return port;
-    }
-
-    static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
+    static string? LoadRefreshToken() => Secrets.Load(TokenName);
 }

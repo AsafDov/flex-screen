@@ -567,11 +567,7 @@ sealed class TrayApp : ApplicationContext
 
     void SendTaskDetail(string src, string list, string id) => _link.Send(TaskMessages.Detail(_tasks, src, list, id));
 
-    static string OneLine(string text, int max)
-    {
-        var line = string.Join(" ", text.Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries)).Trim();
-        return line.Length > max ? line[..(max - 1)] + "…" : line;
-    }
+    static string OneLine(string text, int max) => Strings.OneLine(text, max);
 
     /// <summary>Starts the Google sign-in, or explains where the OAuth client file goes.</summary>
     void ConnectGoogle()

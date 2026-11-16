@@ -38,7 +38,8 @@ record TaskRead(string Status, IReadOnlyList<TaskList> Lists, IReadOnlyList<Task
 /// <summary>Everything the deck's Tasks card (on Capture) shows.</summary>
 /// <param name="Status">"ok" when any source read; else the likeliest reason ("error", "signin", then "setup"); "" before the first read.</param>
 /// <param name="From">The source <paramref name="Status"/> is about when it isn't "ok" ("Google Tasks"), else "".</param>
-record TasksState(string Status, IReadOnlyList<TaskList> Lists, IReadOnlyList<TaskItem> Tasks, string From = "");
+/// <param name="Warn">With "ok": the sources that need signing in again ("Google Tasks and Jira"), else "".</param>
+record TasksState(string Status, IReadOnlyList<TaskList> Lists, IReadOnlyList<TaskItem> Tasks, string From = "", string Warn = "");
 
 /// <summary>
 /// A place tasks come from: Google Tasks, Microsoft To Do, the latest Obsidian daily note,
@@ -54,7 +55,7 @@ interface ITaskProvider
     /// <summary>For people ("Google Tasks").</summary>
     string Name { get; }
 
-    /// <summary>The open tasks. Throws HttpRequestException/IOException when it can't be read.</summary>
+    /// <summary>The open tasks. Throws when it can't be read (that source then keeps its last tasks).</summary>
     Task<TaskRead> ReadAsync();
 
     /// <summary>Only called for a list with <see cref="TaskList.Tick"/>.</summary>
@@ -167,7 +168,16 @@ sealed class TaskSource
                           : Array.FindIndex(reads, r => r.Status == "signin") is >= 0 and var s ? s : reads.Length > 0 ? 0 : -1;
         var status = ok ? "ok" : why >= 0 ? reads[why].Status : "setup";
         var from = why >= 0 && status != "setup" ? _providers[why].Name : "";
-        Publish(new TasksState(status, lists, Sorted(tasks), from));
+        // Read, but a source that was set up needs signing in again (the Google sign-in was
+        // revoked, say): the deck says so above the others' tasks, which would hide it otherwise.
+        var signedOut = ok ? _providers.Where((_, i) => reads[i].Status == "signin").Select(p => p.Name).ToList() : [];
+        var warn = signedOut.Count switch
+        {
+            0 => "",
+            1 => signedOut[0],
+            _ => string.Join(", ", signedOut[..^1]) + " and " + signedOut[^1],
+        };
+        Publish(new TasksState(status, lists, Sorted(tasks), from, warn));
     }
 
     async Task<TaskRead> ReadOneAsync(ITaskProvider provider)
@@ -176,10 +186,11 @@ sealed class TaskSource
         {
             return await provider.ReadAsync();
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException or
-                                       System.Text.Json.JsonException)
+        catch (Exception e)
         {
-            Log.Write($"tasks: {provider.Id}: {e.Message}");
+            // Whatever went wrong in one source (a mistyped site in settings.json, a reply of
+            // an unexpected shape), the others are still read and shown.
+            Log.Write($"tasks: {provider.Id}: {e.GetType().Name}: {e.Message}");
             return new TaskRead("error", [], []);
         }
     }
@@ -223,10 +234,6 @@ sealed class TaskSource
         }
     }
 
-    // A source's own failures: a web API's, or a note that changed under it.
-    static bool CantChange(Exception e) =>
-        e is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException or InvalidOperationException;
-
     /// <summary>Ticks a task off (or back on), from the deck.</summary>
     public async Task SetDoneAsync(string source, string list, string id, bool done)
     {
@@ -250,7 +257,7 @@ sealed class TaskSource
             await provider.SetDoneAsync(list, id, done);
             Log.Write($"tasks: {(done ? "done" : "not done")}: {provider.Id} task");
         }
-        catch (Exception e) when (CantChange(e))
+        catch (Exception e)  // run from the deck and not awaited: anything left uncaught would leave its tick standing
         {
             Log.Write($"tasks: can't update a {provider.Id} task: {e.Message}");
             Toast?.Invoke(new Toast("error", $"Couldn't update the task in {provider.Name}"));
@@ -283,7 +290,7 @@ sealed class TaskSource
             Log.Write($"tasks: added a {provider.Id} task");
             Toast?.Invoke(new Toast("ok", name.Length > 0 ? $"Added to {name}" : "Task added"));
         }
-        catch (Exception e) when (CantChange(e))
+        catch (Exception e)  // run from the deck and not awaited
         {
             Log.Write($"tasks: can't add a {provider.Id} task: {e.Message}");
             Toast?.Invoke(new Toast("error", $"Couldn't add the task to {provider.Name}"));
@@ -294,7 +301,8 @@ sealed class TaskSource
 
     void Publish(TasksState state)
     {
-        var changed = state.Status != Current.Status || state.From != Current.From || !state.Lists.SequenceEqual(Current.Lists) ||
+        var changed = state.Status != Current.Status || state.From != Current.From || state.Warn != Current.Warn ||
+                      !state.Lists.SequenceEqual(Current.Lists) ||
                       !state.Tasks.SequenceEqual(Current.Tasks);
         Current = state;
         if (!changed) return;

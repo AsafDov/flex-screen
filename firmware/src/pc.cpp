@@ -495,6 +495,7 @@ void handleState(const char *topic, JsonObjectConst d) {
     model::Tasks &k = model::tasks;
     k.status = d["status"] | "";
     k.from = d["from"] | "";
+    k.warn = d["warn"] | "";
     k.list_count = 0;
     for (JsonObjectConst l : d["lists"].as<JsonArrayConst>()) {
       if (k.list_count == model::Tasks::kMaxLists) break;

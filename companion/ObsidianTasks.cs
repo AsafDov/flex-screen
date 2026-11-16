@@ -40,7 +40,11 @@ sealed class ObsidianTasks(ObsidianSource obsidian) : ITaskProvider, ITaskOpener
     static readonly (string Mark, string Name)[] Priorities =
         [("🔺", "Highest"), ("⏫", "High"), ("🔼", "Medium"), ("🔽", "Low"), ("⏬", "Lowest")];
 
-    string? _note;  // the daily note the tasks were read from, full path
+    string? _note;          // the daily note the tasks were read from last, full path
+    DateTime? _latestDay;   // its day, so the next look starts there
+    // Which note each task id was read from, today's and before: a task ticked in yesterday's
+    // note stays on the deck until midnight, and unticking it goes back to that note.
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _noteOf = new();
 
     public string Id => "obsidian";
     public string Name => "Obsidian";
@@ -50,10 +54,22 @@ sealed class ObsidianTasks(ObsidianSource obsidian) : ITaskProvider, ITaskOpener
     TaskRead Read()
     {
         if (!Settings.ObsidianTasks || obsidian.Root is not { } root) return new TaskRead("setup", [], []);
-        var note = ObsidianSource.LatestDailyNote(root);
+        var note = Latest(root)?.Path;
         _note = note;
         var list = new TaskList(Id, List, ListName);
-        return new TaskRead("ok", [list], note == null ? [] : Parse(note, ReadNote(note).Lines));
+        if (note == null) return new TaskRead("ok", [list], []);
+        var lines = ReadNote(note).Lines;
+        if (_noteOf.Count > 5000) _noteOf.Clear();
+        foreach (var f in TaskLines(lines)) _noteOf[f.Id] = note;
+        return new TaskRead("ok", [list], Parse(note, lines));
+    }
+
+    /// <summary>The latest daily note, looking back only as far as the one found last time while it's still there.</summary>
+    (string Path, DateTime Day)? Latest(string root)
+    {
+        var found = ObsidianSource.LatestDailyNote(root, _latestDay);
+        _latestDay = found?.Day;
+        return found;
     }
 
     /// <summary>One task line as read, with what it's known by.</summary>
@@ -173,17 +189,43 @@ sealed class ObsidianTasks(ObsidianSource obsidian) : ITaskProvider, ITaskOpener
         return (text.Replace("\r\n", "\n").Split('\n'), text.Contains("\r\n") ? "\r\n" : "\n", bom);
     }
 
-    static void WriteNote(string file, string[] lines, string newline, bool bom) =>
-        File.WriteAllText(file, string.Join(newline, lines), new UTF8Encoding(bom));
+    /// <summary>
+    /// Changes a note that Obsidian may have open. Obsidian saves a moment after each keystroke,
+    /// so this waits until the note has been still for <see cref="Quiet"/>, then reads, changes
+    /// and writes it straight away, and only if nothing wrote it in between (else it tries
+    /// again), so typing in Obsidian and a tap on the deck don't overwrite each other.
+    /// </summary>
+    static async Task ChangeNoteAsync(string file, Func<string[], string[]> change)
+    {
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            var still = DateTime.UtcNow - File.GetLastWriteTimeUtc(file);
+            if (still < Quiet)
+            {
+                await Task.Delay(Quiet - still);
+                continue;
+            }
+            var stamp = File.GetLastWriteTimeUtc(file);
+            var (lines, newline, bom) = ReadNote(file);
+            var text = string.Join(newline, change(lines));
+            if (File.GetLastWriteTimeUtc(file) != stamp) continue;
+            File.WriteAllText(file, text, new UTF8Encoding(bom));
+            return;
+        }
+        throw new IOException("the note kept changing");
+    }
+
+    static readonly TimeSpan Quiet = TimeSpan.FromSeconds(2.5);
 
     static bool TasksPluginOn(string root) =>
         ObsidianSource.ReadJson(Path.Combine(root, ".obsidian", "community-plugins.json")) is System.Text.Json.Nodes.JsonArray plugins &&
         plugins.Any(p => (string?)p == "obsidian-tasks-plugin");
 
-    public Task SetDoneAsync(string list, string id, bool done) => Task.Run(() =>
+    /// <summary>The note a task was read from: yesterday's for one ticked before today's note came, so it can still be unticked.</summary>
+    string NoteOf(string id) => _noteOf.TryGetValue(id, out var file) ? file : _note ?? throw new InvalidOperationException("no daily note");
+
+    public Task SetDoneAsync(string list, string id, bool done) => ChangeNoteAsync(NoteOf(id), lines =>
     {
-        var file = _note ?? throw new InvalidOperationException("no daily note");
-        var (lines, newline, bom) = ReadNote(file);
         var f = TaskLines(lines).FirstOrDefault(t => t.Id == id) ?? throw new InvalidOperationException("that task isn't in the note any more");
         var m = TaskLine.Match(lines[f.Index]);
         var rest = DoneDate.Replace(m.Groups["rest"].Value, "");
@@ -194,29 +236,31 @@ sealed class ObsidianTasks(ObsidianSource obsidian) : ITaskProvider, ITaskOpener
             rest = BlockId.Match(rest) is { Success: true } b ? rest[..b.Index] + stamp + b.Value : rest.TrimEnd() + stamp;
         }
         lines[f.Index] = m.Groups["lead"].Value + (done ? "x" : " ") + rest;
-        WriteNote(file, lines, newline, bom);
+        return lines;
     });
 
-    public Task<string> AddAsync(string list, string title, string due) => Task.Run(() =>
+    public async Task<string> AddAsync(string list, string title, string due)
     {
         var root = obsidian.Root ?? throw new InvalidOperationException("no Obsidian vault");
-        var file = ObsidianSource.LatestDailyNote(root) ?? ObsidianSource.CreateDailyNote(root, DateTime.Today);
-        var (lines, newline, bom) = ReadNote(file);
+        var file = Latest(root)?.Path ?? ObsidianSource.CreateDailyNote(root, DateTime.Today);
         var text = string.Join(" ", title.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)).Trim();
         var line = $"- [ ] {text}{(due.Length == 10 ? $" 📅 {due}" : "")}";
-        // After the last line with something on it; the note's own ending kept.
-        var end = lines.Length;
-        while (end > 0 && lines[end - 1].Trim().Length == 0) end--;
-        var kept = lines.Skip(end).ToList();
-        WriteNote(file, [.. lines.Take(end), line, .. kept.Count > 0 ? kept : [""]], newline, bom);
+        await ChangeNoteAsync(file, lines =>
+        {
+            // After the last line with something on it; the note's own ending kept.
+            var end = lines.Length;
+            while (end > 0 && lines[end - 1].Trim().Length == 0) end--;
+            var kept = lines.Skip(end).ToList();
+            return [.. lines.Take(end), line, .. kept.Count > 0 ? kept : [""]];
+        });
         _note = file;
         return ListName;
-    });
+    }
 
     /// <summary>Opens the task's note in Obsidian.</summary>
     public bool Open(TaskItem task)
     {
-        if (_note is not { } note) return false;
+        if ((_noteOf.TryGetValue(task.Id, out var file) ? file : _note) is not { } note) return false;
         obsidian.OpenFile(note);
         return true;
     }

@@ -297,6 +297,12 @@ def test_tasks(d: Deck) -> None:
     d.shot(os.path.join(OUT, 'tasks-signin.png'))
     d.state('tasks', {'rev': 10, 'status': 'setup', 'lists': [], 'tasks': [], 'open': 0})
     check('tasks: nothing connected, it says where to connect', on_screen(d, '"Task sources"'))
+    signed_out = fixtures.tasks()
+    signed_out.update(rev=11, warn='Google Tasks')
+    d.state('tasks', signed_out)
+    check('tasks: one source signed out, the others still show, with a word about it',
+          on_screen(d, 'Sign in to Google Tasks again') and on_screen(d, 'Send the signed lease'))
+    d.shot(os.path.join(OUT, 'tasks-warn.png'))
 
 
 def test_task_sources(d: Deck) -> None:
@@ -324,6 +330,17 @@ def test_task_sources(d: Deck) -> None:
     expect_act(d, 'sources: Open in Jira opens it on the PC', 'Open in Jira', 'task.link', exact=True,
                src='jira', list='assigned', id='ACME-142')
     check('sources: and closes the popup', not on_screen(d, 'Open in Jira', exact=True))
+
+    tap(d, 'Checkout fails on Safari')
+    d.state('task', {'src': 'jira', 'list': 'assigned', 'id': 'ACME-142', 'found': True,
+                     'title': 'Checkout fails on Safari 17 when the cart has more than twenty items and a discount code ' * 3,
+                     'notes': '\n'.join(f'Step {i}: something to check' for i in range(30)),
+                     'meta': 'Acme Web  ·  ACME-142  ·  High  ·  In Progress', 'link': 'Open in Jira'})
+    close = label(d, 'Close', exact=True)
+    check('sources: a long title and notes scroll, the buttons stay on the panel',
+          close is not None and close['y'] + close['h'] <= 450 and on_screen(d, 'Open in Jira', exact=True), str(close))
+    d.shot(os.path.join(OUT, 'tasks-long.png'))
+    tap(d, 'Close', exact=True)
 
     tap(d, 'Jira  2', exact=True)
     check('sources: Jira is a list of its own, undated issues too',
