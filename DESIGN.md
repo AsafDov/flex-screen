@@ -33,11 +33,13 @@ renders under 12px.
 ┌──────── ESP32-S3 board ────────┐   USB-C (native)    ┌──────────── Windows PC ─────────────┐
 │ LVGL UI: status bar + 6 pages  │ ◄─ CDC serial ────► │ Companion (C# / .NET 10, tray app)  │
 │ GT911 touch                    │    JSON lines       │  audio · media · windows · zones    │
-│ USB composite: CDC + HID       │ ── HID keys ──────► │  clipboard · git · Google · vault   │
-└────────────────────────────────┘    (numpad, media)  │  localhost HTTP/WebSocket  ◄──┐     │
+│ USB composite: CDC + HID       │ ── HID keys ──────► │  calendars · tasks · git · vault    │
+└────────────────────────────────┘    (numpad, media)  │  clipboard · profiles · sign-ins    │
+                                                       │  localhost HTTP/WebSocket  ◄──┐     │
                                                        └───────────────────────────────┼─────┘
              VS Code extension (TypeScript) ── workspace, terminal runs, tasks ────────┤
              Claude Code hooks ─────────────── working / needs you / done ─────────────┤
+             Browser extension (MV3) ───────── the active tab's address ───────────────┤
              PowerShell profile hook (opt.) ── Windows Terminal command results ───────┘
 ```
 
@@ -50,6 +52,16 @@ renders under 12px.
   terminal command (start, end, exit code, duration), and task results. It also runs
   commands the deck sends (saved buttons, replay last, Ctrl+C, focus Source Control).
 - **Claude Code hooks** post session state to the companion with `curl`.
+- **Browser extension** (`chrome-ext/`, optional) reports the active tab's address and
+  title over a WebSocket to `/browser`, so the context bar knows the site on any page.
+- **Settings are data, in layers**: the profile (`profiles\<name>.json`, which can live in
+  a synced folder) names the accounts, calendars, task lists, shortcuts, context bar keys
+  and sites; `machine.json` is this PC's (which profile, where the profiles are, the
+  Obsidian vault, and any profile setting it overrides); `Secrets` keeps the sign-ins,
+  tokens per site and private calendar links, DPAPI-encrypted for the Windows user. Calendar
+  and task sources are built from the profile's `accounts` at run time (`ICalendarProvider`,
+  `ITaskProvider`), and the browser's sites from `sites.json` plus the profile's `sites`, so
+  a new account, calendar or site needs no new firmware or release.
 
 ## Features
 
@@ -67,13 +79,13 @@ renders under 12px.
 | 10 | Build status | Status bar, Dev | VS Code ext | Task exit codes plus terminal runs of build commands; last 10 results |
 | 11 | FancyZones | Windows | Companion | Read PowerToys' FancyZones layouts from `%LOCALAPPDATA%`, compute each zone's rectangle per monitor, snap the window with `SetWindowPos`; switch layouts by writing `applied-layouts.json` and posting FancyZones' reload message |
 | 12 | Clipboard stack | Capture | Companion | Clipboard listener keeps the last 20 text clips plus pins; tap = paste. Skips clips that password managers mark as excluded from history |
-| 13 | Obsidian | Capture | Companion | Vault `DoorsOfStone`: today's note (`obsidian://` URI), Clipboard → Inbox (append to the file), recent notes (from `.obsidian/workspace.json`), quick capture |
-| 14 | Calendar | Status bar, Today | Companion | Every calendar source in the profile (one `ICalendarProvider` each: Google accounts through the Calendar API, Microsoft 365 through Graph, iCalendar links expanded by the companion), merged and filtered: next-meeting countdown, Up next with its Join button, and the whole day behind it (tap Up next) |
+| 13 | Obsidian | Capture | Companion | The vault Obsidian has open (or machine.json's `obsidianVault`): today's note (`obsidian://` URI), Clipboard → Inbox (append to the file), recent notes (from `.obsidian/workspace.json`), quick capture |
+| 14 | Calendar | Status bar, Today | Companion | Every calendar source in the profile (one `ICalendarProvider` each: Google accounts through the Calendar API, Microsoft 365 through Graph, iCalendar links expanded by the companion), merged and filtered: next-meeting countdown, Up next with its Join button, and the whole day behind it (tap Up next), each event in its calendar's color |
 | 15 | Tasks | Capture, Today | Companion | Open tasks from the task sources (Google Tasks, Microsoft To Do, the latest Obsidian daily note, Jira and GitHub issues; one `ITaskProvider` each): All tasks (every task of the lists chosen in the tray, where it opens), Scheduled (every dated task) or one of those lists, grouped by due day; tap = open (Open in its source), box = tick off (not Jira's or GitHub's issues), + = add one with the on-screen keyboard. Today has a count pill |
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
-| 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (its integration's, `companion/Integrations/<App>/`) (long press) and kept per app; settings.json's `contextBar` adds actions. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
-| 18 | Shortcuts launcher | Every page (tab bar) | Companion | Up to 12 tiles from settings.json: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
+| 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (its integration's, `companion/Integrations/<App>/`) (long press) and kept per app; the profile's `contextBar` adds actions. In a browser, a site's own keys (`sites.json` and the profile's `sites`), told by the tab's address (browser extension), an installed web app's name, or the title. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
+| 18 | Shortcuts launcher | Every page (tab bar) | Companion | Up to 12 tiles from the profile: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
 
 Extras on the canvas: **Lock PC** (`LockWorkStation`) and the **Headset** quick switch are
 easy. **Focus mode** and the **Claude usage meter** have no clean data source yet. They're
@@ -111,7 +123,7 @@ vscode-ext/  TypeScript VS Code extension
 chrome-ext/  the browser extension (Chrome, Edge): the active tab's address, for the context bar
 install/     install kit for another PC: build-dist.ps1, install/uninstall scripts
 dist/        build-dist.ps1's output (flex-screen.zip)
-docs/        user guides (google-setup.md: Calendar and Tasks; task-sources.md: the others; also in the install kit)
+docs/        user guides (google-setup.md: Calendar and Tasks; calendars.md: other calendars and filters; task-sources.md: the other task sources; also in the install kit)
 simulator/   the firmware UI on the PC (MSVC), with a Python driver, feature tests and screenshot tours
 qmk/         (phase 6) Corne keymap addition (layer report) for vial-qmk
 ```
@@ -1450,6 +1462,17 @@ Gotchas found after phase 6:
     panel reading a text file over HTTP and a machine.json panel running a command; the
     companion sent the pages with Panels, the deck restarted once into them, and the page
     showed both. Not checked: on the deck itself.
+- Pages and Panels taken out again, firmware 0.24.1 (2026-11-17): the user hadn't asked for
+  either, and didn't want another tab on the deck. The tab bar is the fixed six again
+  (`ui::Page` is the tab index, as before 0.24.0), the `settings` message has no `pages`,
+  and there's no `panels` topic, `panel.open` or `Panels.cs`. What step 4 also brought stays:
+  the `calendar` topic for a deck from 0.24.0 and the calendar colors in the day view. A
+  0.24.0 deck that saved a page order keeps it until it gets 0.24.1, which ignores it; a
+  0.24.1 companion sends no pages, so a 0.24.0 deck keeps the order it has.
+  - Checked: the simulator, 291 checks (the pages and panels ones gone; new: a `settings`
+    message with `pages`, as a 0.24.0 companion sends it, leaves the six tabs in their order,
+    no Panels tab and no restart); the harness's browser and calendar checks again; the
+    companion and the deck firmware build (for the ESP32 too). Not checked: on the deck.
 
 ## Decisions
 
@@ -1457,9 +1480,15 @@ Gotchas found after phase 6:
 - Terminal = the last few commands run, each tap-to-replay (saved command buttons were
   dropped on request: the build command changes all the time), run status with
   finish/fail alerts for long builds.
-- Calendar = Google Calendar. Tasks = Google Tasks, all of it (the mail-only "action
-  items" card was dropped on 2026-11-15: "not good enough"), plus Microsoft To Do, the
-  latest Obsidian daily note, and Jira and GitHub issues to look at and open (2026-11-15).
+- Calendar = Google Calendar at first; since 2026-11-17 any calendar sources the profile
+  names (Google accounts, Microsoft 365 or Outlook.com, iCalendar links), merged, with
+  filters. Tasks = Google Tasks, all of it (the mail-only "action items" card was dropped
+  on 2026-11-15: "not good enough"), plus Microsoft To Do, the latest Obsidian daily note,
+  and Jira and GitHub issues to look at and open (2026-11-15).
+- What differs per user or per PC is settings, not code (2026-11-17): profiles that can be
+  synced, `machine.json` per PC, sign-ins per PC. The deck keeps its six pages in a fixed
+  order: per-profile pages and a Panels page were built in 0.24.0 and taken out in 0.24.1
+  (not asked for; no extra tab wanted).
 - App integrations to become modules of their own (detection, context, actions, state
   per app: VS Code, Chrome, Edge, Explorer, Teams, Zoom, Discord, OBS…), as the task
   sources are; agreed 2026-11-15, to do once the Zoom work is in.

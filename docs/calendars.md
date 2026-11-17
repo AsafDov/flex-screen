@@ -32,7 +32,9 @@ Each source's submenu lists its calendars; ticked ones go on the deck.
   by a calendar's name or id.
 
 The day view names the calendar each event is from, unless it's an account's own main one;
-then the account's name (Work, Personal), if it has one.
+then the account's name (Work, Personal), if it has one. Each row also has its calendar's
+color down its left edge: Google's and Outlook's own, and for a calendar link the account's
+`"color"` in the profile (`"color": "#33B679"`), or none.
 
 ## Hiding events
 

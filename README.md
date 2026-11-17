@@ -1,16 +1,17 @@
 # flex-screen
 
 A 7" touch deck that sits next to the keyboard and runs the parts of the workday that live
-outside the editor: audio, meetings, Claude Code, builds, git, windows, clipboard, Obsidian
-and a numpad.
+outside the editor: audio, meetings and the day's calendar, tasks, Claude Code, builds, git,
+windows, clipboard, Obsidian, keys for the app (or site) in front, and a numpad.
 
 It's a Waveshare **ESP32-S3-Touch-LCD-7** (800×480, capacitive touch) on one USB-C cable,
 talking to a small Windows tray app. Six swipe pages sit under one status bar.
 
 ```
 ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app, C#)
-                                              ▲            ▲
-                         VS Code extension ───┘            └─── Claude Code hooks
+                                              ▲            ▲            ▲
+                         VS Code extension ───┘            │            └─── Browser extension (optional)
+                                                 Claude Code hooks
 ```
 
 - **Firmware** (`firmware/`, PlatformIO, Arduino-ESP32 + LVGL 9) draws the UI. The deck is
@@ -22,6 +23,15 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   active workspace.
 - **Claude Code hooks** tell the companion when a Claude session is working, needs you or
   is done.
+- **Browser extension** (`chrome-ext/`, Chrome and Edge, optional) tells the companion the
+  address of the tab in front, so the context bar knows the site on any page.
+
+What changes from person to person or PC to PC is settings, not code: a **profile** names
+the accounts (Google, Microsoft 365, calendar links, Jira, GitHub), which calendars and
+task lists go on the deck, the shortcuts, the context bar's keys and your own sites, and
+can be synced between PCs; each PC signs in for itself and keeps its own folders in
+`machine.json` (see [Profiles](#profiles)). A new calendar, account or site needs no new
+firmware or release.
 
 <img src="docs/screens/today.png" alt="The Today page: status bar, clock, now playing, up next, recent actions and the context bar" width="720">
 
@@ -184,40 +194,6 @@ as for `contextBar`:
 installed web app's name. The address is tried first, then the app, then the title, and
 the first site that matches wins (yours before the built-in ones).
 
-### Panels
-<img src="docs/screens/panels.png" alt="The Panels page: three lists with rows, a badge, links, one that failed and one being read" width="560">
-
-Lists of your own on a page of their own, without a new companion or firmware: pull
-requests to review, parcels on their way, a build's status, today's notes, anything a web
-address or a script can give. Up to 4, each with up to 12 rows; a row can have a second
-line, a badge, and an address a tap opens on the PC. The page is on the deck only when
-there are panels (before the Numpad, unless the profile's `pages` say otherwise).
-
-```jsonc
-"panels": [
-  { "id": "notes", "name": "Notes", "glyph": "pen", "url": "http://localhost:8000/notes.txt" },
-  { "id": "reviews", "name": "To review", "glyph": "branch", "url": "https://example.com/reviews.json", "every": 300 }
-]
-```
-
-- `url`: read every `every` seconds (5 minutes unless set, 30 at the least): JSON, or plain
-  text with a row per line.
-- `command`, instead of `url`: run on this PC (through `cmd`, from your user folder, 30 s
-  at most), its output read the same way. A command runs code, so it's only taken from this
-  PC's `machine.json`, never from a profile (which can come from a synced folder). Its
-  panels join the profile's.
-- What they give: a list of rows, or `{ "rows": [...], "note": "as of 10:00" }`; a row is a
-  line of text or `{ "text", "sub", "badge", "open": "https://…" }`. A panel that can't be
-  read says why and keeps its last rows.
-- `glyph`: an icon of the deck's font (the list is in `firmware/scripts/gen_font_icons.py`).
-
-### Pages
-The profile's `pages` says which pages the deck shows and in what order:
-`"pages": ["today", "capture", "dev", "windows", "panels"]` (from `today`, `audio`, `dev`,
-`windows`, `capture`, `numpad`, `panels`). Without it, the six as they've always been, and
-Panels when there are panels. The deck restarts into another order, as it does for other
-colors.
-
 ### Shortcuts (on every page)
 
 <img src="docs/screens/shortcuts.png" alt="The shortcuts launcher open over Today" width="560">
@@ -233,10 +209,12 @@ colors.
 ### Today
 - Big clock.
 - Now playing: album art, title, artist and app, play/pause, next/previous, volume.
-- Up next: the next calendar event with a **Join** button for Meet, Zoom or Teams links.
+- Up next: the next calendar event, from every calendar you put on the deck (see
+  [Calendars](#calendars)), with a **Join** button for Meet, Zoom or Teams links.
   Tap it for the whole day: today's events in order, those over dimmed above a line at
   the time now, the one going on picked out, **Join** on each with a meeting link, which
-  calendar each is from, today's all-day events along the top, and tomorrow's below.
+  calendar each is from, with that calendar's color down its edge, today's all-day events
+  along the top, and tomorrow's below.
   <img src="docs/screens/day.png" alt="The day view: today's events in order with the one going on picked out, and tomorrow's" width="560">
 - Recent: the last five things you did from the deck, as tiles: a window you brought up
   (with its app icon), a note opened, a command run, a meeting joined, Gmail, a Claude
@@ -383,8 +361,8 @@ colors.
 - Idle: a dim clock after 10 minutes without input on the deck or the PC, screen off
   after 30 (both adjustable). A locked PC shows the clock straight away.
 - Four color themes, Base, Vibrant, Ember (warm, orange) and Violet, from the tray menu.
-- One deck, several PCs: it shows whichever PC it's plugged into. Each PC's companion
-  keeps its own settings, Google sign-in, vault and clipboard.
+- One deck, several PCs: it shows whichever PC it's plugged into. The PCs can share a
+  profile (a synced folder), while each keeps its own sign-ins, vault and clipboard.
 
 ### Updates
 
@@ -448,7 +426,8 @@ to it: installed companions find it there. The kit's version is the firmware's
 (`firmware/src/pc.h`) unless you give another, for a release that only changes the PC
 side: `build-dist.ps1 -Version 0.21.1`. It has to match the tag, or the companion refuses
 the update. [install/README.txt](install/README.txt) covers the optional parts: Google
-Calendar and Tasks, Teams calls and per-PC settings.
+Calendar and Tasks, other calendars and task sources, the browser extension, Teams calls,
+and profiles and per-PC settings.
 
 ### Google Calendar and Tasks
 [docs/google-setup.md](docs/google-setup.md) walks through it: your own Google sign-in app
@@ -461,7 +440,8 @@ links** (an iCalendar address: a published Outlook calendar, Google's or iCloud'
 address, a school's or a team's). The tray icon's **Calendars** menu lists them, with each
 one's calendars to tick for the deck, and adds more. It also hides events: those you
 declined (on by default), all-day ones, those marked free, or those whose title has a word
-you give (Lunch, Focus time). [docs/calendars.md](docs/calendars.md) has the details.
+you give (Lunch, Focus time). On the deck, tap **Up next** for the whole day, each event
+in its calendar's color. [docs/calendars.md](docs/calendars.md) has the details.
 
 ### VS Code Remote-SSH
 Working on a Linux server from the deck's PC: the extension runs on the PC even in a
@@ -531,7 +511,7 @@ gives editors that read it (VS Code) completion and checks for everything here
     "google": { "type": "google", "label": "Personal", "calendars": { "hide": ["Birthdays"] } },
     "google-work": { "type": "google", "label": "Work", "client": "google-client-work.json", "tasks": false },
     "microsoft-work": { "type": "microsoft", "label": "Work", "clientId": "…", "tenant": "organizations" },
-    "ics-school": { "type": "ics", "label": "School" }        // its link is kept on each PC; a public one can be "url" here
+    "ics-school": { "type": "ics", "label": "School", "color": "#33B679" }  // its link is kept on each PC; a public one can be "url" here
   },
   "calendarFilter": { "hideTitles": ["Lunch", "/^Focus/"], "hideAllDay": false, "hideDeclined": true, "hideFree": false },
   "hiddenTaskLists": ["google/MTIzNDU2"],              // task lists left off the deck (the tray's Task lists on the deck)

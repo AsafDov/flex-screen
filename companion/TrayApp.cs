@@ -60,7 +60,6 @@ sealed class TrayApp : ApplicationContext
     readonly DeckQuestions _questions = new();
     readonly DeckTools _tools;
     readonly ClaudeUsage _usage = new();
-    readonly PanelSource _panels = new();
     volatile string _deckFirmware = "";  // the deck's, from its hello: what it understands
     readonly HashSet<string> _iconsSent = [];
     readonly object _artGate = new();
@@ -312,8 +311,6 @@ sealed class TrayApp : ApplicationContext
         _clipboard.Start();
         _obsidian.Start();
         _calendar.Start();
-        _panels.Changed += () => _link.Send(PanelsMessage());
-        _panels.Start();
         _tasks.Start();
         _calls.Start();
         _usage.Start();
@@ -390,7 +387,7 @@ sealed class TrayApp : ApplicationContext
             TermMessage(_dev.Term), BuildMessage(_dev.Build), RecentMessage(_dev.Recent), GitMessage(_git.Current),
             KeymapMessage(_keyboard.Map), KeyboardMessage(_keyboard.Current), ClipsMessage(_clipboard.Shown),
             ObsidianMessage(_obsidian.Current), CalendarMessage(_calendar.Current), TasksMessage(_tasks.Current, _tasks.Revision),
-            CallMessage(_calls.Current), UsageMessage(_usage), PanelsMessage(),
+            CallMessage(_calls.Current), UsageMessage(_usage),
         ];
         foreach (var message in messages)
         {
@@ -621,27 +618,6 @@ sealed class TrayApp : ApplicationContext
         return Message();
     }
 
-    /// <summary>
-    /// The Panels page: up to 4 panels with up to 12 rows each, a row's "link" saying a tap
-    /// opens something (its address stays here). Rows go from the fullest panel's end until
-    /// the line is under 7000 bytes.
-    /// </summary>
-    object PanelsMessage()
-    {
-        var list = _panels.Current.Take(PanelSource.MaxPanels).Select(p => new
-        {
-            id = p.Id, name = OneLine(p.Name, 30), glyph = p.Glyph, status = p.Status, note = OneLine(p.Note, 120),
-            rows = p.Rows.Take(PanelSource.MaxRows).Select(r => new { id = r.Id, text = r.Text, sub = r.Sub, badge = r.Badge, link = r.Open.Length > 0 }).ToList(),
-        }).ToList();
-        object Message() => new { t = "state", topic = "panels", d = new { list } };
-        while (System.Text.Json.JsonSerializer.Serialize(Message()).Length > 7000 && list.Any(p => p.rows.Count > 0))
-        {
-            var fullest = list.MaxBy(p => p.rows.Count)!;
-            fullest.rows.RemoveAt(fullest.rows.Count - 1);
-        }
-        return Message();
-    }
-
     void ToggleTaskList(string key)
     {
         var hidden = Settings.HiddenTaskLists.ToHashSet();
@@ -708,12 +684,7 @@ sealed class TrayApp : ApplicationContext
     {
         _settingsSent = Settings.Version;
         var (clock, off) = Settings.Idle;
-        _link.Send(new
-        {
-            t = "settings", palette = Settings.Palette, idle_clock_s = (int)(clock * 60), idle_off_s = (int)(off * 60),
-            cheat_hold_s = (int)Math.Round(Settings.CheatSheetSeconds),
-            pages = Settings.Pages(_panels.Configured),  // a deck from 0.24.0 restarts into another order
-        });
+        _link.Send(new { t = "settings", palette = Settings.Palette, idle_clock_s = (int)(clock * 60), idle_off_s = (int)(off * 60), cheat_hold_s = (int)Math.Round(Settings.CheatSheetSeconds) });
     }
 
     /// <summary>Whether the PC is locked and how long since its last keyboard or mouse input: the deck's idle screen.</summary>
@@ -1075,7 +1046,6 @@ sealed class TrayApp : ApplicationContext
             case "task.open": SendTaskDetail((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
             case "task.link": _tasks.Open((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
             case "cal.join": OpenUrl(_calendar.Find(id)?.Join ?? ""); break;
-            case "panel.open": _panels.Open((string?)message["panel"] ?? "", (string?)message["row"] ?? ""); break;
             case "mail.open": OpenUrl("https://mail.google.com/"); break;
             case "zone.snap": _zones.Snap((int?)message["mon"] ?? -1, (int?)message["zone"] ?? -1, (long?)message["hwnd"] ?? 0); break;
             case "zone.layout": _zones.SetLayout((int?)message["mon"] ?? -1, (string?)message["id"] ?? (string?)message["type"] ?? ""); break;

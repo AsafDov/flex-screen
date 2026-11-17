@@ -20,7 +20,6 @@
 #include "page_capture.h"
 #include "page_dev.h"
 #include "page_numpad.h"
-#include "page_panels.h"
 #include "page_today.h"
 #include "dayview.h"
 #include "page_windows.h"
@@ -67,12 +66,7 @@ uint32_t flashing_seen = 0;
 int flashing_percent = -1;
 
 lv_obj_t *tabview;
-// The profile's pages: which tab each page is (-1: not on the deck), and which page each tab.
-int tab_of[kPageCount];
-int page_at[kPageCount];
-int tab_count = 0;
-constexpr const char *kPageIds[kPageCount] = {"today", "audio", "dev", "windows", "capture", "numpad", "panels"};
-constexpr const char *kDefaultPages = "today,audio,dev,windows,capture,numpad";
+constexpr uint32_t kDevTab = kDevPage;
 constexpr uint32_t kToastMs = 4000;
 
 constexpr uint32_t kPreviewHoldMs = 800;
@@ -123,7 +117,7 @@ void onMic(lv_event_t *) {
   pc::toggleMic();
 }
 
-void onShowDev(lv_event_t *) { showPage(kDevPage); }
+void onShowDev(lv_event_t *) { lv_tabview_set_active(tabview, kDevTab, LV_ANIM_OFF); }
 
 // A swipe changes page at once: sliding redrew the whole page every frame, which this
 // panel can't do smoothly.
@@ -322,65 +316,6 @@ void styleTabs(lv_obj_t *tabview) {
     lv_obj_set_style_bg_color(t, hex(kSelected), LV_STATE_CHECKED);
     lv_obj_set_style_bg_opa(t, LV_OPA_COVER, LV_STATE_CHECKED);
   }
-}
-
-// The pages the profile wants, in its order (saved by pc's settings handler; the deck
-// restarts into a new order, as for a palette): unknown ids and repeats are left out, and
-// with none left it's the six pages as they always were. A page left off is still built,
-// out of sight, so its update needs no checks; the tab bar just doesn't have it.
-void buildPages(lv_obj_t *scr, lv_obj_t *tv) {
-  for (int p = 0; p < kPageCount; p++) tab_of[p] = -1;
-  Preferences prefs;
-  prefs.begin("deck", true);
-  String order = prefs.getString("pages", kDefaultPages);
-  prefs.end();
-  int wanted[kPageCount];
-  int n = 0;
-  for (int pass = 0; pass < 2 && n == 0; pass++) {
-    if (pass == 1) order = kDefaultPages;
-    int from = 0;
-    while (from <= int(order.length()) && n < kPageCount) {
-      int comma = order.indexOf(',', from);
-      if (comma < 0) comma = order.length();
-      String id = order.substring(from, comma);
-      id.trim();
-      for (int p = 0; p < kPageCount; p++) {
-        bool repeat = false;
-        for (int k = 0; k < n; k++) repeat |= wanted[k] == p;
-        if (!repeat && id == kPageIds[p]) wanted[n++] = p;
-      }
-      from = comma + 1;
-    }
-  }
-  static const char *const kLabels[kPageCount] = {
-      LV_SYMBOL_HOME "  Today", LV_SYMBOL_AUDIO "  Audio", LV_SYMBOL_EDIT "  Dev", LV_SYMBOL_LIST "  Windows",
-      LV_SYMBOL_COPY "  Capture", LV_SYMBOL_KEYBOARD "  Numpad", LV_SYMBOL_DIRECTORY "  Panels"};
-  lv_obj_t *page_obj[kPageCount];
-  for (int k = 0; k < n; k++) {
-    page_obj[wanted[k]] = lv_tabview_add_tab(tv, kLabels[wanted[k]]);
-    tab_of[wanted[k]] = k;
-    page_at[k] = wanted[k];
-  }
-  tab_count = n;
-  lv_obj_t *offstage = nullptr;  // the pages left off, built where nothing shows them
-  for (int p = 0; p < kPageCount; p++) {
-    if (tab_of[p] >= 0) continue;
-    if (!offstage) {
-      offstage = box(scr);
-      lv_obj_set_size(offstage, 800, 400);
-      lv_obj_add_flag(offstage, LV_OBJ_FLAG_FLOATING);  // out of the screen's column
-      lv_obj_set_hidden(offstage, true);
-    }
-    page_obj[p] = box(offstage);
-    lv_obj_set_size(page_obj[p], 800, 400);
-  }
-  today::build(page_obj[kTodayPage]);
-  audio::build(page_obj[kAudioPage]);
-  dev::build(page_obj[kDevPage]);
-  windows::build(page_obj[kWindowsPage]);
-  capture::build(page_obj[kCapturePage]);
-  numpad::build(page_obj[kNumpadPage]);
-  panels::build(page_obj[kPanelsPage]);
 }
 
 void updateClock() {
@@ -689,7 +624,12 @@ void begin() {
   lv_obj_set_gesture_bubble(content, false);
   lv_obj_add_event_cb(content, onSwipe, LV_EVENT_GESTURE, nullptr);
 
-  buildPages(scr, tv);
+  today::build(lv_tabview_add_tab(tv, LV_SYMBOL_HOME "  Today"));
+  audio::build(lv_tabview_add_tab(tv, LV_SYMBOL_AUDIO "  Audio"));
+  dev::build(lv_tabview_add_tab(tv, LV_SYMBOL_EDIT "  Dev"));
+  windows::build(lv_tabview_add_tab(tv, LV_SYMBOL_LIST "  Windows"));
+  capture::build(lv_tabview_add_tab(tv, LV_SYMBOL_COPY "  Capture"));
+  numpad::build(lv_tabview_add_tab(tv, LV_SYMBOL_KEYBOARD "  Numpad"));
   styleTabs(tv);
   ctxbar::build(scr, content);  // over the pages' bottom, above the tab bar
   call::build();
@@ -706,25 +646,9 @@ void begin() {
   update();
 }
 
-const char *pageId(int page) { return page >= 0 && page < kPageCount ? kPageIds[page] : ""; }
+void showPage(int index) { lv_tabview_set_active(tabview, index, LV_ANIM_OFF); }
 
-String pageOrder() {
-  String order;
-  for (int t = 0; t < tab_count; t++) {
-    if (t) order += ',';
-    order += kPageIds[page_at[t]];
-  }
-  return order;
-}
-
-void showPage(int page) {
-  if (page >= 0 && page < kPageCount && tab_of[page] >= 0) lv_tabview_set_active(tabview, tab_of[page], LV_ANIM_OFF);
-}
-
-int currentPage() {
-  const uint32_t tab = lv_tabview_get_tab_active(tabview);
-  return int(tab) < tab_count ? page_at[tab] : kTodayPage;
-}
+int currentPage() { return int(lv_tabview_get_tab_active(tabview)); }
 
 void previewVolume(int level) {
   preview_ms = millis();
@@ -752,7 +676,6 @@ void update() {
   windows::update();
   numpad::update();
   capture::update();  // with its Tasks card
-  panels::update();
   ctxbar::update();
   call::update();
   fitBar();  // after the call pill too: it sits among the others

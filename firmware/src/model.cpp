@@ -33,7 +33,6 @@ Obsidian obsidian;
 Google google;
 Tasks tasks;
 TaskDetail task_detail;
-Panels panels;
 uint32_t bench_requests = 0;
 Zones zones;
 Clock clock;

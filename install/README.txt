@@ -148,12 +148,6 @@ Context bar
   own, and so do the profile's own "sites" (the README shows how). An installed web app
   (Install as app) shows under its own name and gets its site's keys.
 
-Panels and pages (optional)
-  The profile's "panels" put lists of your own on a Panels page: from a web address (JSON,
-  or text with a row per line), or, in this PC's machine.json only, from a command whose
-  output is read the same way. The profile's "pages" pick which pages the deck shows and in
-  what order. The README shows both.
-
 Browser extension (optional)
   Without it, the bar tells a site by the tab's title. With it, by the tab's address, on
   every page. Once per browser: chrome://extensions (or edge://extensions), turn on
