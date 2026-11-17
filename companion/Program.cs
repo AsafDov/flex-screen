@@ -21,8 +21,9 @@ static class Program
             }
         }
 
-        // One companion per user: two would fight over the deck's serial port.
-        using var single = new Mutex(true, @"Local\flex-screen-companion", out var first);
+        // One companion per user: two would fight over the deck's serial port. One playing
+        // with the simulator (FLEX_SCREEN_DECK) doesn't touch the port, so it can run beside.
+        using var single = new Mutex(true, DeckLink.Simulator != null ? @"Local\flex-screen-companion-sim" : @"Local\flex-screen-companion", out var first);
         if (!first) return 0;
 
         ApplicationConfiguration.Initialize();

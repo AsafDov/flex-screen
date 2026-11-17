@@ -118,9 +118,11 @@ qmk/         (phase 6) Corne keymap addition (layer report) for vial-qmk
 ## Installing on another PC
 
 The deck needs nothing per PC. For the PC side, run `install\build-dist.ps1` here: it
-publishes the companion self-contained (one 56 MB exe, no .NET needed there), packages the
-VS Code extension and zips both with the scripts into `dist\flex-screen.zip`. On the
-other PC, unzip and double-click `install.cmd`, which (without admin rights):
+publishes the companion self-contained (one 56 MB exe, no .NET needed there) and stamped
+with the release's version, builds the deck firmware into `companion\firmware\` (with a
+`firmware.json` giving its version, size and SHA-256), packages the VS Code extension and
+zips it all with the scripts into `dist\flex-screen.zip`. On the other PC, unzip and
+double-click `install.cmd`, which (without admin rights):
 
 - copies the companion to `%LOCALAPPDATA%\Programs\flex-screen` and adds Startup and
   Start menu shortcuts,
@@ -130,8 +132,10 @@ other PC, unzip and double-click `install.cmd`, which (without admin rights):
   Claude extension in VS Code reads the same file as the CLI,
 - starts the companion.
 
-Running it again updates in place; `uninstall.cmd` reverses all of it. Firmware updates
-still go from this PC (`pio run -d firmware -t upload`).
+Running it again updates in place; `uninstall.cmd` reverses all of it. Since 0.21.0 the
+companion does both updates itself: it offers the deck the firmware from its kit, over
+the link, and installs newer kits from the GitHub releases (build phases, "Updates
+across PCs"). `pio run -d firmware -t upload` is for working on the firmware.
 
 ## Toolchain on this PC
 
@@ -1101,6 +1105,75 @@ Gotchas found after phase 6:
   - Found on the way and left as it was (this change keeps behaviour): a `contextBar`
     entry written as a plain list of keys (`"Chrome": [ … ]`, as the README shows) throws
     when the bar reads its color, so that app's bar can't be made.
+- Updates across PCs, firmware 0.21.0 (picked from the ideas list: "Self-update across
+  PCs"). The deck moves between PCs, each move risked a companion and firmware that don't
+  match, and flashing needed PlatformIO on that PC:
+  - The deck's firmware travels in the install kit (`firmware\deck.bin` next to the
+    companion, with `firmware.json`: version, size, SHA-256) and the companion sends it
+    over the link it already holds, with the protocol `ota_upload.py` has used since phase
+    1. No esptool, no ROM bootloader, no second program wanting the COM port: the
+    bootloader route is the one that wedged the chip's USB in phase 1, and it's only
+    needed for a deck that can't run flex-screen at all, which needs a person at the board
+    (BOOT + RESET) anyway. So esptool isn't bundled; the recovery steps point to
+    `-e deck-esptool` on a PC with PlatformIO. The app image is all an update writes:
+    bootloader and partition table stay as first flashed, so a change to either would
+    still need that route.
+  - Offered when the deck's `hello` names an older version than the kit's: a balloon from
+    the tray icon, a menu item, and a toast on the deck whose tap starts it. A deck with
+    newer firmware than the companion knows makes the companion look for a newer release.
+  - Never a half-written deck: the companion checks the image before sending (SHA-256 per
+    `firmware.json`, ESP32 image magic, the ESP32-S3 chip id, ESP-IDF's app description),
+    holds back every other message meanwhile (state pushed during flash writes could
+    overflow the deck's buffer), checks each ack's byte count, and sends the image's MD5,
+    which `Update.end()` checks along with the image's checksum and SHA-256 (read back from
+    flash) before it switches slots. Until then the old firmware is the boot slot, so any
+    failure on the way (an `ota_error`, a timeout, an unplug) changes nothing; the deck
+    gives up an update that goes quiet for 20 s.
+  - A new firmware that can't start: Arduino-ESP32's bootloader has app rollback on
+    (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`), but Arduino marks a new image good as soon as
+    it starts. 0.21.0 overrides `verifyRollbackLater()` and keeps itself only when the
+    companion's `sync` arrives (or after 10 minutes up), so a firmware that crashes, or
+    boots but can't talk over USB, is undone by the next restart or replug. This guards
+    updates *to* 0.21.0 and later; checked in the linked image (`verifyRollbackLater`
+    returns 1, from `main.cpp.o`), not yet by booting a bad image.
+  - The deck shows a progress screen from `ota` to the restart (the loop stalls while
+    flash is written, and a frozen page invites an unplug). 0.20.0 has none, so the
+    companion also sends a toast first.
+  - The companion: `build-dist.ps1` stamps it with the release's version (default the
+    firmware's; `-Version` for PC-only releases, as 0.16.1 was), and it compares that
+    with GitHub's latest release (the repo is public, so no sign-in; 60 checks an hour per
+    address, and it looks a minute after starting and every 6 hours). A newer release
+    with `flex-screen.zip` attached (it's attached by hand after publishing, so one
+    without it isn't offered yet) is offered the same way. On OK it downloads the zip,
+    checks its size and GitHub's SHA-256 digest, unpacks it, checks the kit's companion
+    says it's that version (else an update would offer itself forever), and starts a small
+    script that waits for the companion to quit and runs the kit's own `install.ps1`, so
+    the install is exactly install.cmd's. If that fails, the script starts a companion
+    again; a marker file tells the next companion how it went. A build from the repo
+    (`0.0.0-dev`) never looks.
+  - For testing: `FLEX_SCREEN_DECK=tcp:…` points the companion at the simulator, whose
+    OTA now works in memory; such a companion runs beside the real one (its own instance
+    lock, port 48152). `FLEX_SCREEN_UPDATE_FEED` points the update check at another URL;
+    `/test` takes `fw.update` and `update.check`.
+  - Checked: 15 new simulator checks (the progress screen and its version and percent,
+    taps held off, an out-of-order part, an update that stops coming given up after 20 s,
+    a non-image refused, a whole image taken and the restart). `build-dist.ps1` made a
+    73.5 MB kit with companion 0.21.0 and firmware 0.21.0. End to end on this PC, beside
+    the installed companion: a 0.20.9 companion talking to the simulator found a v0.21.0
+    release on a local stand-in for GitHub's API, asked (the dialog answered through UI
+    Automation), downloaded and checked the real kit, quit, and the kit's installer (a
+    stand-in that installs into a test folder instead of the real one) started 0.21.0,
+    which said "updated from 0.20.9 to 0.21.0" and cleared the download. That companion
+    then sent the real 1.35 MB image to the simulator in about 5 s; with its firmware
+    marked 0.21.1 it reported the deck coming back on 0.21.0 ("didn't start"), marked
+    0.21.0 it reported success, and with the simulator killed mid-update, "nothing
+    changed". The firmware builds; its rollback hook is the one linked.
+  - Not checked: an update on the real deck (it was on the other PC): the USB link's
+    speed, the progress screen on the panel, 0.20.0 taking the image with an MD5 it
+    ignores, and the rollback after a bad image. Nor the real `install.ps1` run by the
+    update (the test used a stand-in, so this PC's install stayed as it was), the tray
+    balloons and menu by hand, or the download from GitHub itself (the release has no
+    0.21.0 kit yet).
 
 ## Decisions
 

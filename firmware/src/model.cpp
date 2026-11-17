@@ -21,6 +21,7 @@ Usage usage;
 Picker picker;
 Git git;
 Toast toast;
+FirmwareUpdate firmware_update;
 Settings settings;
 Pc pc;
 Call call;

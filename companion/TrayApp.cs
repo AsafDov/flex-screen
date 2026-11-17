@@ -121,6 +121,7 @@ sealed class TrayApp : ApplicationContext
         // State goes out on the deck's hello, not when the port opens: a deck that just booted
         // isn't reading yet, and a burst (album art is ~87 KB of base64) would overflow its buffer.
         _link.Message += OnMessage;
+        SetUpUpdates(menu);
         _media.Changed += m =>
         {
             // Position updates arrive every few seconds; log only track and play/pause changes.
@@ -319,7 +320,7 @@ sealed class TrayApp : ApplicationContext
         _context.Refresh();
         if (DateTime.UtcNow - _timeSentAt > TimeResync) SendTime();
         var port = _link.PortName;
-        var text = port != null ? $"Deck connected on {port}" : "Deck not connected";
+        var text = _firmware.Status ?? _updates.Status ?? (port != null ? $"Deck connected on {port}" : "Deck not connected");
         _status.Text = text;
         _icon.Text = $"flex-screen: {text}";
     }
@@ -936,9 +937,11 @@ sealed class TrayApp : ApplicationContext
     }
 
     // Deck actions a test may trigger: none of them runs anything on the PC. The task ones
-    // change the user's own tasks, as the deck's Tasks card does (for checking it end to end).
+    // change the user's own tasks, as the deck's Tasks card does (for checking it end to end);
+    // fw.update updates the deck to the companion's own firmware; update.check only looks for
+    // a release and asks at the PC before anything is installed.
     static readonly HashSet<string> TestActions = ["win.focus", "win.close", "icon.need", "zone.snap", "zone.layout", "claude.approve", "claude.deny",
-                                                   "claude.answer", "claude.stop", "task.done", "task.add", "task.refresh", "task.open"];
+                                                   "claude.answer", "claude.stop", "task.done", "task.add", "task.refresh", "task.open", "fw.update", "update.check"];
 
     /// <summary>For testing without touching the deck: a deck action, or "bench" passed on to the deck.</summary>
     void OnTestMessage(JsonNode message)
@@ -1064,6 +1067,8 @@ sealed class TrayApp : ApplicationContext
                 _questions.Answer(id, (message["picks"] as JsonArray ?? []).Select(p => p is JsonValue v && v.TryGetValue(out int i) ? i : -1).ToArray());
                 break;
             case "desktop.show": KeyInput.Combo("Win+D"); break;
+            case "fw.update": _firmware.Start(); break;  // the deck's "firmware is ready" toast, tapped
+            case "update.check": _updates.LookNow(); break;
             default: Log.Write($"act: unknown action {action}"); break;
         }
         NoteRecent(action, message);
@@ -1376,6 +1381,37 @@ sealed class TrayApp : ApplicationContext
 
     static void OpenLog() =>
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Log.FilePath) { UseShellExecute = true });
+
+    // ---- updates: the deck's firmware from this companion, and the companion from GitHub
+
+    DeckFirmware _firmware = null!;
+    SelfUpdate _updates = null!;
+    SynchronizationContext _ui = null!;
+    Action? _balloonClick;
+
+    /// <summary>The tray's two update items and what they need; called once the menu and the icon exist.</summary>
+    void SetUpUpdates(ContextMenuStrip menu)
+    {
+        _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+        _icon.BalloonTipClicked += (_, _) => _balloonClick?.Invoke();
+        _firmware = new DeckFirmware(_link, SendToast, Notify);
+        _updates = new SelfUpdate(Notify, Quit, () => _firmware.Running);
+        _firmware.DeckIsNewer += _updates.LookSoon;
+        menu.Items.Insert(2, _firmware.MenuItem);  // under the status line, only while there's an update for the deck
+        menu.Items.Insert(menu.Items.Count - 1, _updates.MenuItem);  // above Quit
+        menu.Opening += (_, _) =>
+        {
+            _firmware.RefreshMenu();
+            _updates.RefreshMenu();
+        };
+    }
+
+    /// <summary>A notification from the tray icon; <paramref name="onClick"/> runs if it's clicked.</summary>
+    void Notify(string title, string text, ToolTipIcon icon, Action? onClick) => _ui.Post(_ =>
+    {
+        _balloonClick = onClick;
+        _icon.ShowBalloonTip(15000, title, text, icon);
+    }, null);
 
     void Quit()
     {

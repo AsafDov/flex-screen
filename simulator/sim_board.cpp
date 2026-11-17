@@ -10,5 +10,6 @@ esp_lcd_panel_handle_t panel() { return nullptr; }
 void backlight(bool on) { sim::setBacklight(on); }
 bool readTouch(int16_t &x, int16_t &y) { return sim::touch(x, y); }
 TouchInfo touchInfo() { return {}; }
+bool keepFirmware() { return false; }  // no app slots here: nothing is ever on trial
 
 }  // namespace board

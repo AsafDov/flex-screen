@@ -748,6 +748,19 @@ void handleImage(const JsonDocument &doc) {
   incoming.id = "";
 }
 
+// A firmware that came as an update starts out on trial (main.cpp's verifyRollbackLater):
+// it's kept once the companion (or the uploader) has talked to it, which proves the link
+// that the next update needs, or after 10 minutes up without one. Until then a restart,
+// a crash or an unplug takes the deck back to the firmware it had.
+constexpr uint32_t kKeepAnywayMs = 10 * 60 * 1000;
+bool firmware_kept = false;
+
+void keepFirmware(const char *why) {
+  if (firmware_kept) return;
+  firmware_kept = true;
+  if (board::keepFirmware()) log("firmware %s kept: %s", kFirmwareVersion, why);
+}
+
 void otaReply(const char *type, const char *key = nullptr, uint32_t value = 0) {
   JsonDocument doc;
   doc["t"] = type;
@@ -755,8 +768,20 @@ void otaReply(const char *type, const char *key = nullptr, uint32_t value = 0) {
   send(doc);
 }
 
+// When the last update message came: an update the companion stopped sending is given up.
+uint32_t ota_last_ms = 0;
+constexpr uint32_t kOtaGiveUpMs = 20000;
+
+void showUpdate(bool active, bool restarting = false) {
+  model::FirmwareUpdate &u = model::firmware_update;
+  u.active = active;
+  u.restarting = restarting;
+  u.version++;
+}
+
 void otaFail(const char *why) {
   Update.abort();
+  showUpdate(false);
   JsonDocument doc;
   doc["t"] = "ota_error";
   doc["msg"] = why;
@@ -772,11 +797,22 @@ void handleOta(const char *t, const JsonDocument &doc) {
   // Bytes received so far. Update.progress() can't stand in for it: it only moves when a
   // whole 4 KB flash sector has been written.
   static size_t received = 0;
+  ota_last_ms = millis();
   if (!strcmp(t, "ota")) {
     const size_t size = doc["size"] | 0;
     if (Update.isRunning()) Update.abort();
     received = 0;
     if (size == 0 || !Update.begin(size, U_FLASH)) return otaFail(Update.errorString());
+    // The companion (0.21.0 on) sends the image's MD5: Update.end() then checks every byte
+    // that came against it, on top of the image's own checksum and SHA-256.
+    const char *md5 = doc["md5"] | "";
+    if (*md5 && !Update.setMD5(md5)) return otaFail("bad md5");
+    model::FirmwareUpdate &u = model::firmware_update;
+    u.to = doc["version"] | "";
+    u.done = 0;
+    u.total = size;
+    ui::idle::wake();  // the progress shows on a lit screen
+    showUpdate(true);
     otaReply("ota_ready", "size", size);
   } else if (!strcmp(t, "ota_data")) {
     if (!Update.isRunning()) return otaFail("no update in progress");
@@ -790,9 +826,12 @@ void handleOta(const char *t, const JsonDocument &doc) {
     }
     if (Update.write(chunk, n) != n) return otaFail(Update.errorString());
     received += n;
+    model::firmware_update.done = received;
+    model::firmware_update.version++;
     otaReply("ota_ack", "off", received);
   } else if (!strcmp(t, "ota_end")) {
     if (!Update.end()) return otaFail(Update.errorString());  // verifies, sets the boot slot
+    showUpdate(true, true);
     otaReply("ota_done");
     cdc.flush();
     delay(300);
@@ -835,6 +874,7 @@ void handle(const JsonDocument &doc) {
     model::clock.synced_at_ms = millis();
   } else if (!strcmp(t, "sync")) {
     sendHello();
+    keepFirmware("the PC answered");
   } else if (!strcmp(t, "bench")) {
     model::bench_requests++;
   } else if (!strcmp(t, "page")) {
@@ -923,6 +963,11 @@ void poll() {
     log("receive buffer overflowed, %u bytes lost", unsigned(rx_dropped));
     rx_dropped = 0;
   }
+
+  // An update whose sender went away (unplugged, quit) is given up, so the screen comes back
+  // and the old firmware carries on.
+  if (Update.isRunning() && millis() - ota_last_ms > kOtaGiveUpMs) otaFail("the update stopped coming");
+  if (!firmware_kept && millis() > kKeepAnywayMs) keepFirmware("up for 10 minutes");
 
   uint8_t chunk[512];
   while (cdc.available()) {

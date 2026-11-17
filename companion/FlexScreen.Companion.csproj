@@ -12,6 +12,10 @@
     <RootNamespace>FlexScreen.Companion</RootNamespace>
     <!-- Window positions and zones in physical pixels on every monitor, whatever its scale. -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- install\build-dist.ps1 sets the release's version (-p:Version=0.21.0); the update
+         check (SelfUpdate.cs) compares it with GitHub's newest release. A build from the
+         repo is a development build and doesn't look for updates. -->
+    <Version>0.0.0-dev</Version>
   </PropertyGroup>
 
   <ItemGroup>

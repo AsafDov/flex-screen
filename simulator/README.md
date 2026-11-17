@@ -31,7 +31,16 @@ newline-delimited JSON, exactly as over USB (`protocol/v0.md`). If it says it ca
 reserved a port range that includes it (`netsh int ipv4 show excludedportrange
 protocol=tcp`): pick another, and set `FLEX_SIM_PORT` for the Python tools. Send `{"t":"sync"}` and it
 answers `hello`, like the deck. A palette change restarts it, as the deck restarts: the
-new process listens again, so reconnect. `--scale 2` doubles the window.
+new process listens again, so reconnect. So does a finished firmware update (`ota` …
+`ota_end`): the image is kept in memory, and the simulator restarts as the same build.
+`--scale 2` doubles the window.
+
+The companion can play its side too, with the PC's real state: start it with
+`FLEX_SCREEN_DECK=tcp:127.0.0.1:48160` in its environment and it connects here instead of
+looking for the deck's USB port (handy for its firmware update, through `/test`'s
+`fw.update`). It runs beside the installed companion, with its own single-instance lock
+and its endpoint one port up, `http://localhost:48152` (Claude Code's hooks stay with the
+real one).
 
 On top of the protocol it understands its own messages (never passed to the firmware, and
 not counted as the PC being there, so an offline screen stays offline):
@@ -72,8 +81,9 @@ they need nothing beyond the standard library.
 
 - `board.cpp`, `display.cpp`, `main.cpp` and the PSRAM allocator are replaced
   (`sim_board.cpp`, `sim_display.cpp`, `sim_main.cpp`); `shim/` stands in for the
-  Arduino core, USB, HID, Preferences, OTA (always fails), the ESP-IDF heap and mbedTLS's
-  base64. Preferences live in `build/sim-prefs.txt`.
+  Arduino core, USB, HID, Preferences, OTA (in memory: it checks the size and the
+  image's first byte, not the MD5), the ESP-IDF heap and mbedTLS's base64. Preferences
+  live in `build/sim-prefs.txt`. There are no app slots, so a firmware is never on trial.
 - The process runs in UTC, as the deck's C library does (the companion's `time` carries
   the offset): in the PC's zone, `mktime()` shifted due dates by a day.
 - LVGL's object, style and allocation checks are on (`lv_conf.h`): a misuse stops it with

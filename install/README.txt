@@ -26,6 +26,21 @@ After installing
   - Claude sessions started after the install report to the deck; restart running ones.
   - The Dev page lists the last commands run in VS Code's terminal; tap one to run it again.
 
+Updates
+  The deck's firmware: this kit carries it. When the deck runs older firmware (it was
+  last updated on another PC, say), the tray icon says so and the deck shows "Firmware
+  0.21.0 is ready - tap to update". Tap it, or tray icon > "Update the deck's firmware".
+  It goes over the same USB cable in about half a minute, with the progress on the deck;
+  keep it plugged in meanwhile. If the update stops on the way, nothing changes on the
+  deck. If the new firmware can't start, unplug the deck and plug it back in: it goes back
+  to the firmware it had.
+  The companion: it looks for a newer flex-screen release on GitHub a minute after it
+  starts and every 6 hours after (tray icon > "Check for updates" looks now). When there
+  is one, the tray icon says so; "Update flex-screen to ..." downloads the release's kit,
+  checks it, and installs it as install.cmd does. The companion restarts by itself a
+  minute later and then offers the deck its new firmware. Reload VS Code windows for the
+  new extension.
+
 Google Calendar and Tasks (optional, once)
   google-setup.md in this folder is the full guide, with screens to look for and
   troubleshooting. In short:

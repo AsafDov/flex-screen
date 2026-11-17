@@ -288,6 +288,16 @@ struct Toast {
   uint32_t version = 0;
 };
 
+// A firmware update coming over the link (pc.cpp's handleOta). The loop stalls while flash
+// is written, so the deck shows how far it is, over everything, until it restarts.
+struct FirmwareUpdate {
+  bool active = false;      // from "ota" until the restart, or until it gives up
+  bool restarting = false;  // the image is in and checked
+  String to;                // the version coming, when the companion says ("0.21.0")
+  uint32_t done = 0, total = 0;  // bytes
+  uint32_t version = 0;
+};
+
 // From the companion's settings.json.
 struct Settings {
   uint32_t clock_after_s = 10 * 60;  // idle this long: the clock screen (0: never)
@@ -548,6 +558,7 @@ extern Usage usage;
 extern Picker picker;
 extern Git git;
 extern Toast toast;
+extern FirmwareUpdate firmware_update;
 extern Settings settings;
 extern Pc pc;
 extern Call call;

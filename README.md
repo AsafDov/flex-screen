@@ -297,21 +297,48 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Idle: a dim clock after 10 minutes without input on the deck or the PC, screen off
   after 30 (both adjustable). A locked PC shows the clock straight away.
 - Four color themes, Base, Vibrant, Ember (warm, orange) and Violet, from the tray menu.
-- Firmware updates over the same USB cable (`pio run -t upload`).
 - One deck, several PCs: it shows whichever PC it's plugged into. Each PC's companion
   keeps its own settings, Google sign-in, vault and clipboard.
+
+### Updates
+
+<img src="docs/screens/firmware-update.png" alt="The deck updating its firmware: Firmware 0.21.0, 66%, keep it plugged in" width="560">
+
+- **The deck's firmware comes with the companion.** When the deck runs an older one (it
+  was last updated on another PC, say), the tray icon says so and the deck shows
+  "Firmware 0.21.0 is ready · tap to update". Tap it, or pick **Update the deck's
+  firmware** in the tray menu. It goes over the same USB cable in about half a minute,
+  with the progress on the deck. No PlatformIO needed, so any PC with the companion can
+  do it.
+- Nothing changes on the deck until the whole image has arrived and checked out (its MD5,
+  checksum and SHA-256); an update that stops on the way (unplugged, the PC asleep) leaves
+  the deck on the firmware it had. A new firmware also stays on trial until it has heard
+  from the PC: one that can't start, or can't reach the PC, is undone by the next restart
+  (unplug the deck and plug it back in). If the deck doesn't come back at all, the tray
+  says how to flash it through its bootloader (see [Firmware](#firmware)).
+- **The companion updates itself** from this repo's GitHub releases. It looks a minute
+  after it starts and every 6 hours (**Check for updates** in the tray menu looks now).
+  When there's a newer release, **Update flex-screen to 0.21.0** downloads the release's
+  `flex-screen.zip`, checks it against the SHA-256 GitHub gives for it, and installs it as
+  `install.cmd` does (the companion, the VS Code extension and the hooks). The companion
+  restarts by itself, says it's updated, and then offers the deck its new firmware.
+- The deck running newer firmware than the companion knows (it came from a PC with a newer
+  kit) makes the companion look for an update straight away.
 
 ## Setup
 
 ### Firmware
-Needs PlatformIO (run it from PowerShell, not Git Bash). From the repo root:
+Once the companion is installed, it keeps the deck's firmware up to date by itself (see
+[Updates](#updates)). Building and flashing it yourself needs PlatformIO (run it from
+PowerShell, not Git Bash). From the repo root:
 
 ```powershell
 pio run -d firmware -t upload
 ```
 
 This updates a deck that already runs flex-screen over its own USB link. For the very
-first flash, use the UART port and the ROM bootloader (hold BOOT, tap RESET):
+first flash, or a deck that doesn't start or connect any more, use the UART port and the
+ROM bootloader (hold BOOT, tap RESET, let go of BOOT; tap RESET again after flashing):
 
 ```powershell
 pio run -d firmware -e deck-esptool -t upload
@@ -328,7 +355,13 @@ powershell -ExecutionPolicy Bypass -File install\build-dist.ps1
 
 Unzip `dist\flex-screen.zip` on the PC and run `install.cmd`. It installs the companion
 (started at sign-in), the VS Code extension and the Claude Code hooks; `uninstall.cmd`
-removes them. [install/README.txt](install/README.txt) covers the optional parts: Google
+removes them. The kit also carries the deck's firmware (it builds it with PlatformIO).
+
+For a release, tag it `v` plus the version (`v0.21.0`) and attach `dist\flex-screen.zip`
+to it: installed companions find it there. The kit's version is the firmware's
+(`firmware/src/pc.h`) unless you give another, for a release that only changes the PC
+side: `build-dist.ps1 -Version 0.21.1`. It has to match the tag, or the companion refuses
+the update. [install/README.txt](install/README.txt) covers the optional parts: Google
 Calendar and Tasks, Teams calls and per-PC settings.
 
 ### Google Calendar and Tasks

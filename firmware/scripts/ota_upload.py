@@ -6,6 +6,7 @@ The running firmware writes the image into its spare app slot and restarts into 
 this never touches the chip's ROM bootloader. PlatformIO runs it for `pio run -t upload`.
 """
 import base64
+import hashlib
 import json
 import sys
 import time
@@ -78,7 +79,8 @@ def upload(path):
         hello = handshake(port)
         print(f"ota: deck on {name}, firmware {hello.get('fw')}; sending {len(data)} bytes")
 
-        send(port, {"t": "ota", "size": len(data)})
+        # Firmware 0.21.0 and later check every byte against the MD5; older ones ignore it.
+        send(port, {"t": "ota", "size": len(data), "md5": hashlib.md5(data).hexdigest()})
         msg = wait_for(port, {"ota_ready", "ota_error"}, 30)  # erasing the slot takes a moment
         if msg["t"] == "ota_error":
             sys.exit(f"ota: the deck refused: {msg.get('msg')}")

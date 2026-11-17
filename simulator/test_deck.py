@@ -7,6 +7,8 @@ worth a look land in out/tests/.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
 import sys
 import time
@@ -978,6 +980,82 @@ def test_offline(d: Deck) -> None:
     check('offline: back online', not on_screen(d, 'PC offline'))
 
 
+def ota_send(d: Deck, image: bytes, start: int = 0, end: int | None = None) -> int:
+    """Sends the image's 4 KB parts from `start` to `end`, each after the last one's ack, as
+    the companion does; returns where it stopped."""
+    end = len(image) if end is None else end
+    for off in range(start, end, 4096):
+        mark = d.mark()
+        part = image[off:off + 4096]
+        d.send({'t': 'ota_data', 'off': off, 'b64': base64.b64encode(part).decode()})
+        d.wait_for(lambda m: m.get('t') in ('ota_ack', 'ota_error'), since=mark)
+    return min(end, len(image))
+
+
+def ota_start(d: Deck, image: bytes, version: str = '0.21.0') -> dict:
+    mark = d.mark()
+    d.send({'t': 'ota', 'size': len(image), 'md5': hashlib.md5(image).hexdigest(), 'version': version})
+    return d.wait_for(lambda m: m.get('t') in ('ota_ready', 'ota_error'), since=mark)
+
+
+def test_firmware_update(d: Deck) -> None:
+    """Last: a finished update restarts the simulator, as the deck restarts into its new firmware."""
+    d.page(0)
+    image = b'\xe9' + bytes(3 * 4096 + 99)  # three full parts and a short one
+    check('firmware: the deck takes an update', ota_start(d, image).get('t') == 'ota_ready')
+    d.settle()
+    check('firmware: it says so over every page', on_screen(d, 'Updating the deck', exact=True))
+    check('firmware: with the version coming', on_screen(d, 'Firmware 0.21.0  ·  0%'))
+    check('firmware: and to keep it plugged in', on_screen(d, 'Keep it plugged in'))
+    mark = d.mark()
+    tap(d, PLAY, exact=True, below=180) or tap(d, PAUSE, exact=True, below=180) or d.tap(400, 300)
+    check('firmware: taps stop at the progress screen', did(d, mark, 'media.toggle', timeout=0.5) is None)
+    ota_send(d, image, 0, 2 * 4096)
+    d.settle()
+    check('firmware: progress moves', on_screen(d, 'Firmware 0.21.0  ·  66%'))
+    d.shot(os.path.join(OUT, 'firmware-update.png'))
+
+    mark = d.mark()
+    d.send({'t': 'ota_data', 'off': 0, 'b64': base64.b64encode(image[:4096]).decode()})
+    error = d.wait_for(lambda m: m.get('t') in ('ota_ack', 'ota_error'), since=mark)
+    check('firmware: a part out of order ends it', error.get('msg') == 'out-of-order chunk', str(error))
+    d.settle()
+    check('firmware: and the screen comes back', not on_screen(d, 'Updating the deck', exact=True))
+
+    mark = d.mark()
+    d.send({'t': 'ota', 'size': len(image)})  # older companions send no md5 or version
+    d.settle()
+    check('firmware: without a version it says new firmware', on_screen(d, 'New firmware  ·  0%'))
+    try:
+        error = d.wait_for(lambda m: m.get('t') == 'ota_error', since=mark, timeout=25)
+    except TimeoutError:
+        error = {}
+    check('firmware: an update that stops coming is given up', error.get('msg') == 'the update stopped coming', str(error))
+    d.settle()
+    check('firmware: and the screen comes back after that too', not on_screen(d, 'Updating the deck', exact=True))
+
+    mark = d.mark()
+    d.send({'t': 'ota', 'size': 8192})
+    d.wait_for(lambda m: m.get('t') in ('ota_ready', 'ota_error'), since=mark)
+    mark = d.mark()
+    d.send({'t': 'ota_data', 'off': 0, 'b64': base64.b64encode(b'\x00' * 4096).decode()})
+    error = d.wait_for(lambda m: m.get('t') in ('ota_ack', 'ota_error'), since=mark)
+    check('firmware: something not a firmware image is refused', error.get('t') == 'ota_error', str(error))
+
+    ota_start(d, image)
+    ota_send(d, image)
+    mark = d.mark()
+    d.send({'t': 'ota_end'})
+    done = d.wait_for(lambda m: m.get('t') in ('ota_done', 'ota_error'), since=mark)
+    check('firmware: a whole image is taken', done.get('t') == 'ota_done', str(done))
+    d.restarted = True
+    d.reconnect()
+    hello = d.sync()
+    check('firmware: the deck restarts and says hello', hello.get('reset') == 'software', str(hello))
+    d.settle()
+    check('firmware: with its screen back', not on_screen(d, 'Updating the deck', exact=True))
+
+
 def main() -> int:
     os.makedirs(OUT, exist_ok=True)
     with Deck.launch(log_path=os.path.join(OUT, 'sim.log')) as d:
@@ -985,13 +1063,13 @@ def main() -> int:
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
         for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_numpad,
-                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_idle, test_offline):
+                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)
             except Exception:
                 check(test.__name__, False, traceback.format_exc(limit=3))
-            if d.process.poll() is not None:
+            if not d.alive():  # a restart it was told to do (test_firmware_update) is fine
                 check('the simulator is still running', False, f'exit code {d.process.returncode}')
                 break
     failed = [r for r in results if not r[1]]

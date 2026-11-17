@@ -57,6 +57,13 @@ struct {
   lv_obj_t *root, *icon, *text;
 } toast;
 
+// A firmware update in progress, over everything.
+struct {
+  lv_obj_t *root, *title, *bar, *detail, *note;
+} flashing;
+uint32_t flashing_seen = 0;
+int flashing_percent = -1;
+
 lv_obj_t *tabview;
 constexpr uint32_t kDevTab = kDevPage;
 constexpr uint32_t kToastMs = 4000;
@@ -243,6 +250,48 @@ void buildToast() {
   toast.text = label(toast.root, "", &body_font, kText);
   lv_obj_set_height(toast.text, lv_font_get_line_height(&body_font));
   lv_obj_set_hidden(toast.root, true);
+}
+
+// The screen stalls while flash is written and the deck restarts at the end, so an update
+// covers everything (the idle clock too) and says what's going on. Taps stop here.
+void buildFlashing() {
+  flashing.root = box(lv_layer_top());
+  lv_obj_set_size(flashing.root, LV_PCT(100), LV_PCT(100));
+  lv_obj_set_style_bg_color(flashing.root, hex(kBg), 0);
+  lv_obj_set_style_bg_opa(flashing.root, LV_OPA_COVER, 0);
+  lv_obj_set_clickable(flashing.root, true);
+  flexCol(flashing.root, 14);
+  lv_obj_set_flex_align(flashing.root, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  label(flashing.root, LV_SYMBOL_DOWNLOAD, &lv_font_montserrat_28, kAccent);
+  flashing.title = label(flashing.root, "Updating the deck", &title_font, kText);
+  flashing.bar = lv_bar_create(flashing.root);
+  lv_obj_set_clickable(flashing.bar, false);
+  lv_obj_set_size(flashing.bar, 420, 10);
+  lv_obj_set_style_bg_color(flashing.bar, hex(kTrack), 0);
+  lv_obj_set_style_bg_opa(flashing.bar, LV_OPA_COVER, 0);  // the theme draws the track faint, too faint on the page background
+  lv_obj_set_style_bg_color(flashing.bar, hex(kAccent), LV_PART_INDICATOR);
+  lv_bar_set_range(flashing.bar, 0, 100);
+  flashing.detail = label(flashing.root, "", &body_font, kSoftText);
+  flashing.note = label(flashing.root, "Keep it plugged in. It restarts by itself when it's done.", &small_font, kMuted);
+  lv_obj_set_hidden(flashing.root, true);
+}
+
+void updateFlashing() {
+  const model::FirmwareUpdate &u = model::firmware_update;
+  if (u.version == flashing_seen) return;
+  flashing_seen = u.version;
+  setHidden(flashing.root, !u.active);
+  if (!u.active) {
+    flashing_percent = -1;
+    return;
+  }
+  const int percent = u.total ? int(uint64_t(u.done) * 100 / u.total) : 0;
+  if (percent == flashing_percent && !u.restarting) return;  // the text only moves a percent at a time
+  flashing_percent = percent;
+  lv_bar_set_value(flashing.bar, u.restarting ? 100 : percent, LV_ANIM_OFF);
+  if (u.restarting) setText(flashing.detail, "Done. Restarting…");
+  else if (u.to.length()) setTextf(flashing.detail, "Firmware %s  ·  %d%%", u.to.c_str(), percent);
+  else setTextf(flashing.detail, "New firmware  ·  %d%%", percent);
 }
 
 void styleTabs(lv_obj_t *tabview) {
@@ -590,6 +639,7 @@ void begin() {
   ask::build();
   buildToast();
   idle::build();
+  buildFlashing();  // last: over the idle clock too
 
   update();
 }
@@ -632,6 +682,7 @@ void update() {
   approval::update();
   ask::update();
   idle::update();
+  updateFlashing();
   if (model::bench_requests != bench_seen) {
     bench_seen = model::bench_requests;
     bench();

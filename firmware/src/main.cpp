@@ -11,6 +11,12 @@
 // bottom; on busy redraws that overflowed Arduino's default 8 KB loop stack.
 SET_LOOP_TASK_STACK_SIZE(32 * 1024);
 
+// A firmware that came as an update over the link stays on trial until the companion has
+// talked to it (pc.cpp's keepFirmware): if it crashes, or can't reach the PC and gets
+// unplugged, the next start goes back to the firmware the deck had (the bootloader's app
+// rollback). Without this, Arduino keeps any new firmware the moment it starts.
+extern "C" bool verifyRollbackLater() { return true; }
+
 namespace {
 bool screen_ok = false;
 }

@@ -14,6 +14,9 @@ sealed class LocalServer
 {
     public const int Port = 48151;
 
+    /// <summary>A companion playing with the simulator runs beside the real one, one port up.</summary>
+    static readonly int Listening = DeckLink.Simulator != null ? Port + 1 : Port;
+
     readonly HttpListener _listener = new();
 
     /// <summary>A Claude Code hook event (the JSON the hook received on stdin) and where the request came from.</summary>
@@ -51,17 +54,17 @@ sealed class LocalServer
     public void Start()
     {
         // "localhost" prefixes need no URL reservation, so this runs without admin rights.
-        _listener.Prefixes.Add($"http://localhost:{Port}/");
+        _listener.Prefixes.Add($"http://localhost:{Listening}/");
         try
         {
             _listener.Start();
         }
         catch (HttpListenerException e)
         {
-            Log.Write($"server: can't listen on {Port}: {e.Message}");
+            Log.Write($"server: can't listen on {Listening}: {e.Message}");
             return;
         }
-        Log.Write($"server: listening on localhost:{Port}");
+        Log.Write($"server: listening on localhost:{Listening}");
         _ = Task.Run(AcceptLoop);
     }
 
