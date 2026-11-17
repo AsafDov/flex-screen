@@ -83,21 +83,22 @@ sealed class MicrosoftCalendar(string id, JsonObject config) : ICalendarProvider
             var me = await GetAsync($"{Api}/me?$select=mail,userPrincipalName");
             Email = (string?)me?["mail"] ?? (string?)me?["userPrincipalName"] ?? "";
         }
-        var list = await GetAsync($"{Api}/me/calendars?$select=id,name,isDefaultCalendar&$top=100");
-        var calendars = new List<(CalendarInfo Info, bool Main)>();
+        var list = await GetAsync($"{Api}/me/calendars?$select=id,name,isDefaultCalendar,hexColor&$top=100");
+        var calendars = new List<(CalendarInfo Info, bool Main, int? Color)>();
         foreach (var c in list?["value"] as JsonArray ?? [])
         {
             if ((string?)c?["id"] is not { } cid) continue;
             var main = (bool?)c?["isDefaultCalendar"] == true;
             var name = (string?)c?["name"] ?? "Calendar";
-            calendars.Add((new CalendarInfo(cid, name, CalendarChoice.Shown(Config, cid, name, main), main), main));
+            calendars.Add((new CalendarInfo(cid, name, CalendarChoice.Shown(Config, cid, name, main), main), main, ContextBar.Color(c?["hexColor"])));
         }
         var span = $"startDateTime={Uri.EscapeDataString(from.UtcDateTime.ToString("o"))}&endDateTime={Uri.EscapeDataString(to.UtcDateTime.ToString("o"))}";
         var reads = await Task.WhenAll(calendars.Where(c => c.Info.Shown).Select(async c =>
         {
             var json = await GetAsync($"{Api}/me/calendars/{Uri.EscapeDataString(c.Info.Id)}/calendarView?{span}&$top=200" +
                                       "&$select=id,subject,start,end,isAllDay,isCancelled,showAs,responseStatus,onlineMeeting,onlineMeetingUrl,location,bodyPreview,iCalUId");
-            return (json?["value"] as JsonArray ?? []).Select(e => Event(e, c.Main ? Label : c.Info.Name)).OfType<CalendarEvent>().ToList();
+            return (json?["value"] as JsonArray ?? []).Select(e => Event(e, c.Main ? Label : c.Info.Name)).OfType<CalendarEvent>()
+                .Select(e => e with { Color = c.Color }).ToList();
         }));
         return new CalendarRead("ok", reads.SelectMany(r => r).ToList(), calendars.Select(c => c.Info).ToList());
     }

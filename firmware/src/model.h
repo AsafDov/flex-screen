@@ -478,6 +478,7 @@ struct Event {
   String id;
   String title;
   String cal;  // which calendar, when it's worth saying ("Work", "Family"), or ""
+  uint32_t color = 0;  // its calendar's color, 0xRRGGBB, or 0 for none
   int64_t start = 0, end = 0;  // UTC seconds
   bool all_day = false;
   bool join = false;  // has a Meet/Zoom/Teams link
@@ -548,6 +549,29 @@ struct TaskDetail {
   uint32_t version = 0;
 };
 
+// The Panels page: lists the companion fills from the profile's "panels" (a URL's JSON, or a
+// command on the PC), drawn the same way whatever they hold.
+struct PanelRow {
+  String id, text, sub, badge;
+  bool link = false;  // a tap opens it on the PC (panel.open)
+};
+
+struct Panel {
+  static constexpr int kMaxRows = 12;
+  String id, name, glyph;
+  String status;  // "ok", "error" (note says why), or "" before its first read
+  String note;
+  PanelRow rows[kMaxRows];
+  int row_count = 0;
+};
+
+struct Panels {
+  static constexpr int kMax = 4;
+  Panel list[kMax];
+  int count = 0;
+  uint32_t version = 0;
+};
+
 struct Clock {
   int64_t epoch = 0;  // UTC seconds at synced_at_ms; 0 before the first sync
   int32_t tz_offset_min = 0;
@@ -585,6 +609,7 @@ extern Obsidian obsidian;
 extern Google google;
 extern Tasks tasks;
 extern TaskDetail task_detail;
+extern Panels panels;
 extern uint32_t bench_requests;  // the companion asked to time a full redraw of every page
 extern Zones zones;
 extern Clock clock;

@@ -95,6 +95,43 @@ static class Settings
     /// <summary>Whether a Claude permission request waits for Approve or Deny on the deck (on unless set false).</summary>
     public static bool ApproveFromDeck => Get("approveFromDeck") is JsonValue v && v.TryGetValue(out bool on) ? on : true;
 
+    /// <summary>The deck's pages by id, in tab order: what the settings message sends.</summary>
+    public static readonly string[] PageIds = ["today", "audio", "dev", "windows", "capture", "numpad", "panels"];
+
+    /// <summary>
+    /// The pages on the deck, in order: the profile's "pages" (ids it doesn't know left out),
+    /// else the six as they've always been, with Panels before the Numpad when there are panels.
+    /// </summary>
+    public static IReadOnlyList<string> Pages(bool panels)
+    {
+        if (Get("pages") is JsonArray list)
+        {
+            var ids = list.Select(n => ((string?)(n as JsonValue) ?? "").Trim().ToLowerInvariant()).Where(PageIds.Contains).Distinct().ToList();
+            if (ids.Count > 0) return ids;
+        }
+        return panels ? ["today", "audio", "dev", "windows", "capture", "panels", "numpad"] : ["today", "audio", "dev", "windows", "capture", "numpad"];
+    }
+
+    /// <summary>A setting as the profile has it, whatever this PC's machine.json says.</summary>
+    public static JsonNode? FromProfile(string key)
+    {
+        lock (Gate)
+        {
+            Load();
+            return _profile[key];
+        }
+    }
+
+    /// <summary>A setting as this PC's machine.json has it (null when it hasn't), never the profile's.</summary>
+    public static JsonNode? FromMachine(string key)
+    {
+        lock (Gate)
+        {
+            Load();
+            return _machine[key];
+        }
+    }
+
     /// <summary>The profile's own sites with keys in a browser (see <see cref="WebSites"/>); null when it has none.</summary>
     public static JsonArray? Sites => Get("sites") as JsonArray;
 

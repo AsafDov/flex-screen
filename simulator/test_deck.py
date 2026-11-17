@@ -122,8 +122,9 @@ def test_day(d: Deck) -> None:
     d.page(0)
     now, hour, minute = fixtures.NOW, 3600, 60
     midnight = now - (now + fixtures.TZ_MIN * 60) % 86400  # today's, local
-    d.state('google', {'status': 'ok', 'events': [  # as the companion sends them: not over yet first
-        {'id': 'g1', 'title': 'Planning', 'start': now - 10 * minute, 'end': now + 20 * minute, 'allday': False, 'join': True, 'cal': 'Work'},
+    d.state('calendar', {'status': 'ok', 'events': [  # as the companion sends them to a deck from 0.24.0: not over yet first
+        {'id': 'g1', 'title': 'Planning', 'start': now - 10 * minute, 'end': now + 20 * minute, 'allday': False, 'join': True, 'cal': 'Work',
+         'color': 0x7986CB},
         {'id': 'e1', 'title': 'Standup', 'start': now + 18 * minute, 'end': now + 33 * minute, 'allday': False, 'join': True},
         {'id': 'e2', 'title': 'Design review with Dana', 'start': now + 3 * hour, 'end': now + 4 * hour, 'allday': False, 'join': False},
         {'id': 'a1', 'title': "Dana's birthday", 'start': midnight, 'end': midnight + 86400, 'allday': True, 'join': False, 'cal': 'Family'},
@@ -166,6 +167,69 @@ def test_day(d: Deck) -> None:
     tap(d, 'UP NEXT', exact=True)
     check('day: with no calendar, it says where to connect one', on_screen(d, '"Calendars"'))
     tap(d, 'Close', exact=True)
+
+
+PANELS = [
+    {'id': 'reviews', 'name': 'To review', 'glyph': 'branch', 'status': 'ok', 'note': '', 'rows': [
+        {'id': 'r1', 'text': 'Fix the login redirect', 'sub': 'acme/app #12', 'badge': '2d', 'link': True},
+        {'id': 'r2', 'text': 'Bump the SDK', 'sub': 'acme/sdk #4', 'badge': '', 'link': True}]},
+    {'id': 'parcels', 'name': 'Parcels', 'glyph': 'download', 'status': 'error', 'note': 'the command ended with 1: no such file',
+     'rows': [{'id': 'p1', 'text': 'Headphones', 'sub': 'At the pickup point', 'badge': '', 'link': False}]},
+    {'id': 'build', 'name': 'Build', 'glyph': '', 'status': '', 'note': '', 'rows': []},
+]
+
+
+def test_pages_and_panels(d: Deck) -> None:
+    def tab(name: str) -> dict | None:
+        return label(d, name, below=436)
+
+    check('pages: the six pages, as always', all(tab(n) for n in ('Today', 'Audio', 'Dev', 'Windows', 'Capture', 'Numpad'))
+          and not tab('Panels'))
+    hello = d.pages(['today', 'capture', 'panels', 'dev', 'nonsense', 'today'])
+    check('pages: a new order restarts the deck into it', hello.get('reset') == 'software', str(hello))
+    d.settings('base')
+    d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
+    order = [tab(n) for n in ('Today', 'Capture', 'Panels', 'Dev')]
+    check('pages: in the profile\'s order, unknown and repeated ones left out',
+          all(order) and [n['x'] for n in order] == sorted(n['x'] for n in order), str([(n or {}).get('x') for n in order]))
+    check('pages: the others aren\'t on the tab bar', not any(tab(n) for n in ('Audio', 'Windows', 'Numpad')))
+    d.send({'t': 'settings', 'palette': 'base', 'idle_clock_s': 600, 'idle_off_s': 1800, 'cheat_hold_s': 10,
+            'pages': ['today', 'capture', 'panels', 'dev']})
+    time.sleep(1.5)
+    try:
+        same = tab('Panels') is not None  # reading the screen needs the same connection: a restart would have closed it
+    except OSError:
+        same = False
+    check('pages: the same order again: no restart', same)
+
+    d.send({'t': 'page', 'i': 2})  # the companion's page message goes by page id: Dev
+    time.sleep(0.5)
+    check('pages: the companion\'s page message goes by page id', on_screen(d, 'npm run lint') and on_screen(d, 'TERMINAL'))
+    tap(d, 'Panels', below=436)
+    check('panels: none yet, it says where they come from', on_screen(d, 'No panels yet'))
+    d.state('panels', {'list': PANELS})
+    check('panels: each with its name, rows, second lines and badges',
+          all(on_screen(d, t, exact=True) for t in ('TO REVIEW', 'PARCELS', 'BUILD', 'acme/app #12', '2d', 'Headphones'))
+          and on_screen(d, 'Fix the login'))  # cut short with "…" on its card
+    check('panels: one that failed says why, and keeps its last rows', on_screen(d, 'the command ended with 1: no such file', exact=True))
+    check('panels: one not read yet says so', on_screen(d, 'Reading…', exact=True))
+    cards = [label(d, n, exact=True) for n in ('TO REVIEW', 'PARCELS', 'BUILD')]
+    check('panels: three side by side', all(cards) and len({c['y'] for c in cards}) == 1 and cards[0]['x'] < cards[1]['x'] < cards[2]['x'])
+    d.shot(os.path.join(OUT, 'panels.png'))
+    expect_act(d, 'panels: a row with a link opens it on the PC', 'Fix the login', 'panel.open', panel='reviews', row='r1')
+    mark = d.mark()
+    tap(d, 'Headphones')
+    check('panels: a row without one does nothing', did(d, mark, 'panel.open', timeout=0.5) is None)
+    four = PANELS + [{'id': 'ci', 'name': 'CI', 'glyph': 'play', 'status': 'ok', 'note': '', 'rows': [{'id': 'c1', 'text': 'main: passed', 'sub': '', 'badge': '', 'link': False}]}]
+    d.state('panels', {'list': four})
+    first, last = label(d, 'TO REVIEW', exact=True), label(d, 'CI', exact=True)
+    check('panels: four, two by two', first is not None and last is not None and last['y'] > first['y'] + 60 and last['x'] > first['x'],
+          str((first, last)))
+
+    hello = d.pages(['today', 'audio', 'dev', 'windows', 'capture', 'numpad'])
+    d.settings('base')
+    d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
+    check('pages: back to the six', all(tab(n) for n in ('Today', 'Audio', 'Dev', 'Windows', 'Capture', 'Numpad')) and not tab('Panels'))
 
 
 def test_today(d: Deck) -> None:
@@ -1217,11 +1281,12 @@ def test_firmware_update(d: Deck) -> None:
 
 def main() -> int:
     os.makedirs(OUT, exist_ok=True)
+    Deck.forget_pages()
     with Deck.launch(log_path=os.path.join(OUT, 'sim.log')) as d:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_day, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
+        for test in (test_today, test_day, test_pages_and_panels, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
                      test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day

@@ -193,6 +193,28 @@ class Deck:
     def settings(self, palette: str = 'base', clock_s: int = 600, off_s: int = 1800, cheat_s: int = 10) -> None:
         self.send({'t': 'settings', 'palette': palette, 'idle_clock_s': clock_s, 'idle_off_s': off_s, 'cheat_hold_s': cheat_s})
 
+    def pages(self, ids: list[str], palette: str = 'base') -> dict:
+        """The profile's pages, as the companion sends them: the deck saves them and restarts into
+        them (as for a palette). Reconnects, and returns the new hello."""
+        self.send({'t': 'settings', 'palette': palette, 'idle_clock_s': 600, 'idle_off_s': 1800, 'cheat_hold_s': 10, 'pages': ids})
+        self.restarted = True
+        time.sleep(1.0)
+        self.reconnect()
+        return self.sync()
+
+    @staticmethod
+    def forget_pages() -> None:
+        """Back to the six pages as they always were, before the simulator starts: a run that
+        stopped halfway through the pages test left its order saved."""
+        path = os.path.join(os.path.dirname(EXE), 'sim-prefs.txt')
+        try:
+            lines = open(path, encoding='utf-8').read().splitlines()
+        except OSError:
+            return
+        kept = [line for line in lines if not line.startswith('deck.pages=')]
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(line + '\n' for line in kept)
+
     def clock(self, epoch: int, tz_minutes: int = 120) -> None:
         self.send({'t': 'time', 'epoch': epoch, 'tz': tz_minutes})
 

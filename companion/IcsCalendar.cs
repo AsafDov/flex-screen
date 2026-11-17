@@ -51,6 +51,7 @@ sealed class IcsCalendar(string id, JsonObject config) : ICalendarProvider
             $"{id}/{o.Uid}/{o.Start.UtcDateTime:yyyyMMddTHHmm}", o.Title, o.Start, o.End, o.AllDay, MeetingLinks.Find(o.Text))
         {
             Calendar = Label,
+            Color = ContextBar.Color(Config["color"]),
             Uid = o.Uid,
             Free = o.Free,
         }).ToList();

@@ -285,6 +285,59 @@
           "keys"
         ]
       }
+    },
+    "pages": {
+      "description": "Which pages the deck shows, in tab order; without it the six as they've always been, and Panels when there are panels. The deck restarts into another order.",
+      "type": "array",
+      "items": {
+        "enum": [
+          "today",
+          "audio",
+          "dev",
+          "windows",
+          "capture",
+          "numpad",
+          "panels"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "panels": {
+      "description": "Lists of your own on the deck's Panels page, up to 4: read from a web address (JSON, or text with a row per line). A \"command\" instead runs on the PC, so it's only taken from this PC's machine.json, never from a profile.",
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "glyph": {
+            "type": "string",
+            "description": "An icon of the deck's font: branch, download, pen, bolt, play…"
+          },
+          "url": {
+            "type": "string",
+            "description": "http or https: a list of rows, or {\"rows\": [...], \"note\": \"…\"}; a row is text or {\"text\", \"sub\", \"badge\", \"open\"}."
+          },
+          "command": {
+            "type": "string",
+            "description": "machine.json only: run through cmd from your user folder (30 s at most); its output read as for url."
+          },
+          "every": {
+            "type": "number",
+            "minimum": 30,
+            "default": 300,
+            "description": "Seconds between reads."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
     }
   },
   "$defs": {

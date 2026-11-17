@@ -184,6 +184,40 @@ as for `contextBar`:
 installed web app's name. The address is tried first, then the app, then the title, and
 the first site that matches wins (yours before the built-in ones).
 
+### Panels
+<img src="docs/screens/panels.png" alt="The Panels page: three lists with rows, a badge, links, one that failed and one being read" width="560">
+
+Lists of your own on a page of their own, without a new companion or firmware: pull
+requests to review, parcels on their way, a build's status, today's notes, anything a web
+address or a script can give. Up to 4, each with up to 12 rows; a row can have a second
+line, a badge, and an address a tap opens on the PC. The page is on the deck only when
+there are panels (before the Numpad, unless the profile's `pages` say otherwise).
+
+```jsonc
+"panels": [
+  { "id": "notes", "name": "Notes", "glyph": "pen", "url": "http://localhost:8000/notes.txt" },
+  { "id": "reviews", "name": "To review", "glyph": "branch", "url": "https://example.com/reviews.json", "every": 300 }
+]
+```
+
+- `url`: read every `every` seconds (5 minutes unless set, 30 at the least): JSON, or plain
+  text with a row per line.
+- `command`, instead of `url`: run on this PC (through `cmd`, from your user folder, 30 s
+  at most), its output read the same way. A command runs code, so it's only taken from this
+  PC's `machine.json`, never from a profile (which can come from a synced folder). Its
+  panels join the profile's.
+- What they give: a list of rows, or `{ "rows": [...], "note": "as of 10:00" }`; a row is a
+  line of text or `{ "text", "sub", "badge", "open": "https://…" }`. A panel that can't be
+  read says why and keeps its last rows.
+- `glyph`: an icon of the deck's font (the list is in `firmware/scripts/gen_font_icons.py`).
+
+### Pages
+The profile's `pages` says which pages the deck shows and in what order:
+`"pages": ["today", "capture", "dev", "windows", "panels"]` (from `today`, `audio`, `dev`,
+`windows`, `capture`, `numpad`, `panels`). Without it, the six as they've always been, and
+Panels when there are panels. The deck restarts into another order, as it does for other
+colors.
+
 ### Shortcuts (on every page)
 
 <img src="docs/screens/shortcuts.png" alt="The shortcuts launcher open over Today" width="560">

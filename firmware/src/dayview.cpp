@@ -107,6 +107,13 @@ void row(int i, int64_t now, bool all_day) {
   lv_obj_set_style_pad_ver(r, 4, 0);
   lv_obj_set_style_pad_hor(r, 10, 0);
   lv_obj_set_style_radius(r, 12, 0);
+  if (e.color) {
+    // Its calendar's color, down the left edge (Google's and Outlook's own).
+    lv_obj_set_style_border_side(r, LV_BORDER_SIDE_LEFT, 0);
+    lv_obj_set_style_border_width(r, 4, 0);
+    lv_obj_set_style_border_color(r, hex(e.color), 0);
+    lv_obj_set_style_border_opa(r, over ? LV_OPA_40 : LV_OPA_COVER, 0);
+  }
   flexRow(r, 12);
 
   lv_obj_t *times = box(r);

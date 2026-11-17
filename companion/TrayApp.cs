@@ -60,6 +60,8 @@ sealed class TrayApp : ApplicationContext
     readonly DeckQuestions _questions = new();
     readonly DeckTools _tools;
     readonly ClaudeUsage _usage = new();
+    readonly PanelSource _panels = new();
+    volatile string _deckFirmware = "";  // the deck's, from its hello: what it understands
     readonly HashSet<string> _iconsSent = [];
     readonly object _artGate = new();
     readonly object _actionsGate = new();
@@ -310,6 +312,8 @@ sealed class TrayApp : ApplicationContext
         _clipboard.Start();
         _obsidian.Start();
         _calendar.Start();
+        _panels.Changed += () => _link.Send(PanelsMessage());
+        _panels.Start();
         _tasks.Start();
         _calls.Start();
         _usage.Start();
@@ -386,7 +390,7 @@ sealed class TrayApp : ApplicationContext
             TermMessage(_dev.Term), BuildMessage(_dev.Build), RecentMessage(_dev.Recent), GitMessage(_git.Current),
             KeymapMessage(_keyboard.Map), KeyboardMessage(_keyboard.Current), ClipsMessage(_clipboard.Shown),
             ObsidianMessage(_obsidian.Current), CalendarMessage(_calendar.Current), TasksMessage(_tasks.Current, _tasks.Revision),
-            CallMessage(_calls.Current), UsageMessage(_usage),
+            CallMessage(_calls.Current), UsageMessage(_usage), PanelsMessage(),
         ];
         foreach (var message in messages)
         {
@@ -591,11 +595,12 @@ sealed class TrayApp : ApplicationContext
     };
 
     /// <summary>
-    /// The calendar for the deck (its topic is still "google"): today's events from midnight and
-    /// tomorrow's, those not over yet first (a deck that keeps fewer keeps those), each with a
-    /// short id and its calendar's name; the ones over are dropped first to keep the line small.
+    /// The calendar for the deck: today's events from midnight and tomorrow's, those not over
+    /// yet first (a deck that keeps fewer keeps those), each with a short id, its calendar's
+    /// name and color; the ones over are dropped first to keep the line small. The topic is
+    /// "calendar" for a deck from 0.24.0, "google" (its first name) for one before.
     /// </summary>
-    static object CalendarMessage(CalendarState c)
+    object CalendarMessage(CalendarState c)
     {
         var now = DateTimeOffset.Now;
         var events = c.Events.Where(e => e.End > now).Concat(c.Events.Where(e => e.End <= now)).Select(e => new
@@ -607,10 +612,33 @@ sealed class TrayApp : ApplicationContext
             end = e.End.ToUnixTimeSeconds(),
             allday = e.AllDay,
             join = e.Join.Length > 0,
+            color = e.Color ?? 0,
         }).ToList();
-        object Message() => new { t = "state", topic = "google", d = new { status = c.Status, events } };
+        var topic = DeckFirmware.Compare(_deckFirmware, "0.24.0") >= 0 ? "calendar" : "google";
+        object Message() => new { t = "state", topic, d = new { status = c.Status, events } };
         // Hebrew goes as \uXXXX, six bytes a letter.
         while (events.Count > 0 && System.Text.Json.JsonSerializer.Serialize(Message()).Length > 7000) events.RemoveAt(events.Count - 1);
+        return Message();
+    }
+
+    /// <summary>
+    /// The Panels page: up to 4 panels with up to 12 rows each, a row's "link" saying a tap
+    /// opens something (its address stays here). Rows go from the fullest panel's end until
+    /// the line is under 7000 bytes.
+    /// </summary>
+    object PanelsMessage()
+    {
+        var list = _panels.Current.Take(PanelSource.MaxPanels).Select(p => new
+        {
+            id = p.Id, name = OneLine(p.Name, 30), glyph = p.Glyph, status = p.Status, note = OneLine(p.Note, 120),
+            rows = p.Rows.Take(PanelSource.MaxRows).Select(r => new { id = r.Id, text = r.Text, sub = r.Sub, badge = r.Badge, link = r.Open.Length > 0 }).ToList(),
+        }).ToList();
+        object Message() => new { t = "state", topic = "panels", d = new { list } };
+        while (System.Text.Json.JsonSerializer.Serialize(Message()).Length > 7000 && list.Any(p => p.rows.Count > 0))
+        {
+            var fullest = list.MaxBy(p => p.rows.Count)!;
+            fullest.rows.RemoveAt(fullest.rows.Count - 1);
+        }
         return Message();
     }
 
@@ -680,7 +708,12 @@ sealed class TrayApp : ApplicationContext
     {
         _settingsSent = Settings.Version;
         var (clock, off) = Settings.Idle;
-        _link.Send(new { t = "settings", palette = Settings.Palette, idle_clock_s = (int)(clock * 60), idle_off_s = (int)(off * 60), cheat_hold_s = (int)Math.Round(Settings.CheatSheetSeconds) });
+        _link.Send(new
+        {
+            t = "settings", palette = Settings.Palette, idle_clock_s = (int)(clock * 60), idle_off_s = (int)(off * 60),
+            cheat_hold_s = (int)Math.Round(Settings.CheatSheetSeconds),
+            pages = Settings.Pages(_panels.Configured),  // a deck from 0.24.0 restarts into another order
+        });
     }
 
     /// <summary>Whether the PC is locked and how long since its last keyboard or mouse input: the deck's idle screen.</summary>
@@ -908,6 +941,7 @@ sealed class TrayApp : ApplicationContext
         {
             case "hello":
                 Log.Write($"deck: hello {message.ToJsonString()}");
+                _deckFirmware = (string?)message["fw"] ?? "";
                 SendAll();
                 break;
             case "act":
@@ -1041,6 +1075,7 @@ sealed class TrayApp : ApplicationContext
             case "task.open": SendTaskDetail((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
             case "task.link": _tasks.Open((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
             case "cal.join": OpenUrl(_calendar.Find(id)?.Join ?? ""); break;
+            case "panel.open": _panels.Open((string?)message["panel"] ?? "", (string?)message["row"] ?? ""); break;
             case "mail.open": OpenUrl("https://mail.google.com/"); break;
             case "zone.snap": _zones.Snap((int?)message["mon"] ?? -1, (int?)message["zone"] ?? -1, (long?)message["hwnd"] ?? 0); break;
             case "zone.layout": _zones.SetLayout((int?)message["mon"] ?? -1, (string?)message["id"] ?? (string?)message["type"] ?? ""); break;

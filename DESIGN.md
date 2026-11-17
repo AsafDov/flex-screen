@@ -1417,6 +1417,39 @@ Gotchas found after phase 6:
     PC's Start menu lists its 5 installed web apps as `Chrome._crx_<id>` with their names
     (WhatsApp Web, Google Photos…), the ids the windows carry. Not checked: the extension
     loaded in a real Chrome, an installed web app's window in front, or the bar on the deck.
+- Pages per profile, Panels, and the calendar's own topic, firmware 0.24.0 (2026-11-17;
+  step 4 of the profiles plan, "the deck as a generic renderer", so a new kind of
+  information rarely needs firmware):
+  - Pages: the profile's `"pages"` (ids, in tab order) go in the `settings` message; the
+    deck keeps only ids it knows, each once (a stray one would never match what it builds
+    and restart it forever), saves them, and restarts into a new order as for a palette.
+    `ui::Page` stays the page's id; `tab_of`/`page_at` map ids to tabs, so `showPage`, the
+    companion's `page` message and the context bar's page for an app go by id, and a page
+    left off is a no-op. A page left off is still built, off screen, so its update needs
+    no checks. Without `"pages"`: the six as before, and Panels when there are panels.
+  - Panels (`page_panels.cpp`, `Panels.cs`): up to 4 lists of up to 12 rows (a line, a
+    second line, a badge, a link), one to three side by side, four two by two, rebuilt when
+    they change. The companion reads each every `every` seconds (300; 30 at the least):
+    a `url` (JSON rows, `{rows, note}`, or text with a row per line), or a `command` run
+    through cmd (30 s at most; its error's first line when it fails). A command runs code,
+    so it's only taken from this PC's machine.json (`Settings.FromMachine`), never from a
+    profile, which can come from a synced folder. A row's address stays with the companion;
+    the deck only knows it has one (`panel.open` opens it, http or https only).
+  - The calendar goes as `calendar` to a deck whose hello says 0.24.0 or later (`google`,
+    its first name, before); events carry their calendar's color (Google's backgroundColor,
+    Outlook's hexColor, a link's `"color"`), down the left edge of the day view's rows.
+  - Checked: 16 more checks in the harness against the companion (rows from JSON, objects,
+    plain text, the 12-row and length limits; a profile's command panel left out and this
+    PC's taken; a real command's output as rows, and one that fails with its exit code and
+    error; pages with and without panels, the profile's own, unknown ones; colors; which
+    topic for which deck); the simulator, 304 checks (new: pages in the profile's order and the others
+    off the bar, the same order again without a restart, the `page` message by id, the
+    Panels page with three and four panels, a failed one, one being read, a row's link and
+    one without, back to the six; the day view from the `calendar` topic); the firmware
+    builds for the ESP32 (flash 20.5%). End to end with the real simulator: a profile
+    panel reading a text file over HTTP and a machine.json panel running a command; the
+    companion sent the pages with Panels, the deck restarted once into them, and the page
+    showed both. Not checked: on the deck itself.
 
 ## Decisions
 

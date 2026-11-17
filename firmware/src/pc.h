@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.23.0";
+constexpr const char *kFirmwareVersion = "0.24.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -91,6 +91,8 @@ void openTask(const char *src, const char *list, const char *id);
 // Opens the task where it lives, on the PC (Jira's page, the note in Obsidian…).
 void openTaskLink(const char *src, const char *list, const char *id);
 void joinMeeting(const char *id);  // opens the event's Meet/Zoom/Teams link
+// Opens a panel's row where it points, on the PC.
+void openPanelRow(const char *panel, const char *row);
 
 // Characters, typed by the companion as Unicode (so "(" doesn't depend on the keyboard
 // layout); without it, as US-layout keys.

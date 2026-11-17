@@ -19,6 +19,9 @@ record CalendarEvent(string Id, string Title, DateTimeOffset Start, DateTimeOffs
 
     /// <summary>Marked free (Google's "available", Outlook's "free", iCalendar's TRANSPARENT).</summary>
     public bool Free { get; init; }
+
+    /// <summary>Its calendar's color, 0xRRGGBB (Google's and Outlook's own, a link's "color" in the profile), or null.</summary>
+    public int? Color { get; init; }
 }
 
 /// <param name="Status">"ok"; else why there's nothing: "setup" (no calendar, or one not set up), "signin", "error"; "" before the first read.</param>

@@ -251,26 +251,48 @@ void handleGit(JsonObjectConst d) {
   g.version++;
 }
 
-// Idle and cheat sheet timings take effect at once; a different palette is saved and the deck restarts
-// into it, since every page is built with the palette's colors.
+// Idle and cheat sheet timings take effect at once; a different palette or other pages are
+// saved and the deck restarts into them, since every page is built with the palette's
+// colors and the tab bar in the pages' order.
 void handleSettings(const JsonDocument &doc) {
   model::settings.clock_after_s = doc["idle_clock_s"] | model::settings.clock_after_s;
   model::settings.off_after_s = doc["idle_off_s"] | model::settings.off_after_s;
   model::settings.cheat_hold_s = doc["cheat_hold_s"] | model::settings.cheat_hold_s;
   const char *palette = doc["palette"] | "";
-  if (!palette[0]) return;
+  // "pages": the profile's, as ids; written as the deck keeps them ("today,dev,…"). A
+  // companion before pages sends none: the deck keeps what it has.
+  // Only ids the deck knows, each once: one it doesn't would never match what it builds,
+  // and restart it again and again.
+  String pages;
+  bool taken[ui::kPageCount] = {};
+  for (JsonVariantConst id : doc["pages"].as<JsonArrayConst>()) {
+    const char *name = id.as<const char *>();
+    for (int p = 0; name && p < ui::kPageCount; p++) {
+      if (taken[p] || strcmp(name, ui::pageId(p)) != 0) continue;
+      taken[p] = true;
+      if (pages.length()) pages += ',';
+      pages += name;
+    }
+  }
   Preferences prefs;
   prefs.begin("deck", false);
-  const String saved = prefs.getString("palette", "base");
-  if (saved != palette) {
+  bool restart = false;
+  if (palette[0] && prefs.getString("palette", "base") != palette) {
     prefs.putString("palette", palette);
-    prefs.end();
     log("palette %s: restarting", palette);
+    restart = true;
+  }
+  if (pages.length() && pages != ui::pageOrder()) {
+    prefs.putString("pages", pages);
+    log("pages %s: restarting", pages.c_str());
+    restart = true;
+  }
+  prefs.end();
+  if (restart) {
     cdc.flush();
     delay(200);
     ESP.restart();
   }
-  prefs.end();
 }
 
 void handleWindows(JsonObjectConst d) {
@@ -519,7 +541,7 @@ void handleState(const char *topic, JsonObjectConst d) {
       o.recent_count++;
     }
     o.version++;
-  } else if (!strcmp(topic, "google")) {
+  } else if (!strcmp(topic, "calendar") || !strcmp(topic, "google")) {  // its first name, still sent to older decks
     model::Google &g = model::google;
     g.status = d["status"] | "";
     g.event_count = 0;
@@ -529,12 +551,36 @@ void handleState(const char *topic, JsonObjectConst d) {
       ev.id = e["id"] | "";
       ev.title = e["title"] | "";
       ev.cal = e["cal"] | "";
+      ev.color = e["color"] | 0u;
       ev.start = e["start"] | int64_t(0);
       ev.end = e["end"] | int64_t(0);
       ev.all_day = e["allday"] | false;
       ev.join = e["join"] | false;
     }
     g.version++;
+  } else if (!strcmp(topic, "panels")) {
+    model::Panels &p = model::panels;
+    p.count = 0;
+    for (JsonObjectConst x : d["list"].as<JsonArrayConst>()) {
+      if (p.count == model::Panels::kMax) break;
+      model::Panel &panel = p.list[p.count++];
+      panel.id = x["id"] | "";
+      panel.name = x["name"] | "";
+      panel.glyph = x["glyph"] | "";
+      panel.status = x["status"] | "";
+      panel.note = x["note"] | "";
+      panel.row_count = 0;
+      for (JsonObjectConst r : x["rows"].as<JsonArrayConst>()) {
+        if (panel.row_count == model::Panel::kMaxRows) break;
+        model::PanelRow &row = panel.rows[panel.row_count++];
+        row.id = r["id"] | "";
+        row.text = r["text"] | "";
+        row.sub = r["sub"] | "";
+        row.badge = r["badge"] | "";
+        row.link = r["link"] | false;
+      }
+    }
+    p.version++;
   } else if (!strcmp(topic, "tasks")) {
     model::Tasks &k = model::tasks;
     k.status = d["status"] | "";
@@ -1204,6 +1250,15 @@ void openTask(const char *src, const char *list, const char *id) {
   doc["src"] = src;
   doc["list"] = list;
   doc["id"] = id;
+  send(doc);
+}
+
+void openPanelRow(const char *panel, const char *row) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "panel.open";
+  doc["panel"] = panel;
+  doc["row"] = row;
   send(doc);
 }
 
