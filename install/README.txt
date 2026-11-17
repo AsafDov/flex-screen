@@ -144,6 +144,16 @@ Context bar
   by exe name ("spotify") or the name the deck shows ("Spotify"), "*" for apps without a
   list of their own; they're the app's keys until you rearrange them on the deck. Keys are "keys", "action" (as for shortcuts) or
   "action": "close". "contextBar": false turns the bar off. The README lists the glyphs.
+  In Chrome and Edge, Gmail, YouTube, Google Calendar, Jira and GitHub have keys of their
+  own, and so do the profile's own "sites" (the README shows how). An installed web app
+  (Install as app) shows under its own name and gets its site's keys.
+
+Browser extension (optional)
+  Without it, the bar tells a site by the tab's title. With it, by the tab's address, on
+  every page. Once per browser: chrome://extensions (or edge://extensions), turn on
+  Developer mode, Load unpacked, and pick %LOCALAPPDATA%\Programs\flex-screen\chrome-ext
+  (install.cmd puts it there). It sends only the address and title of the tab in front,
+  to this PC's companion, never for an incognito tab.
 
 Profiles and settings (optional)
   Settings live in a profile: %LOCALAPPDATA%\flex-screen\profiles\<name>.json. Tray icon >

@@ -7,8 +7,8 @@ namespace FlexScreen.Companion;
 
 /// <summary>
 /// The companion's endpoint on this PC only (http://localhost:48151): Claude Code hooks
-/// POST their events to /claude, Claude Code calls the deck's tools on /mcp, and the VS Code
-/// extension keeps a WebSocket open on /vscode.
+/// POST their events to /claude, Claude Code calls the deck's tools on /mcp, the VS Code
+/// extension keeps a WebSocket open on /vscode, and the browser extension one on /browser.
 /// </summary>
 sealed class LocalServer
 {
@@ -50,6 +50,19 @@ sealed class LocalServer
     /// </summary>
     static bool FromLocalTool(HttpListenerRequest request, bool needsTestHeader) =>
         request.IsLocal && request.Headers["Origin"] == null && (!needsTestHeader || request.Headers["X-Flex-Screen-Test"] == "1");
+
+    /// <summary>
+    /// Not from a web page: a browser lets any page open a WebSocket to localhost, but says
+    /// which page with an http(s) Origin. The VS Code extension sends none (or not a web one).
+    /// </summary>
+    static bool NotFromWebPage(HttpListenerRequest request) =>
+        request.IsLocal && !(request.Headers["Origin"] is { } origin &&
+                             (origin.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || origin.StartsWith("https://", StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>From a browser extension: its Origin is chrome-extension://its-id (Chrome and Edge).</summary>
+    static bool FromBrowserExtension(HttpListenerRequest request) =>
+        request.IsLocal && request.Headers["Origin"] is { } origin &&
+        (origin.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase) || origin.StartsWith("extension://", StringComparison.OrdinalIgnoreCase));
 
     public void Start()
     {
@@ -207,9 +220,13 @@ sealed class LocalServer
                     await serve(context);
                     return;
 
-                case "/vscode" when request.IsWebSocketRequest:
+                case "/vscode" when request.IsWebSocketRequest && NotFromWebPage(request):
                     var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;
                     if (VsCodeConnected is { } connected) await connected(ws);
+                    return;
+
+                case "/browser" when request.IsWebSocketRequest && FromBrowserExtension(request):
+                    await BrowserTabs.Serve((await context.AcceptWebSocketAsync(null)).WebSocket);
                     return;
 
                 default:

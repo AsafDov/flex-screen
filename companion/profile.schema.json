@@ -219,6 +219,72 @@
         }
       },
       "additionalProperties": false
+    },
+    "sites": {
+      "description": "Your own sites with keys on the context bar in a browser; one with a built-in site's id replaces it (gmail, youtube, calendar, jira, github).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$",
+            "description": "The bar's key is \"chrome:<id>\": the deck keeps your arrangement by it."
+          },
+          "name": {
+            "type": "string",
+            "description": "The bar's name on the deck."
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#?[0-9A-Fa-f]{6}$"
+          },
+          "match": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Addresses without https://, host and path, * for anything: \"www.notion.so/*\". Needs the browser extension."
+              },
+              "title": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Tab titles, * for anything: \"* | Notion\"."
+              },
+              "app": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Installed web apps, by their name in the Start menu."
+              }
+            },
+            "additionalProperties": false
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/barKey"
+            }
+          },
+          "default": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The ids of the keys on the bar until it's arranged on the deck."
+          }
+        },
+        "required": [
+          "id",
+          "keys"
+        ]
+      }
     }
   },
   "$defs": {
@@ -292,6 +358,10 @@
         "glyph": {
           "type": "string",
           "description": "An icon of the deck's icon font: search, split-right, back, play… (firmware/scripts/gen_font_icons.py)."
+        },
+        "id": {
+          "type": "string",
+          "description": "Kept with the arrangement on the deck; else made from the name."
         }
       }
     },

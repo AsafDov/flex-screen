@@ -108,6 +108,7 @@ protocol/    message schema shared by every part
 firmware/    PlatformIO project (Arduino-ESP32 3.3, LVGL 9): screens, panel, touch, USB link
 companion/   C# / .NET 10 tray app; also installs the Claude Code hooks (--install-hooks)
 vscode-ext/  TypeScript VS Code extension
+chrome-ext/  the browser extension (Chrome, Edge): the active tab's address, for the context bar
 install/     install kit for another PC: build-dist.ps1, install/uninstall scripts
 dist/        build-dist.ps1's output (flex-screen.zip)
 docs/        user guides (google-setup.md: Calendar and Tasks; task-sources.md: the others; also in the install kit)
@@ -1376,6 +1377,46 @@ Gotchas found after phase 6:
     first, 1.25 KB. Not checked: a Microsoft 365 account signed in (no app registration on
     this PC), the Calendars menu by hand, or the day view on the deck itself (it's on the
     work PC).
+  - Released as v0.23.0, 2026-11-17.
+- Sites as data, installed web apps, and a browser extension, companion only (2026-11-17;
+  step 3 of the profiles plan: "context packs and a Chrome link"):
+  - A site's keys are data (`WebSite`, a "pack"): the built-in ones in
+    `Integrations/Browser/sites.json`, embedded in the exe (Gmail, YouTube and Google
+    Calendar as before, by the same ids and keys so saved bars still fit; new: Jira and
+    GitHub), and the profile's `"sites"`, first, replacing a built-in one by id. A site is
+    told by its address (host and path, `*` globs), then by an installed web app's name,
+    then by the tab's title. `ContextBar.Item` reads a key for both `contextBar` and sites.
+  - Installed web apps (Install as app): their windows carry an AppUserModelID with
+    `_crx_`; `WindowSource` names them as the Start menu does ("Gmail", its list read again
+    at most once a minute for one installed since), so the deck shows the app and the bar
+    takes it for it (by the site's `app` names, or the profile's `contextBar` by its name).
+  - The browser extension (`chrome-ext/`, Manifest V3, Chrome 116 on, and Edge): its service
+    worker keeps a WebSocket to `/browser` and sends the active tab's address and title
+    (not for incognito tabs or non-web pages) when another tab or window comes to the front
+    or the tab moves on, plus a ping every 20 s, which keeps it awake. `BrowserTabs` keeps
+    the last 30 by title, in memory, never logged; a browser window whose title starts with
+    a reported tab's title is on its address. A report refreshes the bar. The kit carries
+    the extension and install.ps1 copies it beside the companion, where Load unpacked
+    finds it once per browser; updates come with the companion's.
+  - `/browser` takes only a `chrome-extension://` (or `extension://`) Origin. `/vscode`, which
+    took any WebSocket, now refuses an `http(s)://` Origin, so a web page can't pose as a VS
+    Code window (the extension's Node WebSocket sends none). Both answer a close now; a
+    client waited for that answer forever.
+  - Found on the way: a `contextBar` entry written as a plain list threw when the bar asked
+    it for a color (it has none); YouTube's Mute and Spotify's Louder named a "volume"
+    glyph the deck's font doesn't have, so they had no icon (now headphones and plus).
+  - Checked: 28 checks in a throwaway harness built against the companion (its internals
+    open to "FlexScreen.Tests" only): the built-in sites as before, telling a site by title,
+    address, app, the address winning, a profile's site added, replacing one and left out
+    without an id, the extension's reports by browser and title, Chrome's bar by a reported
+    address and for an installed web app, a site's bank, keys as the settings write them;
+    and, against a running dev companion, an extension connecting to `/browser`, a web page
+    and an origin-less client refused there, a web page refused on `/vscode` and VS Code's
+    kind of client still let in. The extension's script under Node with a mocked browser:
+    10 checks (what it sends and when, what it never sends, the ping, reconnecting). This
+    PC's Start menu lists its 5 installed web apps as `Chrome._crx_<id>` with their names
+    (WhatsApp Web, Google Photos…), the ids the windows carry. Not checked: the extension
+    loaded in a real Chrome, an installed web app's window in front, or the bar on the deck.
 
 ## Decisions
 

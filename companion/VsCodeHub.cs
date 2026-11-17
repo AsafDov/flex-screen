@@ -84,6 +84,15 @@ sealed class VsCodeHub
             lock (_gate) _windows.Remove(window);
             Log.Write($"vscode: {(window.Name.Length > 0 ? window.Name : "a window")} disconnected");
             WindowsChanged?.Invoke();
+            try
+            {
+                // Its close answered, so the other side isn't left waiting for ours.
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                if (socket.State == WebSocketState.CloseReceived) await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", timeout.Token);
+            }
+            catch (Exception e) when (e is WebSocketException or OperationCanceledException)
+            {
+            }
         }
     }
 

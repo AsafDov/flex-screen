@@ -4,8 +4,11 @@ namespace FlexScreen.Companion;
 
 /// <summary>
 /// A web browser (Chrome, Edge): back, tabs, history, zoom…, and on a site with keys of its
-/// own (<see cref="WebSites"/>: Gmail, YouTube, Google Calendar, told by the tab's title)
-/// that site's keys, in its color, with the browser's after them.
+/// own (<see cref="WebSites"/>: Gmail, YouTube, Google Calendar, Jira, GitHub, and the
+/// profile's own sites) that site's keys, in its color, with the browser's after them. The site
+/// is told by the tab's address when the flex-screen extension reports it
+/// (<see cref="BrowserTabs"/>), by the installed web app a window is (its name, from its
+/// AppUserModelID), else by the tab's title.
 /// </summary>
 abstract class BrowserApp(string exe, int color) : IAppIntegration
 {
@@ -25,13 +28,21 @@ abstract class BrowserApp(string exe, int color) : IAppIntegration
     static readonly string[] Default = ["back", "reload", "prev-tab", "next-tab", "new-tab", "reopen", "find"];
 
     readonly AppBank _own = new("", color, Items, Default);
-    readonly Dictionary<string, AppBank> _sites = WebSites.All.ToDictionary(s => s.Id, s => s.Bank.Over(new AppBank("", color, Items, Default)));
 
     public IReadOnlyList<string> Exes { get; } = [exe];
 
-    public string Context(AppWindow window) => WebSites.Of(window.Title)?.Id ?? "";
+    /// <summary>
+    /// The site's id ("gmail"), or "". An installed web app is named on the deck by its own
+    /// name (WindowSource), so a window whose app isn't the browser's is one.
+    /// </summary>
+    public string Context(AppWindow window)
+    {
+        var webApp = window.App is "Chrome" or "Edge" ? "" : window.App;
+        return WebSites.Of(window.Title, BrowserTabs.UrlFor(exe, window.Title), webApp)?.Id ?? "";
+    }
 
-    public AppBank? Bank(string context) => context.Length == 0 ? _own : _sites.GetValueOrDefault(context);
+    public AppBank? Bank(string context) =>
+        context.Length == 0 ? _own : WebSites.Find(context)?.Bank.Over(_own);
 }
 
 sealed class ChromeApp() : BrowserApp("chrome", 0x34A853);

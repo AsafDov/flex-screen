@@ -267,6 +267,7 @@ sealed class TrayApp : ApplicationContext
         _server.ClaudeUsage += _usage.Report;
         _context.Changed += _ => SendContext();
         _windows.Polled += _context.OnPolled;
+        BrowserTabs.Changed += () => _context.Refresh();  // the tab in front went to another site
         _calls.Changed += _ => _context.Refresh();  // Teams' keys change during a meeting
         _google.Toast += SendToast;
         _windows.Changed += windows =>

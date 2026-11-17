@@ -59,6 +59,17 @@ if ($code) {
   Write-Warning "VS Code not found. Once it's installed, run: code --install-extension `"$here\flex-screen.vsix`""
 }
 
+Step 'Browser extension'
+# Chrome and Edge load an extension that isn't from their store from a folder, which has to
+# stay: next to the companion, updated with it.
+$ext = Join-Path $dir 'chrome-ext'
+New-Item -ItemType Directory -Force $ext | Out-Null
+Copy-Item (Join-Path $here 'chrome-ext\*') $ext -Recurse -Force
+Write-Host "Optional, once per browser: so the deck's bar knows the site in Chrome or Edge by its address,"
+Write-Host "open chrome://extensions (edge://extensions), turn on Developer mode, Load unpacked, and pick"
+Write-Host "  $ext"
+Write-Host 'Updates come with the companion; the browser picks them up when it restarts.'
+
 Step 'Claude Code hooks'
 if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
   Write-Warning 'curl.exe is missing (Windows 10 1803 and later include it); the hooks call it.'

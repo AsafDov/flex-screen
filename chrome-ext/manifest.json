@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "flex-screen",
+  "version": "0.1.0",
+  "description": "Tells the flex-screen companion on this PC which site the tab in front shows, so the deck's context bar has that site's keys. Nothing leaves the PC.",
+  "permissions": ["tabs"],
+  "background": { "service_worker": "background.js" },
+  "minimum_chrome_version": "116"
+}

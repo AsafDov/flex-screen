@@ -1,41 +1,104 @@
-using static FlexScreen.Companion.BarItem;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace FlexScreen.Companion;
 
-/// <summary>A site with keys of its own in a browser.</summary>
-/// <param name="Id">The browser's context for it: the bar's key is "chrome:gmail".</param>
-/// <param name="Match">By the tab's title.</param>
-record WebSite(string Id, Func<string, bool> Match, AppBank Bank);
+/// <summary>A site with keys of its own in a browser, as data (a "pack").</summary>
+/// <param name="Id">The browser's context for it: the bar's key is "chrome:gmail", which saved layouts go by.</param>
+/// <param name="Urls">Addresses it's at, as "host/path" with * for anything ("mail.google.com/*", "*.atlassian.net/browse/*"); known when the browser extension reports the tab.</param>
+/// <param name="Titles">Tab titles, with * for anything ("* - Gmail"): the window's title is all the companion knows without the extension.</param>
+/// <param name="Apps">Installed web apps (Chrome's or Edge's "Install as app") by their name ("Gmail").</param>
+record WebSite(string Id, IReadOnlyList<Regex> Urls, IReadOnlyList<Regex> Titles, IReadOnlyList<string> Apps, AppBank Bank);
 
-/// <summary>The sites a browser's bar has keys for.</summary>
+/// <summary>
+/// The sites a browser's bar has keys for: the built-in ones (Integrations/Browser/sites.json,
+/// in the exe: Gmail, YouTube, Google Calendar, Jira, GitHub) and the profile's own "sites",
+/// which come first and replace a built-in one with the same id:
+/// <code>
+/// "sites": [
+///   { "id": "notion", "name": "Notion", "color": "#FFFFFF",
+///     "match": { "url": ["www.notion.so/*"], "title": ["* | Notion"], "app": ["Notion"] },
+///     "keys": [ { "id": "notion-search", "name": "Search", "glyph": "search", "keys": "Ctrl+P" } ],
+///     "default": ["notion-search"] }
+/// ]
+/// </code>
+/// A key is written as for the profile's "contextBar" (<see cref="ContextBar.Item"/>).
+/// </summary>
 static class WebSites
 {
-    /// <summary>The first that matches wins. Gmail's keys need its keyboard shortcuts on (Gmail settings, off by default).</summary>
-    public static readonly WebSite[] All =
-    [
-        new("gmail", t => t.EndsWith(" - Gmail", StringComparison.Ordinal) || t.Contains("@gmail.com"), new("Gmail", 0xEA4335,
-        [
-            K("compose", "Compose", "edit", "c"), K("reply", "Reply", "reply", "r"), K("reply-all", "Reply all", "reply", "a"),
-            K("forward-mail", "Forward", "share", "f"), K("archive", "Archive", "download", "e"), K("delete", "Delete", "trash", "Shift+3"),
-            K("unread", "Mark unread", "eye", "Shift+U"), K("newer", "Newer", "up", "k"), K("older", "Older", "down", "j"),
-            K("search", "Search mail", "search", "slash"), K("snooze", "Snooze", "moon", "b"), K("inbox", "Inbox", "home", "g, i"),
-            K("send", "Send", "check", "Ctrl+Enter"),
-        ], ["compose", "reply", "archive", "delete", "newer", "older", "search"])),
-        new("youtube", t => t.EndsWith("- YouTube", StringComparison.Ordinal) || t == "YouTube", new("YouTube", 0xFF0033,
-        [
-            K("back10", "Back 10 s", "back", "j"), K("play", "Play/pause", "play", "k"), K("ahead10", "Ahead 10 s", "forward", "l"),
-            K("mute", "Mute", "volume", "m"), K("captions", "Captions", "comment", "c"), K("theater", "Theater", "window", "t"),
-            K("fullscreen-video", "Full screen", "expand", "f"), K("slower", "Slower", "minus", "Shift+comma"),
-            K("faster", "Faster", "plus", "Shift+period"), K("next-video", "Next video", "next-track", "Shift+N"),
-            K("miniplayer", "Mini player", "window", "i"),
-        ], ["back10", "play", "ahead10", "mute", "captions", "fullscreen-video"])),
-        new("calendar", t => t.Contains("Google Calendar", StringComparison.Ordinal), new("Calendar", 0x4285F4,
-        [
-            K("prev-period", "Previous", "prev", "k"), K("today", "Today", "calendar", "t"), K("next-period", "Next", "next", "j"),
-            K("day", "Day", "list", "d"), K("week", "Week", "split-right", "w"), K("month", "Month", "calendar", "m"),
-            K("new-event", "New event", "plus", "c"), K("search-cal", "Search", "search", "slash"), K("agenda", "Agenda", "line", "a"),
-        ], ["prev-period", "today", "next-period", "day", "week", "month", "new-event"])),
-    ];
+    static readonly Lazy<JsonArray> BuiltInJson = new(() =>
+    {
+        using var stream = typeof(WebSites).Assembly.GetManifestResourceStream("sites.json")
+                           ?? throw new InvalidOperationException("sites.json isn't in the companion");
+        return JsonNode.Parse(stream, documentOptions: new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip })!.AsArray();
+    });
 
-    public static WebSite? Of(string title) => All.FirstOrDefault(s => s.Match(title));
+    static readonly object Gate = new();
+    static string _seen = "\0";
+    static IReadOnlyList<WebSite> _all = [];
+
+    /// <summary>The profile's sites, then the built-in ones it doesn't replace; read again when the profile's change.</summary>
+    public static IReadOnlyList<WebSite> All
+    {
+        get
+        {
+            var mine = Settings.Sites;
+            var stamp = mine?.ToJsonString() ?? "";
+            lock (Gate)
+            {
+                if (stamp == _seen) return _all;
+                _seen = stamp;
+                var sites = new List<WebSite>();
+                foreach (var node in (mine ?? []).Concat(BuiltInJson.Value))
+                {
+                    if (node is JsonObject o && Parse(o) is { } site && sites.All(s => s.Id != site.Id)) sites.Add(site);
+                }
+                _all = sites;
+                return sites;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The site a browser window shows: by the tab's address when it's known (the extension
+    /// reports it), else by the installed web app it is, else by the tab's title. The first
+    /// site that matches wins, the profile's before the built-in ones.
+    /// </summary>
+    public static WebSite? Of(string title, string url, string app)
+    {
+        var sites = All;
+        var address = Address(url);
+        if (address.Length > 0 && sites.FirstOrDefault(s => s.Urls.Any(u => u.IsMatch(address))) is { } byUrl) return byUrl;
+        if (app.Length > 0 && sites.FirstOrDefault(s => s.Apps.Any(a => a.Equals(app, StringComparison.OrdinalIgnoreCase))) is { } byApp) return byApp;
+        return title.Length > 0 ? sites.FirstOrDefault(s => s.Titles.Any(t => t.IsMatch(title))) : null;
+    }
+
+    public static WebSite? Find(string id) => All.FirstOrDefault(s => s.Id == id);
+
+    /// <summary>"https://mail.google.com/mail/u/0/#inbox" → "mail.google.com/mail/u/0/"; "" for one that isn't a web address.</summary>
+    public static string Address(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" ? uri.Host.ToLowerInvariant() + uri.AbsolutePath : "";
+
+    /// <summary>A site as written, or null (and a line in the log) for one without an id or keys.</summary>
+    public static WebSite? Parse(JsonObject o)
+    {
+        var id = ((string?)o["id"] ?? "").Trim().ToLowerInvariant();
+        if (id.Length == 0 || !id.All(c => c is >= 'a' and <= 'z' or >= '0' and <= '9' or '-'))
+        {
+            Log.Write($"context: a site needs an \"id\" of letters, digits and \"-\": {(string?)o["name"] ?? "(no name)"}");
+            return null;
+        }
+        var keys = (o["keys"] as JsonArray ?? []).OfType<JsonObject>().Select(ContextBar.Item).OfType<BarItem>().DistinctBy(k => k.Id).ToArray();
+        if (keys.Length == 0) return null;
+        var defaults = (o["default"] as JsonArray ?? []).Select(n => (string?)n ?? "").Where(d => keys.Any(k => k.Id == d)).ToArray();
+        var match = o["match"] as JsonObject;
+        IReadOnlyList<string> List(string key) => (match?[key] as JsonArray ?? []).Select(n => ((string?)n ?? "").Trim()).Where(s => s.Length > 0).ToList();
+        var bank = new AppBank(((string?)o["name"] ?? id).Trim(), ContextBar.Color(o["color"]), keys, defaults.Length > 0 ? defaults : keys.Take(6).Select(k => k.Id).ToArray());
+        return new WebSite(id, List("url").Select(Glob).ToList(), List("title").Select(Glob).ToList(), List("app"), bank);
+    }
+
+    /// <summary>A pattern with * for anything, whole, in any case.</summary>
+    static Regex Glob(string pattern) =>
+        new("^" + string.Join(".*", pattern.Split('*').Select(Regex.Escape)) + "$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 }

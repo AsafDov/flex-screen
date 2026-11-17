@@ -108,9 +108,13 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
     doesn't let the deck's extension see. Local and Remote-SSH windows alike.
   - **Claude app:** Approve, Deny, Model, Effort, Usage, New chat.
   - **Chrome and Edge:** Back, Reload, Prev tab, Next tab, New tab, Reopen, Find. On
-    **Gmail**, **YouTube** and **Google Calendar** the bar has that site's keys (Compose,
-    Reply, Archive…; Play, Back 10 s, Captions…; Today, Week, New event…). Gmail's need its
+    **Gmail**, **YouTube**, **Google Calendar**, **Jira** and **GitHub** the bar has that
+    site's keys (Compose, Reply, Archive…; Play, Back 10 s, Captions…; Today, Week, New
+    event…; Create, Comment, Assign to me…; Issues, Pull requests, Find file…), and on your
+    own sites the keys you give them (see [Sites](#sites-in-the-browser)). Gmail's need its
     keyboard shortcuts turned on in Gmail's settings.
+  - **Installed web apps** (Chrome's or Edge's *Install as app*: Gmail, Outlook, YouTube
+    Music…) show on the deck under their own name and icon, and get their site's keys.
   - **Windows Terminal:** Prev cmd, New tab, Prev tab, Next tab, Split right, Split down;
     its list also has Clear, History, keys that type `git status`, `git pull` or `claude`,
     and Claude's keys.
@@ -147,6 +151,38 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   puts the app's defaults back, and **+** at the end adds a key. Each app's arrangement is
   kept by the companion on that PC.
 - Add your own actions to an app's list in the profile's `contextBar` (see [Settings](#settings)).
+
+### Sites in the browser
+Which site a browser window shows is told by its tab's title (*… - Gmail*, *… · GitHub*),
+or, with the **flex-screen browser extension**, by its address, which works on every page
+whatever its title says (a Jira issue, a GitHub file). The extension comes with the
+companion: once per browser, open `chrome://extensions` (or `edge://extensions`), turn on
+**Developer mode**, **Load unpacked**, and pick
+`%LOCALAPPDATA%\Programs\flex-screen\chrome-ext`. It sends the companion only the address
+and title of the tab in front, to `localhost`, never for an incognito tab; the companion
+keeps them in memory and tells the deck only which site it is. Updates come with the
+companion's, picked up when the browser restarts.
+
+A site's keys are data: the built-in ones are
+[companion/Integrations/Browser/sites.json](companion/Integrations/Browser/sites.json), and
+the profile's `"sites"` add your own (or replace a built-in one by its id). A key is written
+as for `contextBar`:
+
+```jsonc
+"sites": [
+  { "id": "notion", "name": "Notion", "color": "#FFFFFF",
+    "match": { "url": ["www.notion.so/*"], "title": ["* | Notion"], "app": ["Notion"] },  // * is anything
+    "keys": [
+      { "id": "notion-search", "name": "Search", "glyph": "search", "keys": "Ctrl+P" },
+      { "name": "New page", "glyph": "plus", "keys": "Ctrl+N" }
+    ],
+    "default": ["notion-search"] }   // the bar until you arrange it on the deck
+]
+```
+
+`url` is the address without `https://` (host and path), `title` the tab's title, `app` an
+installed web app's name. The address is tried first, then the app, then the title, and
+the first site that matches wins (yours before the built-in ones).
 
 ### Shortcuts (on every page)
 
@@ -518,6 +554,7 @@ A key is `keys` (pressed in that app's window; `"g, i"` presses one after the ot
 | `firmware/` | PlatformIO project: pages, panel, touch, USB link |
 | `companion/` | The Windows tray app; each app's context bar keys and call controls in `companion/Integrations/<App>/` |
 | `vscode-ext/` | The VS Code extension |
+| `chrome-ext/` | The browser extension (Chrome and Edge): the tab's address for the context bar |
 | `protocol/` | [v0.md](protocol/v0.md): every message between the parts |
 | `install/` | Install kit builder and install/uninstall scripts |
 | `docs/` | Guides: [connecting Google Calendar and Tasks](docs/google-setup.md), [other calendars and the filters](docs/calendars.md), [the other task sources](docs/task-sources.md) |

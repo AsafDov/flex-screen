@@ -178,35 +178,44 @@ sealed class ContextBar
         if (config == null) return null;
         var node = config.FirstOrDefault(p => string.Equals(p.Key, exe, StringComparison.OrdinalIgnoreCase) ||
                                               string.Equals(p.Key, app, StringComparison.OrdinalIgnoreCase)).Value;
-        var list = node as JsonArray ?? node?["keys"] as JsonArray;
+        // A plain list of keys, or { "color": …, "keys": [ … ] }. (A list has no color: asking
+        // a JsonArray for one threw, and that app's bar couldn't be made.)
+        var list = node as JsonArray ?? (node as JsonObject)?["keys"] as JsonArray;
         if (list == null) return null;
-        int? color = null;
-        if ((string?)node?["color"] is { } hex && int.TryParse(hex.TrimStart('#'), System.Globalization.NumberStyles.HexNumber, null, out var c)) color = c;
-        var items = new List<BarItem>();
-        foreach (var k in list.OfType<JsonObject>())
+        var unique = list.OfType<JsonObject>().Select(Item).OfType<BarItem>().DistinctBy(i => i.Id).ToArray();
+        return new AppBank("", Color((node as JsonObject)?["color"]), unique, unique.Select(i => i.Id).ToArray());
+    }
+
+    /// <summary>"#1DB954" (or without the #) as 0xRRGGBB; null when it isn't one.</summary>
+    public static int? Color(JsonNode? hex) =>
+        (string?)(hex as JsonValue) is { } text && int.TryParse(text.Trim().TrimStart('#'), System.Globalization.NumberStyles.HexNumber, null, out var c) ? c : null;
+
+    /// <summary>
+    /// A key as the settings write it (the profile's "contextBar", a site's "keys"): "keys"
+    /// pressed, "text" typed, a deck "action", or "action": "close". Its id is "id" if given,
+    /// else "my-" and its name. Null, and a line in the log, for one that can't be done.
+    /// </summary>
+    public static BarItem? Item(JsonObject k)
+    {
+        var name = (string?)k["name"] ?? "";
+        var glyph = (string?)k["glyph"] ?? "";
+        BarItem? item = null;
+        if ((string?)k["keys"] is { Length: > 0 } combo)
         {
-            var name = (string?)k["name"] ?? "";
-            var glyph = (string?)k["glyph"] ?? "";
-            BarItem? item = null;
-            if ((string?)k["keys"] is { Length: > 0 } combo)
-            {
-                if (!KeyInput.CanPress(combo)) Log.Write($"context: can't read the keys \"{combo}\" (write them like Ctrl+Shift+Esc or Alt+Left)");
-                else item = new BarItem("", name.Length > 0 ? name : combo, glyph, "keys", combo);
-            }
-            else if ((string?)k["text"] is { Length: > 0 } text)
-            {
-                item = new BarItem("", name.Length > 0 ? name : text.Trim(), glyph, "text", text);
-            }
-            else if ((string?)k["action"] is { Length: > 0 } action)
-            {
-                if (action == "close") item = new BarItem("", name.Length > 0 ? name : "Close", glyph.Length > 0 ? glyph : "close", "close", "");
-                else if (Shortcuts.Actions.ContainsKey(action)) item = new BarItem("", name.Length > 0 ? name : action, glyph, "action", action);
-                else Log.Write($"context: \"{action}\" isn't an action a key can run");
-            }
-            if (item != null) items.Add(item with { Id = "my-" + Slug(item.Name) });
+            if (!KeyInput.CanPress(combo)) Log.Write($"context: can't read the keys \"{combo}\" (write them like Ctrl+Shift+Esc or Alt+Left)");
+            else item = new BarItem("", name.Length > 0 ? name : combo, glyph, "keys", combo);
         }
-        var unique = items.DistinctBy(i => i.Id).ToArray();
-        return new AppBank("", color, unique, unique.Select(i => i.Id).ToArray());
+        else if ((string?)k["text"] is { Length: > 0 } text)
+        {
+            item = new BarItem("", name.Length > 0 ? name : text.Trim(), glyph, "text", text);
+        }
+        else if ((string?)k["action"] is { Length: > 0 } action)
+        {
+            if (action == "close") item = new BarItem("", name.Length > 0 ? name : "Close", glyph.Length > 0 ? glyph : "close", "close", "");
+            else if (Shortcuts.Actions.ContainsKey(action)) item = new BarItem("", name.Length > 0 ? name : action, glyph, "action", action);
+            else Log.Write($"context: \"{action}\" isn't an action a key can run");
+        }
+        return item == null ? null : item with { Id = (string?)k["id"] is { Length: > 0 } id ? id : "my-" + Slug(item.Name) };
     }
 
     static string Slug(string name) => new(name.ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray());

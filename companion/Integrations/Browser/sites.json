@@ -1,0 +1,90 @@
+[
+  {
+    "id": "gmail", "name": "Gmail", "color": "#EA4335",
+    "match": { "url": ["mail.google.com/*"], "title": ["* - Gmail", "*@gmail.com*"], "app": ["Gmail"] },
+    "keys": [
+      { "id": "compose", "name": "Compose", "glyph": "edit", "keys": "c" },
+      { "id": "reply", "name": "Reply", "glyph": "reply", "keys": "r" },
+      { "id": "reply-all", "name": "Reply all", "glyph": "reply", "keys": "a" },
+      { "id": "forward-mail", "name": "Forward", "glyph": "share", "keys": "f" },
+      { "id": "archive", "name": "Archive", "glyph": "download", "keys": "e" },
+      { "id": "delete", "name": "Delete", "glyph": "trash", "keys": "Shift+3" },
+      { "id": "unread", "name": "Mark unread", "glyph": "eye", "keys": "Shift+U" },
+      { "id": "newer", "name": "Newer", "glyph": "up", "keys": "k" },
+      { "id": "older", "name": "Older", "glyph": "down", "keys": "j" },
+      { "id": "search", "name": "Search mail", "glyph": "search", "keys": "slash" },
+      { "id": "snooze", "name": "Snooze", "glyph": "moon", "keys": "b" },
+      { "id": "inbox", "name": "Inbox", "glyph": "home", "keys": "g, i" },
+      { "id": "send", "name": "Send", "glyph": "check", "keys": "Ctrl+Enter" }
+    ],
+    "default": ["compose", "reply", "archive", "delete", "newer", "older", "search"],
+    "note": "Gmail's keys need its keyboard shortcuts on (Gmail settings, off by default)."
+  },
+  {
+    "id": "youtube", "name": "YouTube", "color": "#FF0033",
+    "match": { "url": ["www.youtube.com/*", "youtube.com/*", "m.youtube.com/*", "music.youtube.com/*"], "title": ["*- YouTube", "YouTube"], "app": ["YouTube", "YouTube Music"] },
+    "keys": [
+      { "id": "back10", "name": "Back 10 s", "glyph": "back", "keys": "j" },
+      { "id": "play", "name": "Play/pause", "glyph": "play", "keys": "k" },
+      { "id": "ahead10", "name": "Ahead 10 s", "glyph": "forward", "keys": "l" },
+      { "id": "mute", "name": "Mute", "glyph": "headphones", "keys": "m" },
+      { "id": "captions", "name": "Captions", "glyph": "comment", "keys": "c" },
+      { "id": "theater", "name": "Theater", "glyph": "window", "keys": "t" },
+      { "id": "fullscreen-video", "name": "Full screen", "glyph": "expand", "keys": "f" },
+      { "id": "slower", "name": "Slower", "glyph": "minus", "keys": "Shift+comma" },
+      { "id": "faster", "name": "Faster", "glyph": "plus", "keys": "Shift+period" },
+      { "id": "next-video", "name": "Next video", "glyph": "next-track", "keys": "Shift+N" },
+      { "id": "miniplayer", "name": "Mini player", "glyph": "window", "keys": "i" }
+    ],
+    "default": ["back10", "play", "ahead10", "mute", "captions", "fullscreen-video"]
+  },
+  {
+    "id": "calendar", "name": "Calendar", "color": "#4285F4",
+    "match": { "url": ["calendar.google.com/*"], "title": ["*Google Calendar*"], "app": ["Google Calendar"] },
+    "keys": [
+      { "id": "prev-period", "name": "Previous", "glyph": "prev", "keys": "k" },
+      { "id": "today", "name": "Today", "glyph": "calendar", "keys": "t" },
+      { "id": "next-period", "name": "Next", "glyph": "next", "keys": "j" },
+      { "id": "day", "name": "Day", "glyph": "list", "keys": "d" },
+      { "id": "week", "name": "Week", "glyph": "split-right", "keys": "w" },
+      { "id": "month", "name": "Month", "glyph": "calendar", "keys": "m" },
+      { "id": "new-event", "name": "New event", "glyph": "plus", "keys": "c" },
+      { "id": "search-cal", "name": "Search", "glyph": "search", "keys": "slash" },
+      { "id": "agenda", "name": "Agenda", "glyph": "line", "keys": "a" }
+    ],
+    "default": ["prev-period", "today", "next-period", "day", "week", "month", "new-event"]
+  },
+  {
+    "id": "jira", "name": "Jira", "color": "#0C66E4",
+    "match": { "url": ["*.atlassian.net/browse/*", "*.atlassian.net/jira/*", "*.atlassian.net/issues*"], "title": ["* - Jira"], "app": ["Jira"] },
+    "keys": [
+      { "id": "jira-create", "name": "Create", "glyph": "plus", "keys": "c" },
+      { "id": "jira-search", "name": "Search", "glyph": "search", "keys": "slash" },
+      { "id": "jira-comment", "name": "Comment", "glyph": "comment", "keys": "m" },
+      { "id": "jira-assign-me", "name": "Assign to me", "glyph": "check", "keys": "i" },
+      { "id": "jira-assign", "name": "Assign", "glyph": "edit", "keys": "a" },
+      { "id": "jira-edit", "name": "Edit", "glyph": "edit", "keys": "e" },
+      { "id": "jira-next", "name": "Next issue", "glyph": "down", "keys": "j" },
+      { "id": "jira-prev", "name": "Previous issue", "glyph": "up", "keys": "k" },
+      { "id": "jira-board", "name": "Board", "glyph": "split-right", "keys": "g, a" },
+      { "id": "jira-dashboards", "name": "Dashboards", "glyph": "home", "keys": "g, d" }
+    ],
+    "default": ["jira-create", "jira-search", "jira-comment", "jira-assign-me", "jira-edit", "jira-board"]
+  },
+  {
+    "id": "github", "name": "GitHub", "color": "#8B949E",
+    "match": { "url": ["github.com/*"], "title": ["* · GitHub"], "app": ["GitHub"] },
+    "keys": [
+      { "id": "gh-search", "name": "Search", "glyph": "search", "keys": "slash" },
+      { "id": "gh-code", "name": "Code", "glyph": "code", "keys": "g, c" },
+      { "id": "gh-issues", "name": "Issues", "glyph": "list", "keys": "g, i" },
+      { "id": "gh-pulls", "name": "Pull requests", "glyph": "branch", "keys": "g, p" },
+      { "id": "gh-actions", "name": "Actions", "glyph": "play", "keys": "g, a" },
+      { "id": "gh-notifications", "name": "Notifications", "glyph": "bell", "keys": "g, n" },
+      { "id": "gh-find-file", "name": "Find file", "glyph": "file", "keys": "t" },
+      { "id": "gh-editor", "name": "Open in editor", "glyph": "edit", "keys": "period" },
+      { "id": "gh-submit", "name": "Submit comment", "glyph": "check", "keys": "Ctrl+Enter" }
+    ],
+    "default": ["gh-search", "gh-code", "gh-issues", "gh-pulls", "gh-actions", "gh-notifications"]
+  }
+]

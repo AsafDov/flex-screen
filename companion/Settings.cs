@@ -95,6 +95,9 @@ static class Settings
     /// <summary>Whether a Claude permission request waits for Approve or Deny on the deck (on unless set false).</summary>
     public static bool ApproveFromDeck => Get("approveFromDeck") is JsonValue v && v.TryGetValue(out bool on) ? on : true;
 
+    /// <summary>The profile's own sites with keys in a browser (see <see cref="WebSites"/>); null when it has none.</summary>
+    public static JsonArray? Sites => Get("sites") as JsonArray;
+
     /// <summary>The context bar's own key sets, or false (see <see cref="FlexScreen.Companion.ContextBar"/>); null when the settings say nothing.</summary>
     public static JsonNode? ContextBar => Get("contextBar");
 

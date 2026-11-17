@@ -234,9 +234,59 @@ sealed class WindowSource
     {
         var path = ProcessPath(hwnd);
         var (app, suffixes) = AppNames(path);
+        // An installed web app (Chrome's or Edge's "Install as app") is a browser window with an
+        // AppUserModelID of its own: named as the Start menu names it ("Gmail"), so the deck and
+        // the context bar take it for that app, not for the browser.
+        if (app is "Chrome" or "Edge" && WebAppName(_taskbar.WindowAppId(hwnd)) is { } webApp)
+        {
+            app = webApp;
+            suffixes = [webApp, .. suffixes];
+        }
         var title = CleanTitle(WindowText(hwnd), app, suffixes);
         var icon = IconFor(hwnd, path);
         return new DeckWindow((long)hwnd, app, title, icon?.Id ?? "", active, IsIconic(hwnd), Bounds(hwnd));
+    }
+
+    readonly Dictionary<string, string?> _webApps = new(StringComparer.OrdinalIgnoreCase);  // AppUserModelID → its name in the Start menu
+    DateTime _webAppsReadAt = DateTime.MinValue;
+
+    /// <summary>
+    /// An installed web app's name, by its window's AppUserModelID ("Chrome._crx_…"), from the
+    /// Start menu's list (read again at most every minute, for one installed since); null for a
+    /// browser's own window or one the Start menu doesn't list.
+    /// </summary>
+    string? WebAppName(string appId)
+    {
+        if (!appId.Contains("_crx_", StringComparison.OrdinalIgnoreCase)) return null;
+        lock (_gate)
+        {
+            if (_webApps.TryGetValue(appId, out var known)) return known;
+        }
+        if (DateTime.UtcNow - _webAppsReadAt < TimeSpan.FromMinutes(1)) return null;
+        _webAppsReadAt = DateTime.UtcNow;
+        List<ShellApps.App> apps;
+        try
+        {
+            apps = ShellApps.OnSta(ShellApps.List);
+        }
+        catch (InvalidOperationException e)
+        {
+            Log.Write($"windows: the Start menu's apps can't be read: {e.Message}");
+            return null;
+        }
+        lock (_gate)
+        {
+            foreach (var a in apps.Where(a => a.Id.Contains("_crx_", StringComparison.OrdinalIgnoreCase))) _webApps[a.Id] = a.Name;
+            if (!_webApps.ContainsKey(appId))
+            {
+                // A profile's web app can carry more after the app's own id ("….UserData.Profile_1").
+                // Not one found: asked again after the minute, once it may be installed.
+                var match = apps.FirstOrDefault(a => appId.StartsWith(a.Id, StringComparison.OrdinalIgnoreCase) || a.Id.StartsWith(appId, StringComparison.OrdinalIgnoreCase));
+                if (match == null) return null;
+                _webApps[appId] = match.Name;
+            }
+            return _webApps[appId];
+        }
     }
 
     public static Rectangle Bounds(IntPtr hwnd)

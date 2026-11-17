@@ -80,6 +80,9 @@ Copy-Item (Join-Path $root 'docs\google-setup.md') $out
 Copy-Item (Join-Path $root 'docs\task-sources.md') $out
 Copy-Item (Join-Path $root 'docs\calendars.md') $out
 
+Step 'Browser extension'
+Copy-Item (Join-Path $root 'chrome-ext') $out -Recurse
+
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path $out -DestinationPath $zip
 $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)

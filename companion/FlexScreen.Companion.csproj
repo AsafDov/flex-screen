@@ -29,4 +29,14 @@
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The sites the browser's bar has keys for, as data (WebSites.cs); a profile's "sites" add to them. -->
+    <EmbeddedResource Include="Integrations\Browser\sites.json" LogicalName="sites.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- A test harness built beside the companion may use its classes (all internal). -->
+    <InternalsVisibleTo Include="FlexScreen.Tests" />
+  </ItemGroup>
+
 </Project>

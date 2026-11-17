@@ -114,8 +114,8 @@ sealed class TaskbarOrder
         return path;
     }
 
-    /// <summary>The window's own AppUserModelID (Chrome sets one per profile), or "".</summary>
-    string WindowAppId(IntPtr hwnd)
+    /// <summary>The window's own AppUserModelID (Chrome sets one per profile, and one per installed web app), or "".</summary>
+    public string WindowAppId(IntPtr hwnd)
     {
         if (_windowIds.TryGetValue((long)hwnd, out var known)) return known;
         var id = "";
