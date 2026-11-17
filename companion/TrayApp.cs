@@ -44,6 +44,8 @@ sealed class TrayApp : ApplicationContext
     readonly ObsidianSource _obsidian = new();
     readonly GoogleSource _google = new();
     readonly GoogleSetup _googleSetup;
+    readonly CalendarSources _calendarSources;
+    readonly CalendarSource _calendar;
     readonly MicrosoftTodo _todo = new();
     readonly TaskSource _tasks;
     readonly ITaskProvider[] _otherTaskSources;
@@ -226,14 +228,21 @@ sealed class TrayApp : ApplicationContext
         _clipboard.Changed += c => _link.Send(ClipsMessage(c));
         _obsidian.Changed += o => _link.Send(ObsidianMessage(o));
         _obsidian.Toast += SendToast;
-        _google.Changed += g => _link.Send(GoogleMessage(g));
+        _calendarSources = new CalendarSources(_google);
+        _calendar = new CalendarSource(_calendarSources.Now);
+        _calendar.Changed += c => _link.Send(CalendarMessage(c));
+        menu.Items.Insert(menu.Items.IndexOf(googleAccounts), new CalendarSetup(_calendar, _calendarSources, _googleSetup).Menu());
         // Every task source: Google Tasks for each of the profile's Google accounts, then the
         // others. One not set up (Jira at home) reads as "setup" and is left out.
         _otherTaskSources = [_todo, new ObsidianTasks(_obsidian), new JiraIssues(), new GitHubIssues()];
         _tasks = new TaskSource(TaskProviders);
         _tasks.Changed += t => _link.Send(TasksMessage(t, _tasks.Revision));
         _tasks.Toast += SendToast;
-        _google.SignedIn += () => _ = _tasks.RefreshAsync();
+        _google.SignedIn += () =>
+        {
+            _ = _calendar.RefreshAsync();
+            _ = _tasks.RefreshAsync();
+        };
         _todo.SignedIn += () => _ = _tasks.RefreshAsync();
         _todo.Toast += SendToast;
         menu.Items.Insert(menu.Items.IndexOf(googleAccounts) + 1, new TaskSourceSetup(_tasks, _todo, _obsidian, _googleSetup).Menu());
@@ -249,7 +258,7 @@ sealed class TrayApp : ApplicationContext
             Claude: ClaudeInWindow, Usage: () => _usage.Label, ClaudeSignedOut: () => _usage.SignedOut,
             VsCode: _vscode.RunCommand, ClaudeInCode: () => _vscode.Current?.ClaudeInFront == true);
         _context = new ContextBar(_windows, RunContextAction, AppIntegrations.All(apps));
-        _google.Changed += _ => _context.Refresh();
+        _calendar.Changed += _ => _context.Refresh();
         _devices.MicChanged += _ => _context.Refresh();
         // The next meeting's key counts down ("· 12m").
         _meetingTick = new System.Threading.Timer(_ => _context.Refresh(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
@@ -299,7 +308,7 @@ sealed class TrayApp : ApplicationContext
         _keyboard.Start();
         _clipboard.Start();
         _obsidian.Start();
-        _google.Start();
+        _calendar.Start();
         _tasks.Start();
         _calls.Start();
         _usage.Start();
@@ -375,7 +384,7 @@ sealed class TrayApp : ApplicationContext
             DevicesMessage(_devices.Devices), MicMessage(_devices.Mic), ClaudeMessage(_claude.Current),
             TermMessage(_dev.Term), BuildMessage(_dev.Build), RecentMessage(_dev.Recent), GitMessage(_git.Current),
             KeymapMessage(_keyboard.Map), KeyboardMessage(_keyboard.Current), ClipsMessage(_clipboard.Shown),
-            ObsidianMessage(_obsidian.Current), GoogleMessage(_google.Current), TasksMessage(_tasks.Current, _tasks.Revision),
+            ObsidianMessage(_obsidian.Current), CalendarMessage(_calendar.Current), TasksMessage(_tasks.Current, _tasks.Revision),
             CallMessage(_calls.Current), UsageMessage(_usage),
         ];
         foreach (var message in messages)
@@ -580,24 +589,29 @@ sealed class TrayApp : ApplicationContext
         d = new { found = o.Found, vault = o.Vault, recent = o.Recent.Select(n => new { name = n.Name, path = n.Path }) },
     };
 
-    static object GoogleMessage(GoogleState g) => new
+    /// <summary>
+    /// The calendar for the deck (its topic is still "google"): today's events from midnight and
+    /// tomorrow's, those not over yet first (a deck that keeps fewer keeps those), each with a
+    /// short id and its calendar's name; the ones over are dropped first to keep the line small.
+    /// </summary>
+    static object CalendarMessage(CalendarState c)
     {
-        t = "state",
-        topic = "google",
-        d = new
+        var now = DateTimeOffset.Now;
+        var events = c.Events.Where(e => e.End > now).Concat(c.Events.Where(e => e.End <= now)).Select(e => new
         {
-            status = g.Status,
-            events = g.Events.Select(e => new
-            {
-                id = e.Id,
-                title = e.Title,
-                start = e.Start.ToUnixTimeSeconds(),
-                end = e.End.ToUnixTimeSeconds(),
-                allday = e.AllDay,
-                join = e.Join.Length > 0,
-            }),
-        },
-    };
+            id = CalendarSource.DeckId(e),
+            title = OneLine(e.Title, 80),
+            cal = OneLine(e.Calendar, 30),
+            start = e.Start.ToUnixTimeSeconds(),
+            end = e.End.ToUnixTimeSeconds(),
+            allday = e.AllDay,
+            join = e.Join.Length > 0,
+        }).ToList();
+        object Message() => new { t = "state", topic = "google", d = new { status = c.Status, events } };
+        // Hebrew goes as \uXXXX, six bytes a letter.
+        while (events.Count > 0 && System.Text.Json.JsonSerializer.Serialize(Message()).Length > 7000) events.RemoveAt(events.Count - 1);
+        return Message();
+    }
 
     void ToggleTaskList(string key)
     {
@@ -655,7 +669,7 @@ sealed class TrayApp : ApplicationContext
         if (!refresh) return;
         _ = Task.Run(async () =>
         {
-            await _google.RefreshAsync();
+            await _calendar.RefreshAsync();
             await _tasks.RefreshAsync();
         });
     }
@@ -1025,7 +1039,7 @@ sealed class TrayApp : ApplicationContext
             case "task.refresh": _ = _tasks.RefreshAsync(); break;
             case "task.open": SendTaskDetail((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
             case "task.link": _tasks.Open((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
-            case "cal.join": OpenUrl(_google.Current.Events.FirstOrDefault(e => e.Id == id)?.Join ?? ""); break;
+            case "cal.join": OpenUrl(_calendar.Find(id)?.Join ?? ""); break;
             case "mail.open": OpenUrl("https://mail.google.com/"); break;
             case "zone.snap": _zones.Snap((int?)message["mon"] ?? -1, (int?)message["zone"] ?? -1, (long?)message["hwnd"] ?? 0); break;
             case "zone.layout": _zones.SetLayout((int?)message["mon"] ?? -1, (string?)message["id"] ?? (string?)message["type"] ?? ""); break;
@@ -1088,7 +1102,7 @@ sealed class TrayApp : ApplicationContext
                 if (cmd.Length > 0) _recent.Note(new RecentAction($"term:{cmd}", "command", "Terminal", cmd, "", Run("term.replay", ("cmd", cmd))));
                 break;
             case "cal.join":
-                if (_google.Current.Events.FirstOrDefault(e => e.Id == id) is { Join.Length: > 0 } meeting)
+                if (_calendar.Find(id) is { Join.Length: > 0 } meeting)
                     _recent.Note(new RecentAction($"cal:{id}", "meeting", "Meeting", meeting.Title, "", Run("cal.join", ("id", id), ("url", meeting.Join))));
                 break;
             case "mail.open":
@@ -1206,7 +1220,7 @@ sealed class TrayApp : ApplicationContext
     CalendarEvent? NextMeeting(string app)
     {
         var now = DateTimeOffset.UtcNow;
-        return _google.Current.Events.Where(e => !e.AllDay && e.End > now && GoogleSource.MeetingApp(e.Join) == app).MinBy(e => e.Start);
+        return _calendar.Current.Events.Where(e => !e.AllDay && e.End > now && MeetingLinks.App(e.Join) == app).MinBy(e => e.Start);
     }
 
     /// <summary>A context bar action: a deck action, or one with a type ("call.react:like").</summary>

@@ -2,6 +2,7 @@
 
 #include <time.h>
 
+#include "dayview.h"
 #include "icons.h"
 #include "model.h"
 #include "pc.h"
@@ -287,9 +288,12 @@ void buildRight(lv_obj_t *parent) {
   lv_obj_set_height(right, LV_PCT(100));
   flexCol(right, kGap);
 
+  // A tap on it (but Join) opens the whole day.
   lv_obj_t *next = card(right, kHighlight, kHighlightLine);
   lv_obj_set_size(next, LV_PCT(100), LV_SIZE_CONTENT);
   flexRow(next, 10);
+  lv_obj_set_clickable(next, true);
+  lv_obj_add_event_cb(next, [](lv_event_t *) { day::open(); }, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *text = box(next);
   lv_obj_set_flex_grow(text, 1);
   lv_obj_set_height(text, LV_SIZE_CONTENT);
@@ -303,6 +307,7 @@ void buildRight(lv_obj_t *parent) {
   lv_obj_set_style_radius(w.join, 12, 0);
   lv_obj_center(label(w.join, LV_SYMBOL_CALL "  Join", &body_font, kOnAccent));
   lv_obj_set_hidden(w.join, true);
+  label(next, LV_SYMBOL_RIGHT, &lv_font_montserrat_16, kAccent);  // there's more: the day
 
   buildActions(right);
 }
@@ -328,8 +333,8 @@ void updateCalendar() {
     setText(w.next_title, "PC offline");
     setText(w.next_time, "");
   } else if (g.status == "setup" || g.status == "signin") {
-    setText(w.next_title, "Connect Google Calendar");
-    setText(w.next_time, "From the companion's tray icon menu");
+    setText(w.next_title, "Connect a calendar");
+    setText(w.next_time, "Tray icon menu: Calendars");
   } else if (!next) {
     // No status yet: the companion hasn't reported (it said "Calendar unavailable" then).
     setText(w.next_title, g.status == "ok"   ? "Nothing else today"

@@ -39,7 +39,7 @@ sealed class GoogleSetup(GoogleSource google)
             var tasks = new ToolStripMenuItem("Its tasks on the deck") { Checked = account.Tasks };
             tasks.Click += (_, _) => SetFlag(account, "tasks", !account.Tasks);
             item.DropDownItems.AddRange([calendar, tasks, new ToolStripSeparator()]);
-            if (account.HasSignIn) item.DropDownItems.Add(new ToolStripMenuItem("Sign out on this PC", null, (_, _) => _ = google.SignOutAsync(account)));
+            if (account.HasSignIn) item.DropDownItems.Add(new ToolStripMenuItem("Sign out on this PC", null, (_, _) => google.SignOut(account)));
             item.DropDownItems.Add(new ToolStripMenuItem($"Remove from the {Settings.Profile} profile…", null, (_, _) => Remove(account)));
             menu.DropDownItems.Add(item);
         }
@@ -75,7 +75,7 @@ sealed class GoogleSetup(GoogleSource google)
         });
     }
 
-    void Add()
+    public void Add()
     {
         var values = InputDialog.Ask(
             "flex-screen: add a Google account",
@@ -130,7 +130,7 @@ sealed class GoogleSetup(GoogleSource google)
         if (MessageBox.Show($"Take {account.Name} out of the {Settings.Profile} profile, and forget its sign-in on this PC?",
                 "flex-screen", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         Settings.RemoveAccount(account.Id);
-        _ = google.SignOutAsync(account);
+        google.SignOut(account);
         Log.Write($"google: {account.Id}: removed from the {Settings.Profile} profile");
     }
 }

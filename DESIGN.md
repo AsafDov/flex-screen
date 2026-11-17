@@ -68,8 +68,8 @@ renders under 12px.
 | 11 | FancyZones | Windows | Companion | Read PowerToys' FancyZones layouts from `%LOCALAPPDATA%`, compute each zone's rectangle per monitor, snap the window with `SetWindowPos`; switch layouts by writing `applied-layouts.json` and posting FancyZones' reload message |
 | 12 | Clipboard stack | Capture | Companion | Clipboard listener keeps the last 20 text clips plus pins; tap = paste. Skips clips that password managers mark as excluded from history |
 | 13 | Obsidian | Capture | Companion | Vault `DoorsOfStone`: today's note (`obsidian://` URI), Clipboard → Inbox (append to the file), recent notes (from `.obsidian/workspace.json`), quick capture |
-| 14 | Calendar | Status bar, Today | Companion | Google Calendar API (read-only, every calendar ticked in Google Calendar): next-meeting countdown, today's list, Join button from the Meet/Teams/Zoom link |
-| 15 | Tasks | Capture, Today | Companion | Open tasks from the task sources (Google Tasks, Microsoft To Do, the latest Obsidian daily note, Jira and GitHub issues; one `ITaskProvider` each): Scheduled (every dated task) or one of the lists chosen in the tray, grouped by due day; tap = open (Open in its source), box = tick off (not Jira's or GitHub's issues), + = add one with the on-screen keyboard. Today has a count pill |
+| 14 | Calendar | Status bar, Today | Companion | Every calendar source in the profile (one `ICalendarProvider` each: Google accounts through the Calendar API, Microsoft 365 through Graph, iCalendar links expanded by the companion), merged and filtered: next-meeting countdown, Up next with its Join button, and the whole day behind it (tap Up next) |
+| 15 | Tasks | Capture, Today | Companion | Open tasks from the task sources (Google Tasks, Microsoft To Do, the latest Obsidian daily note, Jira and GitHub issues; one `ITaskProvider` each): All tasks (every task of the lists chosen in the tray, where it opens), Scheduled (every dated task) or one of those lists, grouped by due day; tap = open (Open in its source), box = tick off (not Jira's or GitHub's issues), + = add one with the on-screen keyboard. Today has a count pill |
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
 | 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (its integration's, `companion/Integrations/<App>/`) (long press) and kept per app; settings.json's `contextBar` adds actions. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
@@ -1317,6 +1317,65 @@ Gotchas found after phase 6:
     settings first: the profile is now compared every tick. Not checked: the tray menus by
     hand, a second Google account actually signed in, Jira, GitHub or To Do across two
     sites, a synced folder with a real sync client, or on the deck.
+  - Released as v0.22.1 (companion only, firmware 0.22.0), 2026-11-17.
+- Calendars from anywhere, the whole day, and All tasks, firmware 0.23.0 (2026-11-17; step
+  2 of the profiles plan, "calendar providers and filters", plus "the taskbar should show
+  first a tab with All Tasks from enabled lists, with the scheduled ones on top" and "i
+  want to get a view of the whole day, maybe when clicking the up next"):
+  - Calendar sources are `ICalendarProvider`s, as task sources are `ITaskProvider`s, made
+    from the profile's accounts by `CalendarSources`: `GoogleCalendar` per Google account
+    (what `GoogleSource` read before; `GoogleSource` now only keeps the accounts and their
+    sign-ins), `MicrosoftCalendar` (Microsoft Graph's calendarView, times asked in UTC, its
+    own sign-in with Calendars.Read and User.Read, the account's clientId or To Do's) and
+    `IcsCalendar` (an iCalendar link, read at most every 4 minutes). `CalendarSource`
+    merges them: each copy filtered on its own, then a meeting once (by UID and start),
+    soonest first, at most 24. A source that can't be read keeps its last events.
+  - `Ics` expands a feed itself: unfolded lines, escaped text, times in UTC, by TZID (IANA,
+    Windows, or Outlook's "(UTC+01:00) Amsterdam, …" display names), floating and all-day;
+    RRULE DAILY/WEEKLY/MONTHLY/YEARLY with INTERVAL, COUNT, UNTIL, BYDAY (with ordinals),
+    BYMONTHDAY, BYMONTH; EXDATE; moved and cancelled occurrences (RECURRENCE-ID). Not
+    BYSETPOS, BYWEEKNO, BYYEARDAY or RDATE. A rule's walk stops once a period starts past
+    the span, so one that never matches ends at once.
+  - Which calendars: each account's `"calendars"` `{hide, show}` (by id or name) over the
+    source's own choice (ticked in Google Calendar; Outlook's main calendar). Filters: the
+    profile's `"calendarFilter"` (`hideTitles`, words or /regex/; `hideAllDay`;
+    `hideDeclined`, on by default as before; `hideFree`). Tray: Calendars, with each source,
+    its calendars to tick, its sign-in, link or removal, the filters, and adding a Google
+    account, a Microsoft 365 calendar or a link (read once before it's kept). A link's
+    address is kept on the PC (`<id>-url` in `Secrets`), as it works as a password; a public
+    one can be the account's `"url"` in the profile.
+  - The deck gets today from midnight (also what's over) and tomorrow: up to 24 events, those
+    not over first so firmware before 0.23.0 (8 kept) keeps the ones to come, each with a
+    12-digit deck id (Outlook's ids are ~150 characters) and `cal`, the calendar's name or
+    the account's label. The line stays under 7000 bytes by dropping those over first.
+  - Day view (firmware, `dayview.cpp`): tapping Up next opens today's timed events in
+    order, those over dimmed, a "Now 10:14" line before the next one, the one going on
+    picked out ("Now, until 10:32 · Work"), "In 18 min" within the hour, Join on each with
+    a link that isn't over; today's all-day events as pills under the date, which stay in
+    sight while the list opens scrolled to now; then tomorrow's. It rebuilds when the
+    calendar changes and every 30 s. `Google::next()` no longer depends on the order the
+    events come in. The deck says "Connect a calendar" rather than Google's name.
+  - Tasks card: All tasks is the first chip and where it opens: every task of the lists on
+    the deck, grouped by due day (dated first, undated last), each row starting with its
+    list's name when there are several. Scheduled is second; a list taken off the deck goes
+    back to All tasks; another chip's list starts at the top. Found on the way: a drag that
+    started on a heading or between rows didn't scroll the list (the box took no presses),
+    so with All tasks' longer list the undated ones were out of reach; the list and the chip
+    row now take presses, as the task popup's body did.
+  - Checked: 38 calendar checks in a throwaway harness (every time kind, Outlook zone names,
+    folding and escapes, each repeat rule, EXDATE, moved and cancelled occurrences, New
+    York's clock change, a rule that never matches, the filters, calendar choice and its
+    writing, merging and dedup across sources, deck ids, Graph's event shapes); the 62
+    settings checks again; the simulator, 289 checks (new: the All tasks chip, the list
+    scrolled to its end from a heading, the day view's order, labels, now line, all-day
+    strip, Join, Close and a tap beside it); the deck firmware builds for the ESP32 (RAM
+    29%, flash 20%). End to end: the dev companion on a copy of this PC's data, with a
+    local iCal feed and a title filter, sent the stand-in deck this PC's real Google events
+    merged with the feed's: today's from midnight, the filtered one gone, a daily event in
+    Jerusalem time today and tomorrow, a Meet link found in a location, the ones to come
+    first, 1.25 KB. Not checked: a Microsoft 365 account signed in (no app registration on
+    this PC), the Calendars menu by hand, or the day view on the deck itself (it's on the
+    work PC).
 
 ## Decisions
 

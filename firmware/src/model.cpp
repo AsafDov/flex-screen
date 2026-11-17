@@ -55,10 +55,12 @@ const Device *Devices::selectedOutput() const {
 }
 
 const Event *Google::next(int64_t now) const {
+  const Event *next = nullptr;
   for (int i = 0; i < event_count; i++) {
-    if (!events[i].all_day && events[i].end > now) return &events[i];
+    const Event &e = events[i];
+    if (!e.all_day && e.end > now && (!next || e.start < next->start)) next = &e;
   }
-  return nullptr;
+  return next;
 }
 
 const char *Tasks::listName(const String &src, const String &id) const {

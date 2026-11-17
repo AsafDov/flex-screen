@@ -477,19 +477,22 @@ struct Obsidian {
 struct Event {
   String id;
   String title;
+  String cal;  // which calendar, when it's worth saying ("Work", "Family"), or ""
   int64_t start = 0, end = 0;  // UTC seconds
   bool all_day = false;
   bool join = false;  // has a Meet/Zoom/Teams link
 };
 
+// Today's and tomorrow's events, from every calendar the companion reads (the topic is still
+// called "google"). Those not over yet come first, so a deck that keeps fewer keeps those.
 struct Google {
-  static constexpr int kMaxEvents = 8;
-  String status;  // "ok", "setup" (no OAuth client yet), "signin", "error"
+  static constexpr int kMaxEvents = 24;  // the day view's whole day, and tomorrow
+  String status;  // "ok", "setup" (no calendar connected), "signin", "error"
   Event events[kMaxEvents];
   int event_count = 0;
   uint32_t version = 0;
 
-  // The first timed event that hasn't ended, or null.
+  // The timed event that hasn't ended and starts first, or null.
   const Event *next(int64_t now) const;
 };
 

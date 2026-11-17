@@ -139,7 +139,7 @@ The companion's log says what Google answered: tray icon → **Open log**, lines
 
 | What you see | Why, and what to do |
 |---|---|
-| Deck: *Connect Google Calendar*, and the tray item shows a note instead of a browser | The client file isn't at `%LOCALAPPDATA%\flex-screen\google-client.json` (check the name: Windows may have kept `.json.json` or the long downloaded name). |
+| Deck: *Connect a calendar*, and the tray item shows a note instead of a browser | The client file isn't at `%LOCALAPPDATA%\flex-screen\google-client.json` (check the name: Windows may have kept `.json.json` or the long downloaded name). |
 | Log: `Google Calendar API has not been used in project … or it is disabled` (or the same for Tasks) | Part 1, step 2: enable that API. It can take a few minutes to take effect; the companion tries again every 5 minutes. |
 | Toast: *Google didn't grant Calendar (or Tasks) access* | A box was left unticked on the consent page. Sign in again (tray icon → **Google accounts** → the account) and tick both. |
 | It worked, then stopped after about a week | The app was still in *Testing* (part 1, step 4). Publish it, then connect again from the tray. |
@@ -148,4 +148,4 @@ The companion's log says what Google answered: tray icon → **Open log**, lines
 | Deck: *Calendar unavailable* | Google couldn't be reached right now; the last data stays shown. |
 | Tasks: *Google Tasks can't be reached right now* | The Tasks API refused or Google couldn't be reached; the log's `tasks: google:` line says which. Enable the Google Tasks API (part 1, step 2) if that's what it says. |
 | Toast: *Couldn't add the task to Google Tasks* | As above; the log has Google's reason. |
-| An event from another calendar is missing | Tick that calendar in Google Calendar's list (left side, *My calendars* / *Other calendars*). |
+| An event from another calendar is missing | Tick that calendar in the tray icon's **Calendars** › the account, or in Google Calendar's list (left side, *My calendars* / *Other calendars*). The filters in **Calendars** can hide it too. [calendars.md](calendars.md) has more. |

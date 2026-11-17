@@ -164,6 +164,10 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Big clock.
 - Now playing: album art, title, artist and app, play/pause, next/previous, volume.
 - Up next: the next calendar event with a **Join** button for Meet, Zoom or Teams links.
+  Tap it for the whole day: today's events in order, those over dimmed above a line at
+  the time now, the one going on picked out, **Join** on each with a meeting link, which
+  calendar each is from, today's all-day events along the top, and tomorrow's below.
+  <img src="docs/screens/day.png" alt="The day view: today's events in order with the one going on picked out, and tomorrow's" width="560">
 - Recent: the last five things you did from the deck, as tiles: a window you brought up
   (with its app icon), a note opened, a command run, a meeting joined, Gmail, a Claude
   session, a sound output picked. Tap one to do it again; a window that has closed since
@@ -224,12 +228,14 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   **Jira** and **GitHub** issues assigned to you (set up under the tray icon's **Task
   sources**; [docs/task-sources.md](docs/task-sources.md) walks through each). A source not
   set up on a PC is left out, so the same companion suits home and work.
-- Chips along the top with how many are open in each: **Scheduled** (every task with a
-  due date, from any list) and then the lists you chose for the deck (the tray icon's
-  **Task lists on the deck**; all of them until you untick some). A list shows its undated
-  tasks too. Grouped by when they're due: overdue, today, tomorrow, this week, later, no
-  date. Under Scheduled a row is just the title, the due day and its status (to do, done,
-  or how many days overdue); in a list it's the day and the first line of its notes. An
+- Chips along the top with how many are open in each: **All tasks** (where it opens: every
+  task of the lists you chose for the deck, dated ones first), **Scheduled** (every task
+  with a due date, from any list, also one kept off the deck) and then each list you chose
+  (the tray icon's **Task lists on the deck**; all of them until you untick some). Swipe
+  the chips sideways for the ones past the card's edge. Grouped by when they're due:
+  overdue, today, tomorrow, this week, later, no date. Under Scheduled a row is just the
+  title, the due day and its status (to do, done, or how many days overdue); in a list it's
+  the day and the first line of its notes, and under All tasks the list's name first. An
   issue's row shows its key, priority and status instead. Subtasks are indented.
 - Tap a task to open it: its whole title, list, due day, status and notes, what its source
   says about it (a Jira issue's project, key, priority and status, below), **Open in …** (the
@@ -240,8 +246,8 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   the page, struck through, until midnight, so ticking it again undoes it. Jira and GitHub
   issues have no box: they're moved on in Jira or GitHub, not by a slip of the finger.
 - **+** opens a form with an on-screen keyboard: the title, which list (the one on
-  show to begin with; from Scheduled or an issues list, the first list, due today from
-  Scheduled) and when it's due (no date, today or tomorrow).
+  show to begin with; from All tasks, Scheduled or an issues list, the first list, due
+  today from Scheduled) and when it's due (no date, today or tomorrow).
 - No *Starred*: Google's Tasks API doesn't say which tasks are starred.
 - The ↻ button reads every source again now; otherwise the companion reads them every 2
   minutes and right after every change from the deck.
@@ -378,6 +384,15 @@ Calendar and Tasks, Teams calls and per-PC settings.
 [docs/google-setup.md](docs/google-setup.md) walks through it: your own Google sign-in app
 (once), connecting each PC from the tray, more than one Google account, and troubleshooting.
 
+### Calendars
+The deck's calendar can come from several places at once, merged (a meeting on two of them
+shows once): Google accounts, **Microsoft 365 or Outlook.com** accounts, and **calendar
+links** (an iCalendar address: a published Outlook calendar, Google's or iCloud's secret
+address, a school's or a team's). The tray icon's **Calendars** menu lists them, with each
+one's calendars to tick for the deck, and adds more. It also hides events: those you
+declined (on by default), all-day ones, those marked free, or those whose title has a word
+you give (Lunch, Focus time). [docs/calendars.md](docs/calendars.md) has the details.
+
 ### VS Code Remote-SSH
 Working on a Linux server from the deck's PC: the extension runs on the PC even in a
 Remote-SSH window (keep it installed there), so terminal commands reach the deck as
@@ -442,10 +457,13 @@ gives editors that read it (VS Code) completion and checks for everything here
   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
   "layerNames": ["BASE", "NAV", "SYMBOL"],             // your keyboard's layers
   "cheatSheetSeconds": 10,                             // hold a layer key this long for its cheat sheet; 0: only from the pill
-  "accounts": {                                        // Google accounts, by id (the tray's Google accounts); without it, one: "google"
-    "google": { "type": "google", "label": "Personal" },
-    "google-work": { "type": "google", "label": "Work", "client": "google-client-work.json", "tasks": false }
+  "accounts": {                                        // by id (the tray's Google accounts and Calendars); without it, one: "google"
+    "google": { "type": "google", "label": "Personal", "calendars": { "hide": ["Birthdays"] } },
+    "google-work": { "type": "google", "label": "Work", "client": "google-client-work.json", "tasks": false },
+    "microsoft-work": { "type": "microsoft", "label": "Work", "clientId": "…", "tenant": "organizations" },
+    "ics-school": { "type": "ics", "label": "School" }        // its link is kept on each PC; a public one can be "url" here
   },
+  "calendarFilter": { "hideTitles": ["Lunch", "/^Focus/"], "hideAllDay": false, "hideDeclined": true, "hideFree": false },
   "hiddenTaskLists": ["google/MTIzNDU2"],              // task lists left off the deck (the tray's Task lists on the deck)
   "obsidianTasks": true,                               // the latest daily note's tasks on the deck
   "jira": { "url": "https://acme.atlassian.net", "email": "me@acme.com", "jql": "…" },  // set by Task sources › Jira
@@ -502,7 +520,7 @@ A key is `keys` (pressed in that app's window; `"g, i"` presses one after the ot
 | `vscode-ext/` | The VS Code extension |
 | `protocol/` | [v0.md](protocol/v0.md): every message between the parts |
 | `install/` | Install kit builder and install/uninstall scripts |
-| `docs/` | Guides: [connecting Google Calendar and Tasks](docs/google-setup.md), [the other task sources](docs/task-sources.md) |
+| `docs/` | Guides: [connecting Google Calendar and Tasks](docs/google-setup.md), [other calendars and the filters](docs/calendars.md), [the other task sources](docs/task-sources.md) |
 | `backup/` | Factory firmware backup and restore steps |
 | `simulator/` | The deck's UI on the PC, with feature tests and screenshot tours ([README](simulator/README.md)) |
 

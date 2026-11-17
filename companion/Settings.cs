@@ -32,10 +32,13 @@ namespace FlexScreen.Companion;
 ///   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
 ///   "layerNames": ["BASE", "NAV", "SYMBOL"],                  // the keyboard's layers, from 0
 ///   "cheatSheetSeconds": 10,                                  // a layer key held this long shows the cheat sheet; 0: only from the pill
-///   "accounts": {                                             // Google sign-ins, by id; without it, one: "google"
-///     "google": { "type": "google", "label": "Personal" },
-///     "google-work": { "type": "google", "label": "Work", "client": "google-client-work.json", "tasks": false }
+///   "accounts": {                                             // by id; without it, one Google account: "google"
+///     "google": { "type": "google", "label": "Personal", "calendars": { "hide": ["Birthdays"] } },
+///     "google-work": { "type": "google", "label": "Work", "client": "google-client-work.json", "tasks": false },
+///     "microsoft-work": { "type": "microsoft", "label": "Work", "clientId": "…" },  // an Outlook calendar (MicrosoftCalendar)
+///     "ics-school": { "type": "ics", "label": "School" }       // a calendar link, kept on the PC (IcsCalendar)
 ///   },
+///   "calendarFilter": { "hideTitles": ["Lunch"], "hideAllDay": false, "hideDeclined": true, "hideFree": false },
 ///   "hiddenTaskLists": ["google/MTIzNDU2"],                   // task lists left off the deck (the tray's Task lists on the deck)
 ///   "obsidianTasks": true,                                    // the latest daily note's "- [ ]" tasks on the deck (on unless false)
 ///   "microsoftTodo": { "clientId": "…", "tenant": "common" },   // the tray's Task sources › Microsoft To Do sets these

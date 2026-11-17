@@ -528,6 +528,7 @@ void handleState(const char *topic, JsonObjectConst d) {
       model::Event &ev = g.events[g.event_count++];
       ev.id = e["id"] | "";
       ev.title = e["title"] | "";
+      ev.cal = e["cal"] | "";
       ev.start = e["start"] | int64_t(0);
       ev.end = e["end"] | int64_t(0);
       ev.all_day = e["allday"] | false;

@@ -11,7 +11,7 @@
 namespace ui::tasks {
 namespace {
 
-constexpr int kFilters = model::Tasks::kMaxLists + 1;  // Scheduled, then each list shown on the deck
+constexpr int kFilters = model::Tasks::kMaxLists + 2;  // All tasks, Scheduled, then each list shown on the deck
 constexpr uint32_t kBox = 0x7D8794;
 constexpr uint32_t kUrgent = 0xF5C36B;
 constexpr uint32_t kTickMs = 30000;  // due days move on at midnight
@@ -28,9 +28,11 @@ struct {
   lv_obj_t *root, *text, *chips, *list_chips[model::Tasks::kMaxLists], *due_chips[kDues], *save, *keyboard;
 } form;
 
-// The list shown: both "" for Scheduled (every dated task, from any list). By id, so it stays
-// put as lists come and go.
-String filter_src, filter_id;
+// What the card shows: every task of the lists on the deck (where it opens), every dated task
+// from any list, or one list (by id, so it stays put as lists come and go).
+enum View { kAllTasks, kScheduled, kOneList };
+View view = kAllTasks;
+String filter_src, filter_id;  // the list, for kOneList
 int form_list = 0, form_due = 0;
 
 // The open task, over everything: its title, list, due day, status, what its source says
@@ -47,12 +49,9 @@ int32_t height_seen = -1;
 int64_t day_seen = -1;
 uint32_t tick_ms = 0;
 bool dirty = true;  // the filter changed
+bool to_top = false;  // another chip was tapped: its list starts at the top
 
 int indexOf(lv_event_t *e) { return int(intptr_t(lv_event_get_user_data(e))); }
-
-bool shown(const model::Task &t) {
-  return filter_id.length() == 0 ? t.due.length() > 0 : t.src == filter_src && t.list == filter_id;
-}
 
 // The lists with a chip (chosen in the companion's tray menu), and the one on show.
 bool listShown(const model::Tasks &k, const String &src, const String &id) {
@@ -60,6 +59,22 @@ bool listShown(const model::Tasks &k, const String &src, const String &id) {
     if (k.lists[i].src == src && k.lists[i].id == id) return k.lists[i].show;
   }
   return false;
+}
+
+int shownLists(const model::Tasks &k) {
+  int n = 0;
+  for (int i = 0; i < k.list_count; i++) n += k.lists[i].show;
+  return n;
+}
+
+// All tasks: a list's on the deck (the companion's order puts the dated ones first, soonest
+// due first). Scheduled: dated, from any list, also one kept off the deck.
+bool shown(const model::Task &t) {
+  switch (view) {
+    case kAllTasks: return listShown(model::tasks, t.src, t.list);
+    case kScheduled: return t.due.length() > 0;
+    default: return t.src == filter_src && t.list == filter_id;
+  }
 }
 
 // The lists a new task can go into: on the deck, and not a tracker's (Jira, GitHub).
@@ -238,16 +253,22 @@ void onPopDone(lv_event_t *) {
   closePopup();
 }
 
+// Chip 0 is All tasks, 1 Scheduled, then the lists (chip i is list i - 2).
 void onFilter(lv_event_t *e) {
   const int i = indexOf(e);
   const model::Tasks &k = model::tasks;
-  if (i == 0 || i > k.list_count || !k.lists[i - 1].show) {
-    filter_src = filter_id = "";
+  filter_src = filter_id = "";
+  if (i == 1) {
+    view = kScheduled;
+  } else if (i < 2 || i - 2 >= k.list_count || !k.lists[i - 2].show) {
+    view = kAllTasks;
   } else {
-    filter_src = k.lists[i - 1].src;
-    filter_id = k.lists[i - 1].id;
+    view = kOneList;
+    filter_src = k.lists[i - 2].src;
+    filter_id = k.lists[i - 2].id;
   }
   dirty = true;
+  to_top = true;
 }
 
 void onRefresh(lv_event_t *) { pc::refreshTasks(); }
@@ -277,18 +298,18 @@ void showForm() {
 void onAdd(lv_event_t *) {
   const model::Tasks &k = model::tasks;
   if (!pc::connected() || k.status != "ok" || addableLists(k) == 0) return;
-  // The list on show; from Scheduled (or a tracker's list, which takes none) the first list
-  // with a chip, due today from Scheduled so it shows there.
+  // The list on show; from All tasks and Scheduled (or a tracker's list, which takes none) the
+  // first list with a chip, due today from Scheduled so it shows there.
   form_list = 0;
   for (int i = k.list_count - 1; i >= 0; i--) {
     if (addable(k.lists[i])) form_list = i;
   }
   for (int i = 0; i < k.list_count; i++) {
-    if (k.lists[i].src == filter_src && k.lists[i].id == filter_id && addable(k.lists[i])) form_list = i;
+    if (view == kOneList && k.lists[i].src == filter_src && k.lists[i].id == filter_id && addable(k.lists[i])) form_list = i;
   }
   char today[12];
   dateOf(0, today, sizeof(today));
-  form_due = filter_id.length() == 0 && today[0] ? 1 : 0;
+  form_due = view == kScheduled && today[0] ? 1 : 0;
   lv_textarea_set_text(form.text, "");
   showForm();
   lv_obj_set_hidden(form.root, false);
@@ -494,8 +515,8 @@ void buildPopup() {
   lv_obj_set_hidden(p, true);
 }
 
-// The card: a header (Scheduled or the list on show, open count, refresh, +), Scheduled and the
-// chosen lists as chips, the tasks.
+// The card: a header (All tasks, Scheduled or the list on show, open count, refresh, +), All
+// tasks, Scheduled and the chosen lists as chips, the tasks.
 void buildCard(lv_obj_t *row) {
   lv_obj_t *c = card(row);
   lv_obj_set_height(c, LV_PCT(100));
@@ -506,7 +527,7 @@ void buildCard(lv_obj_t *row) {
   lv_obj_t *h = box(c);
   lv_obj_set_size(h, LV_PCT(100), 32);
   flexRow(h, 6);
-  w.title = label(h, "SCHEDULED", &small_font, kMuted);
+  w.title = label(h, "ALL TASKS", &small_font, kMuted);
   fillRow(w.title);
   w.badge = card(h, kAmberBg, kAmberBg);
   lv_obj_set_size(w.badge, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
@@ -519,10 +540,11 @@ void buildCard(lv_obj_t *row) {
   w.add = lv_obj_get_parent(iconButton(h, 44, 32, kAccent, LV_SYMBOL_PLUS, kOnAccent, onAdd));
   lv_obj_set_style_radius(w.add, 10, 0);
 
-  // Scheduled and the lists, as chips that scroll sideways.
+  // All tasks, Scheduled and the lists, as chips that scroll sideways.
   lv_obj_t *chips = w.chips = box(c);
   lv_obj_set_size(chips, LV_PCT(100), 30);
   flexRow(chips, 6);
+  lv_obj_set_clickable(chips, true);  // a swipe between chips scrolls the row too
   lv_obj_set_scrollable(chips, true);
   lv_obj_set_scroll_dir(chips, LV_DIR_HOR);
   lv_obj_set_scrollbar_mode(chips, LV_SCROLLBAR_MODE_OFF);
@@ -530,7 +552,7 @@ void buildCard(lv_obj_t *row) {
     lv_obj_t *b = w.filters[i] = button(chips, LV_SIZE_CONTENT, 30, kRaised, onFilter, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_set_style_radius(b, 15, 0);
     lv_obj_set_style_pad_hor(b, 12, 0);
-    w.filter_name[i] = label(b, i == 0 ? "Scheduled" : "", &small_font, kText);
+    w.filter_name[i] = label(b, i == 0 ? "All tasks" : i == 1 ? "Scheduled" : "", &small_font, kText);
     lv_obj_set_style_max_width(w.filter_name[i], 160, 0);
     lv_label_set_long_mode(w.filter_name[i], LV_LABEL_LONG_MODE_DOTS);
     // One line: with its height free a long list name wrapped instead of ending in "…".
@@ -545,6 +567,7 @@ void buildCard(lv_obj_t *row) {
   w.rows = box(c);
   lv_obj_set_width(w.rows, LV_PCT(100));
   lv_obj_set_flex_grow(w.rows, 1);
+  lv_obj_set_clickable(w.rows, true);  // so a drag that starts on a heading or between rows scrolls it too
   flexCol(w.rows, 0);
   lv_obj_set_scrollable(w.rows, true);
   lv_obj_set_scroll_dir(w.rows, LV_DIR_VER);
@@ -559,7 +582,8 @@ void addHeading(const char *text, uint32_t color) {
   lv_obj_set_style_pad_bottom(l, 2, 0);
 }
 
-void addRow(int i, Group group, bool all, int64_t now_day) {
+// `list_name`: the second line starts with the task's list (All tasks, with several lists on the deck).
+void addRow(int i, Group group, int64_t now_day, bool list_name) {
   const model::Tasks &k = model::tasks;
   const model::Task &t = k.list[i];
   // The row opens the task; the box at its start (a 44 px target) ticks it.
@@ -599,8 +623,9 @@ void addRow(int i, Group group, bool all, int64_t now_day) {
   if (t.done) lv_obj_set_style_text_decor(title, LV_TEXT_DECOR_STRIKETHROUGH, 0);
 
   // Scheduled: the due day and where it stands, nothing else (an issue's own key, priority
-  // and status, unless it's late). One list: the day (where the heading doesn't say it) and
-  // the source's line (the notes' first line; an issue's key, priority and status).
+  // and status, unless it's late). All tasks and one list: the list (All tasks, when there
+  // are several), the day (where the heading doesn't say it) and the source's line (the
+  // notes' first line; an issue's key, priority and status).
   char sub[200];
   size_t n = 0;
   sub[0] = '\0';
@@ -609,7 +634,8 @@ void addRow(int i, Group group, bool all, int64_t now_day) {
     n += snprintf(sub + n, sizeof(sub) - n, "%s%s", n ? "  ·  " : "", part);
   };
   char day[24] = "";
-  if (all) {
+  if (list_name) add(k.listName(t.src, t.list));
+  if (view == kScheduled) {
     char status[32];
     dueText(t.due, day, sizeof(day));
     statusText(t, tickable, now_day, status, sizeof(status));
@@ -637,22 +663,26 @@ void updateFilters() {
   const bool ok = pc::connected() && k.status == "ok";
   setHidden(w.chips, !ok);
   for (int i = 0; i < kFilters; i++) {
-    const bool used = ok && (i == 0 || (i <= k.list_count && k.lists[i - 1].show));
+    const model::TaskList *l = i >= 2 && i - 2 < k.list_count ? &k.lists[i - 2] : nullptr;
+    const bool used = ok && (i < 2 || (l && l->show));
     setHidden(w.filters[i], !used);
     if (!used) continue;
-    const bool selected = i == 0 ? filter_id.length() == 0
-                                 : k.lists[i - 1].src == filter_src && k.lists[i - 1].id == filter_id;
+    const bool selected = i == 0 ? view == kAllTasks
+                        : i == 1 ? view == kScheduled
+                                 : view == kOneList && l->src == filter_src && l->id == filter_id;
     setBgColor(w.filters[i], selected ? kAccent : kRaised);
     setTextColor(w.filter_name[i], selected ? kOnAccent : kText);
     int open = 0;
-    if (i == 0) {
+    if (i == 1) {
       open = k.sched;
     } else {
       for (int j = 0; j < k.count; j++) {
-        if (!k.list[j].done && k.list[j].src == k.lists[i - 1].src && k.list[j].list == k.lists[i - 1].id) open++;
+        const model::Task &t = k.list[j];
+        if (t.done) continue;
+        if (i == 0 ? listShown(k, t.src, t.list) : t.src == l->src && t.list == l->id) open++;
       }
     }
-    const char *name = i == 0 ? "Scheduled" : k.lists[i - 1].name.c_str();
+    const char *name = i == 0 ? "All tasks" : i == 1 ? "Scheduled" : l->name.c_str();
     if (open) setTextf(w.filter_name[i], "%s  %d", name, open);
     else setText(w.filter_name[i], name);
   }
@@ -663,10 +693,14 @@ void updateList() {
   const model::Tasks &k = model::tasks;
   const bool online = pc::connected();
   const bool ok = online && k.status == "ok";
-  // A list that's gone (deleted in Google Tasks, or taken off the deck): back to Scheduled.
-  if (filter_id.length() && ok && !listShown(k, filter_src, filter_id)) filter_src = filter_id = "";
-  const bool all = filter_id.length() == 0;
-  if (all) {
+  // A list that's gone (deleted in Google Tasks, or taken off the deck): back to All tasks.
+  if (view == kOneList && ok && !listShown(k, filter_src, filter_id)) {
+    view = kAllTasks;
+    filter_src = filter_id = "";
+  }
+  if (view == kAllTasks) {
+    setText(w.title, "ALL TASKS");
+  } else if (view == kScheduled) {
     setText(w.title, "SCHEDULED");
   } else {
     String name = k.listName(filter_src, filter_id);
@@ -680,20 +714,20 @@ void updateList() {
     any = true;
     if (!k.list[i].done) open++;
   }
-  if (all) open = k.sched;  // also the ones past what the deck holds
+  if (view == kScheduled) open = k.sched;  // also the ones past what the deck holds
   setHidden(w.badge, !ok || open == 0);
   setTextf(lv_obj_get_child(w.badge, 0), "%d open", open);
 
   // Which source it's about, when the companion says ("Google Tasks").
   const char *from = k.from.length() ? k.from.c_str() : "your task source";
-  const model::TaskList *list = all ? nullptr : k.listOf(filter_src, filter_id);
+  const model::TaskList *list = view == kOneList ? k.listOf(filter_src, filter_id) : nullptr;
   char why[160];
   if (!online) snprintf(why, sizeof(why), "PC offline");
   else if (k.status == "setup") snprintf(why, sizeof(why), "Connect your tasks in the companion: tray icon, \"Task sources\".");
   else if (k.status == "signin") snprintf(why, sizeof(why), "Sign in to %s from the companion's tray menu, \"Task sources\".", from);
   else if (k.status == "error" && k.count == 0) snprintf(why, sizeof(why), "%s can't be reached right now.", k.from.length() ? from : "Your tasks");
   else if (k.status.length() == 0) snprintf(why, sizeof(why), "Reading your tasks…");
-  else if (!any && all) snprintf(why, sizeof(why), "Nothing scheduled. Tap + to add one.");
+  else if (!any && view == kScheduled) snprintf(why, sizeof(why), "Nothing scheduled. Tap + to add one.");
   else if (!any && list && !list->add) snprintf(why, sizeof(why), "Nothing assigned to you.");
   else if (!any) snprintf(why, sizeof(why), "Nothing to do. Tap + to add one.");
   else why[0] = '\0';
@@ -705,11 +739,14 @@ void updateList() {
   setText(w.note, why);
   setHidden(w.note, why[0] == '\0');
 
-  // Rebuilt whole: a few dozen rows, and only when something changed.
-  const int32_t scroll = lv_obj_get_scroll_y(w.rows);
+  // Rebuilt whole: a few dozen rows, and only when something changed. Where it was scrolled
+  // to stays, unless it's another chip's list now.
+  const int32_t scroll = to_top ? 0 : lv_obj_get_scroll_y(w.rows);
+  to_top = false;
   lv_obj_clean(w.rows);
   if (online && (k.status == "ok" || k.status == "error")) {
     const int64_t now_day = dayToday();
+    const bool list_names = view == kAllTasks && shownLists(k) > 1;
     int last = -1;
     for (int i = 0; i < k.count; i++) {
       const model::Task &t = k.list[i];
@@ -719,7 +756,7 @@ void updateList() {
         addHeading(kGroupNames[g], g == kOverdue ? kUrgent : kMuted);
         last = g;
       }
-      addRow(i, g, all, now_day);
+      addRow(i, g, now_day, list_names);
     }
   }
   lv_obj_update_layout(w.rows);

@@ -59,8 +59,13 @@ Google Calendar and Tasks (optional, once)
   The sign-in is kept encrypted for your Windows account only.
   The deck shows every calendar ticked in Google Calendar. For another Google account (a
   work one beside your own), tray icon > "Google accounts" > "Add a Google account...": its
-  calendar joins the deck's and its task lists the Tasks card. docs\google-setup.md has
-  the details (test users, a work domain's own client).
+  calendar joins the deck's and its task lists the Tasks card. google-setup.md has the
+  details (test users, a work domain's own client).
+  Tray icon > "Calendars" also adds a Microsoft 365 or Outlook calendar, or a calendar link
+  (an .ics address: a published Outlook calendar, a school's or a team's), picks which of
+  each account's calendars go on the deck, and hides events (declined, all-day, free, or by
+  words in the title). calendars.md has the details. On the deck, tap Up next for the
+  whole day.
 
 Other task sources (optional): Microsoft To Do, Jira, GitHub, Obsidian
   task-sources.md in this folder is the guide. Tray icon > "Task sources": Microsoft To Do

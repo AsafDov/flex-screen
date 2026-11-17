@@ -78,6 +78,7 @@ foreach ($name in 'install.ps1', 'install.cmd', 'uninstall.ps1', 'uninstall.cmd'
 }
 Copy-Item (Join-Path $root 'docs\google-setup.md') $out
 Copy-Item (Join-Path $root 'docs\task-sources.md') $out
+Copy-Item (Join-Path $root 'docs\calendars.md') $out
 
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path $out -DestinationPath $zip

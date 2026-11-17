@@ -63,6 +63,35 @@ def tap(d: Deck, text: str, exact: bool = False, dx: int = 0, dy: int = 0, hold:
     return True
 
 
+CHIPS_LEFT, CHIPS_RIGHT = 22, 336  # the Tasks card's chip row, on Capture
+
+
+def tap_chip(d: Deck, text: str, exact: bool = False) -> bool:
+    """A chip on the Tasks card. Its row scrolls sideways, so a chip past the card's edge (the
+    Clipboard card covers it there) is swiped into view first, as a finger would."""
+    for _ in range(6):
+        n, hidden_depth = None, None
+        for o in d.tree():  # anywhere along the row, not just on screen
+            if hidden_depth is not None and o['d'] > hidden_depth:
+                continue
+            hidden_depth = o['d'] if o.get('hidden') else None
+            t = o.get('text', '')
+            if hidden_depth is None and (t == text if exact else text in t) and 100 <= o['y'] < 160 and -800 < o['x'] < 800:
+                n = o
+                break
+        if not n:
+            return False
+        x, y = n['x'] + n['w'] // 2, n['y'] + n['h'] // 2
+        if CHIPS_LEFT + 10 <= x <= CHIPS_RIGHT - 10:
+            d.tap(x, y)
+            return True
+        if x > CHIPS_RIGHT - 10:
+            d.drag(300, y, 80, y)
+        else:
+            d.drag(80, y, 300, y)
+    return False
+
+
 def did(d: Deck, mark: int, action: str, timeout: float = 2, **fields) -> dict | None:
     end = time.time() + timeout
     while time.time() < end:
@@ -89,6 +118,56 @@ def keys_since(d: Deck, mark: int) -> list[dict]:
 
 # ---- pages
 
+def test_day(d: Deck) -> None:
+    d.page(0)
+    now, hour, minute = fixtures.NOW, 3600, 60
+    midnight = now - (now + fixtures.TZ_MIN * 60) % 86400  # today's, local
+    d.state('google', {'status': 'ok', 'events': [  # as the companion sends them: not over yet first
+        {'id': 'g1', 'title': 'Planning', 'start': now - 10 * minute, 'end': now + 20 * minute, 'allday': False, 'join': True, 'cal': 'Work'},
+        {'id': 'e1', 'title': 'Standup', 'start': now + 18 * minute, 'end': now + 33 * minute, 'allday': False, 'join': True},
+        {'id': 'e2', 'title': 'Design review with Dana', 'start': now + 3 * hour, 'end': now + 4 * hour, 'allday': False, 'join': False},
+        {'id': 'a1', 'title': "Dana's birthday", 'start': midnight, 'end': midnight + 86400, 'allday': True, 'join': False, 'cal': 'Family'},
+        {'id': 't1', 'title': 'Dentist', 'start': now + 26 * hour, 'end': now + 27 * hour, 'allday': False, 'join': False},
+        {'id': 'p1', 'title': 'Inbox zero', 'start': now - 2 * hour, 'end': now - 90 * minute, 'allday': False, 'join': False},
+    ]})
+    check('day: Up next is the meeting going on', on_screen(d, 'Now · until 10:32', exact=True))
+    tap(d, 'UP NEXT', exact=True)
+    check('day: tapping Up next opens the day', on_screen(d, 'TODAY', exact=True) and on_screen(d, 'Sun 8 Nov', exact=True)
+          and on_screen(d, 'Close', exact=True))
+    check('day: the meeting going on, picked out, with its calendar', on_screen(d, 'Now, until 10:32  ·  Work', exact=True))
+    check('day: the next one, with how soon', on_screen(d, 'In 18 min', exact=True))
+    check('day: a meeting over is still there, above', on_screen(d, 'Inbox zero', exact=True) and on_screen(d, '08:12', exact=True))
+    check('day: all-day events in a strip under the date', on_screen(d, 'ALL DAY', exact=True)
+          and on_screen(d, "Dana's birthday  ·  Family", exact=True))
+    check('day: then tomorrow', on_screen(d, 'TOMORROW  ·  Mon 9 Nov', exact=True) and on_screen(d, 'Dentist'))
+    def top(text: str) -> dict | None:  # the panel's, over Today's own Up next title
+        return next((n for n in reversed(shown(d)) if n.get('text') == text), None)
+    order = [top(t) for t in ("Dana's birthday  ·  Family", 'Inbox zero', 'Planning', 'Standup', 'Design review with Dana', 'Dentist')]
+    check('day: in order of the day', all(order) and [n['y'] for n in order] == sorted(n['y'] for n in order),
+          str([(n or {}).get('y') for n in order]))
+    d.shot(os.path.join(OUT, 'day.png'))
+    planning = top('Planning')
+    join = next((n for n in shown(d) if n.get('text', '').endswith('Join') and planning and abs(n['y'] - planning['y']) < 30
+                 and n['x'] > 500), None)
+    mark = d.mark()
+    if join:
+        d.tap(join['x'] + join['w'] // 2, join['y'] + join['h'] // 2)
+    check("day: a meeting's Join joins it", did(d, mark, 'cal.join', id='g1') is not None, str(d.acts(mark)))
+    check('day: and closes the day', not on_screen(d, 'TOMORROW  ·', exact=False))
+    tap(d, 'UP NEXT', exact=True)
+    tap(d, 'Close', exact=True)
+    check('day: Close closes it', not on_screen(d, 'TOMORROW  ·', exact=False))
+    tap(d, 'UP NEXT', exact=True)
+    mark = d.mark()
+    d.tap(20, 460)  # beside the panel
+    check('day: a tap beside it closes it, and reaches nothing underneath',
+          not on_screen(d, 'TOMORROW  ·', exact=False) and not d.acts(mark), str(d.acts(mark)))
+    d.state('google', {'status': 'setup', 'events': []})
+    tap(d, 'UP NEXT', exact=True)
+    check('day: with no calendar, it says where to connect one', on_screen(d, '"Calendars"'))
+    tap(d, 'Close', exact=True)
+
+
 def test_today(d: Deck) -> None:
     d.page(0)
     expect_act(d, 'today: Join opens the next meeting', 'Join', 'cal.join', id='e1')
@@ -101,7 +180,7 @@ def test_today(d: Deck) -> None:
     check('today: volume slider sets the volume', did(d, mark, 'vol.set') is not None)
     check('today: the tasks pill counts open and due', on_screen(d, '10 to do · 4 due'))
     tap(d, '10 to do')
-    check('today: the tasks pill opens Capture', on_screen(d, 'SCHEDULED', exact=True))
+    check('today: the tasks pill opens Capture', on_screen(d, 'ALL TASKS', exact=True))
     d.page(0)
     d.shot(os.path.join(OUT, 'today.png'))
 
@@ -203,10 +282,22 @@ PLUS, REFRESH = '\uf067', '\uf021'
 
 def test_tasks(d: Deck) -> None:
     d.page(4)
-    check('tasks: Capture opens on Scheduled, the dated tasks grouped by day',
+    check('tasks: Capture opens on All tasks, the lists on the deck grouped by due day',
+          all(on_screen(d, t) for t in ('ALL TASKS', 'OVERDUE', 'TODAY', 'Reply to the landlord', 'Send the signed lease')))
+    check('tasks: All tasks, Scheduled and the lists on the deck are filters, All tasks first',
+          all(on_screen(d, t, exact=True) for t in ('All tasks  9', 'Scheduled  8', 'My Tasks  3', 'Home  3'))
+          and label(d, 'All tasks  9', exact=True)['x'] < label(d, 'Scheduled  8', exact=True)['x'])
+    check('tasks: All tasks leaves out a list kept off the deck', not on_screen(d, 'Call the plumber'))
+    check('tasks: an All tasks row says its list', on_screen(d, 'Home  ·  6 Nov  ·  From'))
+    for _ in range(2):  # the second drag starts on a heading: that scrolls too
+        d.drag(200, 330, 200, 160, steps=20, ms=600)
+    undated = label(d, 'Fix the balcony light')
+    check('tasks: the undated come after the dated, and the list scrolls to them',
+          on_screen(d, 'NO DATE', exact=True) and undated is not None and undated['y'] + undated['h'] <= 367, str(undated))
+    d.shot(os.path.join(OUT, 'tasks-all.png'))
+    tap_chip(d, 'Scheduled  8', exact=True)
+    check('tasks: Scheduled starts at the top, the dated tasks grouped by day',
           all(on_screen(d, t) for t in ('SCHEDULED', 'OVERDUE', 'TODAY', 'TOMORROW', 'Reply to the landlord', 'Send the signed lease')))
-    check('tasks: Scheduled and the lists on the deck are filters',
-          all(on_screen(d, t, exact=True) for t in ('Scheduled  8', 'My Tasks  3', 'Home  3', 'flex-screen  3')))
     check('tasks: a list kept off the deck has no chip', not on_screen(d, 'Someday'))
     check('tasks: but its dated tasks are under Scheduled', on_screen(d, 'Call the plumber'))
     check('tasks: Scheduled leaves out the undated', not on_screen(d, 'Fix the balcony light'))
@@ -257,7 +348,7 @@ def test_tasks(d: Deck) -> None:
     check('tasks: Close closes it', not on_screen(d, 'No notes.', exact=True))
     expect_act(d, 'tasks: refresh asks the companion', REFRESH, 'task.refresh', exact=True)
 
-    tap(d, 'Home  3', exact=True)
+    tap_chip(d, 'Home  3', exact=True)
     check('tasks: a list on its own, undated too', on_screen(d, 'HOME', exact=True) and on_screen(d, 'Pay the Arnona bill')
           and on_screen(d, 'Fix the balcony light') and not on_screen(d, 'Send the signed lease'))
 
@@ -280,7 +371,7 @@ def test_tasks(d: Deck) -> None:
     tap(d, 'Cancel', exact=True)
     check('tasks: Cancel closes the form and adds nothing',
           not on_screen(d, 'Tomorrow', exact=True) and did(d, mark, 'task.add', timeout=0.5) is None)
-    tap(d, 'Scheduled  ')
+    tap_chip(d, 'Scheduled  ')
     tap(d, PLUS, exact=True)
     for i in range(3):
         key = keyboard_key(d, 0, 5 + 4 * i, 4, 52)
@@ -289,13 +380,13 @@ def test_tasks(d: Deck) -> None:
     expect_act(d, 'tasks: from Scheduled, Add goes to the first list, due today', 'Add', 'task.add',
                src='google', list='L1', title='qwe', due='2026-11-08')
 
-    tap(d, 'Home  3', exact=True)
+    tap_chip(d, 'Home  3', exact=True)
     hidden = fixtures.tasks()
     hidden['rev'] = 8
     hidden['lists'][1]['show'] = False
     d.state('tasks', hidden)
-    check('tasks: a list taken off the deck loses its chip, back to Scheduled',
-          on_screen(d, 'SCHEDULED', exact=True) and not on_screen(d, 'Home  3', exact=True))
+    check('tasks: a list taken off the deck loses its chip, back to All tasks',
+          on_screen(d, 'ALL TASKS', exact=True) and not on_screen(d, 'Home  3', exact=True))
     d.state('tasks', fixtures.tasks())
 
     d.state('tasks', {'rev': 9, 'status': 'signin', 'from': 'Google Tasks', 'lists': [], 'tasks': [], 'open': 0})
@@ -314,7 +405,7 @@ def test_tasks(d: Deck) -> None:
 def test_task_sources(d: Deck) -> None:
     d.page(4)
     d.state('tasks', fixtures.task_sources())
-    tap(d, 'Scheduled  ')
+    tap_chip(d, 'Scheduled  ')
     check('sources: a Jira issue is under Scheduled by its due day, with its key, priority and status',
           on_screen(d, 'Checkout fails on Safari') and on_screen(d, 'Mon 9 Nov  ·  ACME-142  ·  High  ·'))  # cut short on the card
     n = label(d, 'Checkout fails on Safari')
@@ -348,7 +439,7 @@ def test_task_sources(d: Deck) -> None:
     d.shot(os.path.join(OUT, 'tasks-long.png'))
     tap(d, 'Close', exact=True)
 
-    tap(d, 'Jira  2', exact=True)
+    tap_chip(d, 'Jira  2', exact=True)
     check('sources: Jira is a list of its own, undated issues too',
           on_screen(d, 'JIRA', exact=True) and on_screen(d, 'Upgrade the payment SDK') and on_screen(d, 'ACME-77  ·  Medium  ·  To Do'))
     tap(d, PLUS, exact=True)
@@ -361,7 +452,7 @@ def test_task_sources(d: Deck) -> None:
             d.tap(*key)
     expect_act(d, 'sources: and adds to the first of them', 'Add', 'task.add', src='google', list='L1', title='qwe', due='')
 
-    tap(d, 'Scheduled  ')  # the daily note's chip is past the card's edge, a swipe away
+    tap_chip(d, 'Scheduled  ')
     n = label(d, 'Water the plants')
     mark = d.mark()
     if n:
@@ -1130,7 +1221,7 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
+        for test in (test_today, test_day, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
                      test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day

@@ -21,6 +21,7 @@
 #include "page_dev.h"
 #include "page_numpad.h"
 #include "page_today.h"
+#include "dayview.h"
 #include "page_windows.h"
 #include "pc.h"
 #include "ui_kit.h"
@@ -634,6 +635,7 @@ void begin() {
   call::build();
   cheat::build();
   launcher::build(lv_tabview_get_tab_bar(tv));  // its button ends the tab bar; its panel goes over the pages
+  day::build();  // under the sessions board, the approval banner and Claude's questions
   sessions::build();  // under the approval banner and Claude's questions, which can come while it's open
   approval::build();
   ask::build();
@@ -668,6 +670,7 @@ void update() {
   updateToast();
   updateArt();
   today::update();
+  day::update();
   audio::update();
   dev::update();
   windows::update();

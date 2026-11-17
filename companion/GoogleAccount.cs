@@ -111,6 +111,13 @@ sealed class GoogleAccount
         return Scopes.Split(' ').Where(s => !granted.Contains(s)).Select(s => s.EndsWith("tasks") ? "Tasks" : "Calendar").ToList();
     }
 
+    /// <summary>Who signed in: the primary calendar's id is the account's address.</summary>
+    public async Task LearnEmailAsync()
+    {
+        var primary = await SendAsync(HttpMethod.Get, "https://www.googleapis.com/calendar/v3/calendars/primary");
+        if ((string?)primary?["id"] is { Length: > 0 } id) Email = id;
+    }
+
     /// <summary>Forgets the sign-in on this PC.</summary>
     public void SignOut()
     {
