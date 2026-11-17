@@ -30,14 +30,29 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 ### Status bar (on every page)
 - Clock and date.
 - Next meeting with a countdown, amber from five minutes out.
-- Claude Code status (working, needs you, done); tap it to bring that session's window
-  forward, whether it's the Claude app, VS Code or a terminal.
+- Claude Code status (working, needs you, done); tap it for the session board.
 - Last build result.
 - Keyboard layer (from a Vial keyboard); tap it to pin the layer cheat sheet open.
 - Volume (tap to mute) and microphone mute, which mutes every mic so Teams, Zoom and
   Discord all go quiet at once.
 - Toasts over any page: a long command finished or failed, Claude needs approval, git
   results.
+
+### Claude session board (from the status bar)
+
+<img src="docs/screens/sessions.png" alt="The Claude session board: five sessions with where each runs, its model and what it's doing, beside the 5-hour usage chart" width="560">
+
+- Every Claude session on the PC in one list: the Claude app, each VS Code window,
+  terminals and Remote-SSH. The ones that need you first, then those at work, then the
+  rest. Each row says where it runs and its model, what it's doing (or waiting on), how
+  long it's been at it, and a long job's progress.
+- Tap a row to bring up its window. **Stop**, held, ends that session's turn before its
+  next step (a tap only says *Hold*). It works the same in the app, VS Code, a terminal or
+  on a server: before each tool call Claude checks with the companion, about 70 ms.
+- Beside it, the plan's 5-hour usage: the figure, the week's, a chart of the window so far
+  with the recent pace carried ahead, when it resets, and "At this pace you hit the limit
+  around 21:40" (or that it lasts until the reset).
+- The status bar's Claude pill and the Dev page's Claude banner open it.
 
 ### Claude approvals (on every page)
 
@@ -47,11 +62,34 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   under the status bar shows what it wants to run, with **Approve**, **Always** (Claude's
   own "don't ask again" rule, when it offers one) and **Deny**. Claude's prompt on the PC
   shows as usual; whichever you answer first wins.
-- Turn it off from the tray icon: **Approve Claude from the deck**.
-- The status bar's Claude pill says **needs you** for a question too: Claude's question box,
-  a plan waiting for approval, or a turn that ends asking you something in the Claude app.
-  A question gets no banner (Approve or Deny can't answer it; pick the answer on the PC),
-  and a banner goes as soon as you answer at the PC instead.
+- Claude's own questions (its question box) show on the deck with their options: tap one,
+  or for a question that takes several, tap them and **Done**. Several questions asked
+  together come one at a time ("2 of 3"). The X leaves it to the PC. Again, whichever you
+  answer first wins.
+- Turn both off from the tray icon: **Approve Claude from the deck**.
+- The status bar's Claude pill says **needs you** for a question too, and a plan waiting
+  for approval or a turn that ends asking you something in the Claude app (those you
+  answer at the PC). A banner or card goes as soon as you answer at the PC instead.
+
+### Claude talks to the deck (on every page)
+
+<p>
+  <img src="docs/screens/question.png" alt="Claude asking on the deck: Convert the other 12 files too? Yes, No, Only the icons" width="400">
+  <img src="docs/screens/note.png" alt="A note from Claude on the deck: All 12 files converted; 2 need a look" width="400">
+</p>
+
+- Claude Code gets three tools for the deck (an MCP server in the companion, registered
+  for every project when the hooks are installed, and allowed without a prompt):
+  - **deck_ask**: a question with 2-4 buttons; Claude waits for your tap (up to 15
+    minutes, or as long as it asks, at most 50) and carries on with the answer. Handy for
+    long jobs you leave running: ask it to "ask me on the deck" before anything risky.
+  - **deck_notify**: a note that stays until you tap **OK** (or write to that session
+    again); **Open** brings up its window.
+  - **deck_progress**: "3 of 12 · Converting icons" on the Dev page's Claude banner, with
+    a bar, and **Claude 3/12** in the status bar, until the job or the turn ends.
+- Claude decides when to use them; it's told they're for when you may be away from the
+  keyboard, not for the ordinary chat. Sessions on a Remote-SSH server get them through
+  the same tunnel as the hooks.
 
 ### Context bar (on every page but the Numpad)
 
@@ -146,7 +184,8 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 
 <img src="docs/screens/dev.png" alt="The Dev page: Claude's status, recent terminal commands, git and the last build" width="560">
 
-- Claude banner: what the current session is doing, with an **Open** button.
+- Claude banner: what the current session is doing, with an **Open** button; tap the
+  banner for the session board.
 - Git for VS Code's active repo: branch, ahead/behind, changed files; fetch, pull, push,
   stash, and **Commit…** to open VS Code's Source Control.
 - Build card: the last 10 build runs and their results.
@@ -268,21 +307,48 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
 - Idle: a dim clock after 10 minutes without input on the deck or the PC, screen off
   after 30 (both adjustable). A locked PC shows the clock straight away.
 - Four color themes, Base, Vibrant, Ember (warm, orange) and Violet, from the tray menu.
-- Firmware updates over the same USB cable (`pio run -t upload`).
 - One deck, several PCs: it shows whichever PC it's plugged into. Each PC's companion
   keeps its own settings, Google sign-in, vault and clipboard.
+
+### Updates
+
+<img src="docs/screens/firmware-update.png" alt="The deck updating its firmware: Firmware 0.21.0, 66%, keep it plugged in" width="560">
+
+- **The deck's firmware comes with the companion.** When the deck runs an older one (it
+  was last updated on another PC, say), the tray icon says so and the deck shows
+  "Firmware 0.21.0 is ready · tap to update". Tap it, or pick **Update the deck's
+  firmware** in the tray menu. It goes over the same USB cable in about half a minute,
+  with the progress on the deck. No PlatformIO needed, so any PC with the companion can
+  do it.
+- Nothing changes on the deck until the whole image has arrived and checked out (its MD5,
+  checksum and SHA-256); an update that stops on the way (unplugged, the PC asleep) leaves
+  the deck on the firmware it had. A new firmware also stays on trial until it has heard
+  from the PC: one that can't start, or can't reach the PC, is undone by the next restart
+  (unplug the deck and plug it back in). If the deck doesn't come back at all, the tray
+  says how to flash it through its bootloader (see [Firmware](#firmware)).
+- **The companion updates itself** from this repo's GitHub releases. It looks a minute
+  after it starts and every 6 hours (**Check for updates** in the tray menu looks now).
+  When there's a newer release, **Update flex-screen to 0.21.0** downloads the release's
+  `flex-screen.zip`, checks it against the SHA-256 GitHub gives for it, and installs it as
+  `install.cmd` does (the companion, the VS Code extension and the hooks). The companion
+  restarts by itself, says it's updated, and then offers the deck its new firmware.
+- The deck running newer firmware than the companion knows (it came from a PC with a newer
+  kit) makes the companion look for an update straight away.
 
 ## Setup
 
 ### Firmware
-Needs PlatformIO (run it from PowerShell, not Git Bash). From the repo root:
+Once the companion is installed, it keeps the deck's firmware up to date by itself (see
+[Updates](#updates)). Building and flashing it yourself needs PlatformIO (run it from
+PowerShell, not Git Bash). From the repo root:
 
 ```powershell
 pio run -d firmware -t upload
 ```
 
 This updates a deck that already runs flex-screen over its own USB link. For the very
-first flash, use the UART port and the ROM bootloader (hold BOOT, tap RESET):
+first flash, or a deck that doesn't start or connect any more, use the UART port and the
+ROM bootloader (hold BOOT, tap RESET, let go of BOOT; tap RESET again after flashing):
 
 ```powershell
 pio run -d firmware -e deck-esptool -t upload
@@ -299,7 +365,13 @@ powershell -ExecutionPolicy Bypass -File install\build-dist.ps1
 
 Unzip `dist\flex-screen.zip` on the PC and run `install.cmd`. It installs the companion
 (started at sign-in), the VS Code extension and the Claude Code hooks; `uninstall.cmd`
-removes them. [install/README.txt](install/README.txt) covers the optional parts: Google
+removes them. The kit also carries the deck's firmware (it builds it with PlatformIO).
+
+For a release, tag it `v` plus the version (`v0.21.0`) and attach `dist\flex-screen.zip`
+to it: installed companions find it there. The kit's version is the firmware's
+(`firmware/src/pc.h`) unless you give another, for a release that only changes the PC
+side: `build-dist.ps1 -Version 0.21.1`. It has to match the tag, or the companion refuses
+the update. [install/README.txt](install/README.txt) covers the optional parts: Google
 Calendar and Tasks, Teams calls and per-PC settings.
 
 ### Google Calendar and Tasks
@@ -314,7 +386,9 @@ under the server's Host in the PC's `~/.ssh/config`, reconnect, and run
 `install/remote-claude-hooks.sh` on the server once (again after an update that changes
 it: 0.16.2's sends the model of Claude's last reply, for the Model key; 0.16.3's also
 runs Claude Code's own `/usage` there after each turn, at most every 3 minutes, for the
-Usage key). A session there is matched to the VS Code window that has its folder open.
+Usage key; 0.19.0's registers the deck's tools with Claude Code there; 0.20.0's adds the
+board's Stop). A session there is
+matched to the VS Code window that has its folder open.
 Details in
 [install/README.txt](install/README.txt).
 
@@ -335,7 +409,7 @@ apply straight away.
   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
   "layerNames": ["BASE", "NAV", "SYMBOL"],             // your keyboard's layers
   "cheatSheetSeconds": 10,                             // hold a layer key this long for its cheat sheet; 0: only from the pill
-  "obsidianVault": "C:\\path\\to\\vault",               // if it isn't found by itself
+  "obsidianVault": "C:\\path\\to\\vault",               // Task sources › Obsidian daily note picks it; else the open vault
   "hiddenTaskLists": ["google/MTIzNDU2"],              // task lists left off the deck (the tray's Task lists on the deck)
   "obsidianTasks": true,                               // the latest daily note's tasks on the deck
   "jira": { "url": "https://acme.atlassian.net", "email": "me@acme.com", "jql": "…" },  // set by Task sources › Jira
@@ -388,7 +462,7 @@ A key is `keys` (pressed in that app's window; `"g, i"` presses one after the ot
 | Folder | What's in it |
 |---|---|
 | `firmware/` | PlatformIO project: pages, panel, touch, USB link |
-| `companion/` | The Windows tray app |
+| `companion/` | The Windows tray app; each app's context bar keys and call controls in `companion/Integrations/<App>/` |
 | `vscode-ext/` | The VS Code extension |
 | `protocol/` | [v0.md](protocol/v0.md): every message between the parts |
 | `install/` | Install kit builder and install/uninstall scripts |

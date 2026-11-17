@@ -72,7 +72,7 @@ renders under 12px.
 | 15 | Tasks | Capture, Today | Companion | Open tasks from the task sources (Google Tasks, Microsoft To Do, the latest Obsidian daily note, Jira and GitHub issues; one `ITaskProvider` each): Scheduled (every dated task) or one of the lists chosen in the tray, grouped by due day; tap = open (Open in its source), box = tick off (not Jira's or GitHub's issues), + = add one with the on-screen keyboard. Today has a count pill |
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
-| 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (long press) and kept per app; settings.json's `contextBar` adds actions. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
+| 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (its integration's, `companion/Integrations/<App>/`) (long press) and kept per app; settings.json's `contextBar` adds actions. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
 | 18 | Shortcuts launcher | Every page (tab bar) | Companion | Up to 12 tiles from settings.json: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
 
 Extras on the canvas: **Lock PC** (`LockWorkStation`) and the **Headset** quick switch are
@@ -118,9 +118,11 @@ qmk/         (phase 6) Corne keymap addition (layer report) for vial-qmk
 ## Installing on another PC
 
 The deck needs nothing per PC. For the PC side, run `install\build-dist.ps1` here: it
-publishes the companion self-contained (one 56 MB exe, no .NET needed there), packages the
-VS Code extension and zips both with the scripts into `dist\flex-screen.zip`. On the
-other PC, unzip and double-click `install.cmd`, which (without admin rights):
+publishes the companion self-contained (one 56 MB exe, no .NET needed there) and stamped
+with the release's version, builds the deck firmware into `companion\firmware\` (with a
+`firmware.json` giving its version, size and SHA-256), packages the VS Code extension and
+zips it all with the scripts into `dist\flex-screen.zip`. On the other PC, unzip and
+double-click `install.cmd`, which (without admin rights):
 
 - copies the companion to `%LOCALAPPDATA%\Programs\flex-screen` and adds Startup and
   Start menu shortcuts,
@@ -130,8 +132,10 @@ other PC, unzip and double-click `install.cmd`, which (without admin rights):
   Claude extension in VS Code reads the same file as the CLI,
 - starts the companion.
 
-Running it again updates in place; `uninstall.cmd` reverses all of it. Firmware updates
-still go from this PC (`pio run -d firmware -t upload`).
+Running it again updates in place; `uninstall.cmd` reverses all of it. Since 0.21.0 the
+companion does both updates itself: it offers the deck the firmware from its kit, over
+the link, and installs newer kits from the GitHub releases (build phases, "Updates
+across PCs"). `pio run -d firmware -t upload` is for working on the firmware.
 
 ## Toolchain on this PC
 
@@ -1002,7 +1006,177 @@ Gotchas found after phase 6:
     overdue status, no notes, tap beside and Close); on the deck, firmware 0.17.2 shows
     "Sun 15 Nov · To do" rows under Scheduled, and the companion took a `task.open` for
     a real task through `/test`. Not checked: the popup on the real panel (it needs a tap).
-- More task sources, firmware 0.19.0 (asked for, after outside advice to keep sources
+- Claude talks to the deck, firmware 0.19.0 (picked from the ideas list: "lets start with
+  1"):
+  - The companion serves an MCP server on `/mcp` (Streamable HTTP, stateless, JSON-RPC by
+    hand: no SDK for three tools). `deck_ask` holds the call until the tap; `deck_notify`
+    and `deck_progress` return at once. The server's `instructions` (which Claude Code puts
+    in the system prompt) say the tools are for when the user may be away, not for chat.
+  - Claude Code ends an MCP call after 60 s unless the server's own entry sets `timeout`
+    (read from its bundle: the per-server field overrides `MCP_TOOL_TIMEOUT`, and progress
+    notifications don't extend it). `--install-hooks` registers the server with
+    `claude mcp add-json --scope user` and `"timeout": 3600000`, rather than editing
+    `~/.claude.json`, which Claude Code rewrites constantly. Its fetch also gives up
+    waiting for the first byte, so a question's answer is an event stream opened at once
+    with a comment every 10 s; a failed write is how the companion learns Claude stopped
+    waiting (Esc), and the question leaves the deck.
+  - The tools are allowed with `mcp__flex-screen` in `permissions.allow`: otherwise each
+    first use would raise an approval banner for showing something on the deck.
+  - A tool call doesn't say which session made it. Its PreToolUse hook does (same tool and
+    arguments, matched within 1.5 s; the hook is asynchronous and can come after the
+    call); without hooks, the only session at work. That gives the card its project and
+    the progress its session.
+  - Claude's own AskUserQuestion: its PermissionRequest hook answered with
+    `{"behavior":"allow","updatedInput":{…, "answers":{"<question>":"<label>"}}}` (labels
+    joined with ", " for several), the shape the Agent SDK documents for answering it.
+    Only choice questions with 2-4 options go to the deck; text or number questions stay
+    at the PC. It replaces 0.16.x's rule that questions never wait for the deck.
+  - The deck shows one card under the status bar (under the approval banner when both
+    show): the newest question, else the newest note. Notes keep for 30 minutes, three
+    at most.
+  - The "Claude has a question" toast now waits 1.5 s: the question's PreToolUse hook
+    arrives just before its PermissionRequest, and the toast came 80 ms ahead of the card.
+  - Checked: 23 new simulator checks (223); headless `claude -p` calling `deck_ask`,
+    answered through `/test` 75 s later ("The user tapped "Beta" on the deck."), with the
+    project told by its hook; `deck_progress` and `deck_notify` through the registered
+    server, the note photographed on the real deck; an AskUserQuestion in the Claude app
+    answered from the deck's side through `/test` (it returned "Blue"); made-up hooks for
+    the toast. Not checked: tapping the card on the real panel, and Remote-SSH.
+- Claude session board, firmware 0.20.0 (the next of the picked ideas: "Yes, session
+  board"):
+  - An overlay, not a seventh page (the tab bar is full): the status bar's Claude pill
+    opens it (it used to bring up the top session, which a row does now), and so does the
+    Dev page's banner (its Open button still brings up the top session).
+  - Up to 8 sessions (was 4). The app comes from the window's process the hooks already
+    find (`claude` → Claude app, `Code` → VS Code, terminals → Terminal; a server's path
+    adds "SSH"); the model from the session's last reply, else what a hook named.
+  - Stop: keys can't aim at one session (the Claude app shows one of several; Esc goes to
+    whatever is focused), so a second PreToolUse hook, synchronous, asks `/claude/stop`
+    before every tool call and gets `{"continue": false}` once the deck asked. Measured
+    66 ms a call through `cmd /c curl` (35 ms for curl alone; cmd keeps a stopped
+    companion quiet). It stops before the next step, not mid-reply. Hooks are read when a
+    session starts, so sessions already open don't have it.
+  - Usage burn-down: the companion keeps each reading of the 5-hour figure for the current
+    window (a new reset time, or the figure falling, starts over) in
+    `usage-history.json`, so the chart survives restarts. The pace is the last hour's
+    readings (at least 10 minutes apart); below 0.5% an hour there's no forecast. The deck
+    draws the window in 5-minute steps (an LVGL chart): readings carried forward to now,
+    the pace ahead in grey to 100%.
+  - Checked: 21 new simulator checks; on this PC a headless Claude run told to run six
+    6-second commands (36 s at least) stopped through `/test` at 16 s and ended at 25 s,
+    2.7 s after the request, at its next step; the usage history filled from real
+    readings (57%, 58%). Not checked: the board on the real panel (it opens with a tap),
+    and Remote-SSH.
+- App integrations as modules, companion only (agreed 2026-11-15 on outside advice: make
+  the app integrations modular before adding more features; the task sources went first):
+  - Each app the deck knows is an `IAppIntegration` in `companion/Integrations/<App>/`, as
+    each task source is an `ITaskProvider`. It gives its detection (the exe names of its
+    windows), its context (what the window is doing that has keys of its own: Gmail,
+    YouTube or Google Calendar in Chrome and Edge by the tab's title, Claude's tab in VS
+    Code as the extension says, a meeting in Teams or Zoom), its actions (the bank and the
+    default keys per context, what a key shows right now, and how its own kinds of key
+    run: VS Code commands through the extension, Explorer's open folder, Claude's Model
+    and Effort lists and slash commands) and its state (the deck topics it feeds, for the
+    record: the log lists them at start).
+  - Eleven so far: VS Code, the Claude app, Windows Terminal, Chrome and Edge (one
+    `BrowserApp`, with `WebSites` for Gmail, YouTube and Calendar), Explorer, Obsidian,
+    Spotify, Teams, Zoom, Discord. Shared keys: `ClaudeKeys` (Approve, Deny, Model,
+    Effort, Usage, wherever Claude Code runs) and `MeetingKeys` (next meeting, Join, Mute,
+    Camera, New meeting). A new app is a folder and a line in `AppIntegrations.All`.
+  - `ContextBar` keeps what every app shares: the everyday bank, settings.json's
+    `contextBar`, the layouts arranged on the deck and their editing, and pressing keys,
+    typing text or closing the window. It asks the integration of the window in front for
+    the rest.
+  - Calls: `CallSource` moved to `Integrations/Meetings/` and `ZoomControl` to
+    `Integrations/Zoom/`; Teams' local API client is its own class (`TeamsApi`, in
+    `Integrations/Teams/`), and so is the Alt-shortcut sender for Zoom's meeting window
+    (`ZoomShortcuts`). They work as before.
+  - Nothing changes for the deck: the same keys and ids, the same bar keys
+    ("chrome:gmail", "ms-teams:call"), so layouts saved in `context-bar.json` load as
+    before, and the same messages. The data sources (`ObsidianSource`, `VsCodeHub`, the
+    Claude ones) stay where they were for now.
+  - Checked: the companion builds with no warnings. A throwaway harness, compiled once
+    against master's sources and once against these, printed the same 10,600 lines byte
+    for byte: every app's bar under several window titles and 18 call, meeting, mic and
+    Claude states; settings.json variants; saved layouts; and what each key in each bank
+    does when tapped (aimed at a window that doesn't exist, so nothing was typed). The
+    simulator's checks pass. Not checked: on the real deck, and with live Teams and Zoom
+    calls (that code moved without changing).
+  - Found on the way and left as it was (this change keeps behaviour): a `contextBar`
+    entry written as a plain list of keys (`"Chrome": [ … ]`, as the README shows) throws
+    when the bar reads its color, so that app's bar can't be made.
+- Updates across PCs, firmware 0.21.0 (picked from the ideas list: "Self-update across
+  PCs"). The deck moves between PCs, each move risked a companion and firmware that don't
+  match, and flashing needed PlatformIO on that PC:
+  - The deck's firmware travels in the install kit (`firmware\deck.bin` next to the
+    companion, with `firmware.json`: version, size, SHA-256) and the companion sends it
+    over the link it already holds, with the protocol `ota_upload.py` has used since phase
+    1. No esptool, no ROM bootloader, no second program wanting the COM port: the
+    bootloader route is the one that wedged the chip's USB in phase 1, and it's only
+    needed for a deck that can't run flex-screen at all, which needs a person at the board
+    (BOOT + RESET) anyway. So esptool isn't bundled; the recovery steps point to
+    `-e deck-esptool` on a PC with PlatformIO. The app image is all an update writes:
+    bootloader and partition table stay as first flashed, so a change to either would
+    still need that route.
+  - Offered when the deck's `hello` names an older version than the kit's: a balloon from
+    the tray icon, a menu item, and a toast on the deck whose tap starts it. A deck with
+    newer firmware than the companion knows makes the companion look for a newer release.
+  - Never a half-written deck: the companion checks the image before sending (SHA-256 per
+    `firmware.json`, ESP32 image magic, the ESP32-S3 chip id, ESP-IDF's app description),
+    holds back every other message meanwhile (state pushed during flash writes could
+    overflow the deck's buffer), checks each ack's byte count, and sends the image's MD5,
+    which `Update.end()` checks along with the image's checksum and SHA-256 (read back from
+    flash) before it switches slots. Until then the old firmware is the boot slot, so any
+    failure on the way (an `ota_error`, a timeout, an unplug) changes nothing; the deck
+    gives up an update that goes quiet for 20 s.
+  - A new firmware that can't start: Arduino-ESP32's bootloader has app rollback on
+    (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`), but Arduino marks a new image good as soon as
+    it starts. 0.21.0 overrides `verifyRollbackLater()` and keeps itself only when the
+    companion's `sync` arrives (or after 10 minutes up), so a firmware that crashes, or
+    boots but can't talk over USB, is undone by the next restart or replug. This guards
+    updates *to* 0.21.0 and later; checked in the linked image (`verifyRollbackLater`
+    returns 1, from `main.cpp.o`), not yet by booting a bad image.
+  - The deck shows a progress screen from `ota` to the restart (the loop stalls while
+    flash is written, and a frozen page invites an unplug). 0.20.0 has none, so the
+    companion also sends a toast first.
+  - The companion: `build-dist.ps1` stamps it with the release's version (default the
+    firmware's; `-Version` for PC-only releases, as 0.16.1 was), and it compares that
+    with GitHub's latest release (the repo is public, so no sign-in; 60 checks an hour per
+    address, and it looks a minute after starting and every 6 hours). A newer release
+    with `flex-screen.zip` attached (it's attached by hand after publishing, so one
+    without it isn't offered yet) is offered the same way. On OK it downloads the zip,
+    checks its size and GitHub's SHA-256 digest, unpacks it, checks the kit's companion
+    says it's that version (else an update would offer itself forever), and starts a small
+    script that waits for the companion to quit and runs the kit's own `install.ps1`, so
+    the install is exactly install.cmd's. If that fails, the script starts a companion
+    again; a marker file tells the next companion how it went. A build from the repo
+    (`0.0.0-dev`) never looks.
+  - For testing: `FLEX_SCREEN_DECK=tcp:…` points the companion at the simulator, whose
+    OTA now works in memory; such a companion runs beside the real one (its own instance
+    lock, port 48152). `FLEX_SCREEN_UPDATE_FEED` points the update check at another URL;
+    `/test` takes `fw.update` and `update.check`.
+  - Checked: 15 new simulator checks (the progress screen and its version and percent,
+    taps held off, an out-of-order part, an update that stops coming given up after 20 s,
+    a non-image refused, a whole image taken and the restart). `build-dist.ps1` made a
+    73.5 MB kit with companion 0.21.0 and firmware 0.21.0. End to end on this PC, beside
+    the installed companion: a 0.20.9 companion talking to the simulator found a v0.21.0
+    release on a local stand-in for GitHub's API, asked (the dialog answered through UI
+    Automation), downloaded and checked the real kit, quit, and the kit's installer (a
+    stand-in that installs into a test folder instead of the real one) started 0.21.0,
+    which said "updated from 0.20.9 to 0.21.0" and cleared the download. That companion
+    then sent the real 1.35 MB image to the simulator in about 5 s; with its firmware
+    marked 0.21.1 it reported the deck coming back on 0.21.0 ("didn't start"), marked
+    0.21.0 it reported success, and with the simulator killed mid-update, "nothing
+    changed". The firmware builds; its rollback hook is the one linked.
+  - Not checked: an update on the real deck (it was on the other PC): the USB link's
+    speed, the progress screen on the panel, 0.20.0 taking the image with an MD5 it
+    ignores, and the rollback after a bad image. Nor the real `install.ps1` run by the
+    update (the test used a stand-in, so this PC's install stayed as it was), the tray
+    balloons and menu by hand, or the download from GitHub itself (the release has no
+    0.21.0 kit yet).
+- More task sources, firmware 0.22.0 (built as 0.19.0 on its own branch, which was left
+  unmerged while 0.19.0-0.21.0 shipped from master; merged on 2026-11-17 when the deck
+  showed no daily-note tasks. Asked for, after outside advice to keep sources
   modular and details on demand: Microsoft To Do, "Jira. will be needed on my work pc",
   GitHub issues, "Obsidian Tasks - extract the tasks from the last daily notes"; Jira and
   GitHub "could show their project, priority and status"):
@@ -1059,6 +1233,28 @@ Gotchas found after phase 6:
     of the Obsidian note code on a throwaway vault, companion and firmware builds. The
     cheat sheet check (`bar: layer pill pins the cheat sheet`) passes and fails from run
     to run, on master's build too.
+  - Merged with master (2026-11-17), after "it doesn't pull the tasks from my daily note"
+    on the work PC: the source had never shipped (0.20.0 and 0.21.0 came from master), and
+    that PC's daily note is in its own work vault. The companion took the first vault it
+    found and kept it until restart. Now it looks again every poll: settings.json's
+    `obsidianVault`, else the vault Obsidian has open. The tray's Task sources › Obsidian
+    daily note is a submenu: its tasks on or off, the vaults Obsidian knows on this PC
+    (`ObsidianSource.KnownVaults`), the vault Obsidian has open (clears the pick), or
+    another folder (it must have `.obsidian`). A picked vault whose folder moved is looked
+    for once per pick, and the setting follows it. If it's not found, the open vault is
+    used. The daily notes' folder and format come from Periodic Notes when that plugin is
+    on and makes them, else from the core plugin. The log names the note read, or where
+    today's would be.
+  - Checked: 29 checks in a throwaway harness (the companion's sources, with settings.json
+    and Obsidian's vault list redirected to a scratch folder), using the user's own note as
+    pasted: its two `- [ ]` tasks under "🎯 Today's Objective", the brain dump left out,
+    tick and untick rewriting only the box, the open vault, a pick, back to automatic,
+    following the vault Obsidian opened, a moved pick found and the setting updated, a
+    gone pick falling back, Periodic Notes' nested folder, seven ways of writing the note
+    (CRLF, `*`/`+`/numbered bullets, a list in the front matter, a BOM, nested under a
+    bullet), and yesterday's note when today's isn't made yet. The companion, firmware and
+    simulator build. Not checked: the work vault itself (not on this PC), the tray submenu
+    by hand, or on the deck.
 
 ## Decisions
 

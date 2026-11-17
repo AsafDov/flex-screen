@@ -203,6 +203,13 @@ void handleClaude(JsonObjectConst d) {
     out.state = s["state"] | "";
     out.detail = s["detail"] | "";
     out.secs = s["secs"] | 0;
+    JsonObjectConst p = s["progress"];
+    out.progress = p["label"] | "";
+    out.done = p["done"] | 0;
+    out.total = p["total"] | 0;
+    out.app = s["app"] | "";
+    out.model = s["model"] | "";
+    out.stopping = s["stopping"] | false;
   }
   c.at_ms = millis();
   c.version++;
@@ -420,6 +427,42 @@ void handleState(const char *topic, JsonObjectConst d) {
     a.always = d["always"] | false;
     a.count = d["count"] | 0;
     a.version++;
+  } else if (!strcmp(topic, "usage")) {
+    model::Usage &u = model::usage;
+    u.five = d["five"] | -1;
+    u.week = d["week"] | -1;
+    u.start = d["start"] | int64_t(0);
+    u.resets = d["resets"] | int64_t(0);
+    u.eta = d["eta"] | int64_t(0);
+    u.rate = d["rate"] | 0.0f;
+    u.count = 0;
+    for (JsonArrayConst p : d["points"].as<JsonArrayConst>()) {
+      if (u.count == model::Usage::kMax) break;
+      u.points[u.count].secs = p[0] | 0;
+      u.points[u.count].pct = p[1] | 0;
+      u.count++;
+    }
+    u.version++;
+  } else if (!strcmp(topic, "question")) {
+    model::Question &q = model::question;
+    q.id = d["id"] | "";
+    q.kind = d["kind"] | "";
+    q.level = d["level"] | "";
+    q.session = d["session"] | "";
+    q.project = d["project"] | "";
+    q.text = d["text"] | "";
+    q.count = 0;
+    for (JsonObjectConst o : d["options"].as<JsonArrayConst>()) {
+      if (q.count == model::Question::kMax) break;
+      q.options[q.count].label = o["label"] | "";
+      q.options[q.count].note = o["note"] | "";
+      q.count++;
+    }
+    q.multi = d["multi"] | false;
+    q.step = d["step"] | 1;
+    q.steps = d["steps"] | 1;
+    q.waiting = d["count"] | 0;
+    q.version++;
   } else if (!strcmp(topic, "context")) {
     model::Context &c = model::context;
     c.app = d["app"] | "";
@@ -711,6 +754,19 @@ void handleImage(const JsonDocument &doc) {
   incoming.id = "";
 }
 
+// A firmware that came as an update starts out on trial (main.cpp's verifyRollbackLater):
+// it's kept once the companion (or the uploader) has talked to it, which proves the link
+// that the next update needs, or after 10 minutes up without one. Until then a restart,
+// a crash or an unplug takes the deck back to the firmware it had.
+constexpr uint32_t kKeepAnywayMs = 10 * 60 * 1000;
+bool firmware_kept = false;
+
+void keepFirmware(const char *why) {
+  if (firmware_kept) return;
+  firmware_kept = true;
+  if (board::keepFirmware()) log("firmware %s kept: %s", kFirmwareVersion, why);
+}
+
 void otaReply(const char *type, const char *key = nullptr, uint32_t value = 0) {
   JsonDocument doc;
   doc["t"] = type;
@@ -718,8 +774,20 @@ void otaReply(const char *type, const char *key = nullptr, uint32_t value = 0) {
   send(doc);
 }
 
+// When the last update message came: an update the companion stopped sending is given up.
+uint32_t ota_last_ms = 0;
+constexpr uint32_t kOtaGiveUpMs = 20000;
+
+void showUpdate(bool active, bool restarting = false) {
+  model::FirmwareUpdate &u = model::firmware_update;
+  u.active = active;
+  u.restarting = restarting;
+  u.version++;
+}
+
 void otaFail(const char *why) {
   Update.abort();
+  showUpdate(false);
   JsonDocument doc;
   doc["t"] = "ota_error";
   doc["msg"] = why;
@@ -735,11 +803,22 @@ void handleOta(const char *t, const JsonDocument &doc) {
   // Bytes received so far. Update.progress() can't stand in for it: it only moves when a
   // whole 4 KB flash sector has been written.
   static size_t received = 0;
+  ota_last_ms = millis();
   if (!strcmp(t, "ota")) {
     const size_t size = doc["size"] | 0;
     if (Update.isRunning()) Update.abort();
     received = 0;
     if (size == 0 || !Update.begin(size, U_FLASH)) return otaFail(Update.errorString());
+    // The companion (0.21.0 on) sends the image's MD5: Update.end() then checks every byte
+    // that came against it, on top of the image's own checksum and SHA-256.
+    const char *md5 = doc["md5"] | "";
+    if (*md5 && !Update.setMD5(md5)) return otaFail("bad md5");
+    model::FirmwareUpdate &u = model::firmware_update;
+    u.to = doc["version"] | "";
+    u.done = 0;
+    u.total = size;
+    ui::idle::wake();  // the progress shows on a lit screen
+    showUpdate(true);
     otaReply("ota_ready", "size", size);
   } else if (!strcmp(t, "ota_data")) {
     if (!Update.isRunning()) return otaFail("no update in progress");
@@ -753,9 +832,12 @@ void handleOta(const char *t, const JsonDocument &doc) {
     }
     if (Update.write(chunk, n) != n) return otaFail(Update.errorString());
     received += n;
+    model::firmware_update.done = received;
+    model::firmware_update.version++;
     otaReply("ota_ack", "off", received);
   } else if (!strcmp(t, "ota_end")) {
     if (!Update.end()) return otaFail(Update.errorString());  // verifies, sets the boot slot
+    showUpdate(true, true);
     otaReply("ota_done");
     cdc.flush();
     delay(300);
@@ -798,6 +880,7 @@ void handle(const JsonDocument &doc) {
     model::clock.synced_at_ms = millis();
   } else if (!strcmp(t, "sync")) {
     sendHello();
+    keepFirmware("the PC answered");
   } else if (!strcmp(t, "bench")) {
     model::bench_requests++;
   } else if (!strcmp(t, "page")) {
@@ -887,6 +970,11 @@ void poll() {
     rx_dropped = 0;
   }
 
+  // An update whose sender went away (unplugged, quit) is given up, so the screen comes back
+  // and the old firmware carries on.
+  if (Update.isRunning() && millis() - ota_last_ms > kOtaGiveUpMs) otaFail("the update stopped coming");
+  if (!firmware_kept && millis() > kKeepAnywayMs) keepFirmware("up for 10 minutes");
+
   uint8_t chunk[512];
   while (cdc.available()) {
     const size_t n = cdc.read(chunk, sizeof(chunk));
@@ -950,6 +1038,7 @@ void selectOutput(const char *device) { act("dev.out", "id", device); }
 void selectInput(const char *device) { act("dev.in", "id", device); }
 void toggleMic() { act("mic.mute"); }
 void openClaude(const char *session) { act("claude.open", "id", session); }
+void stopClaude(const char *session) { act("claude.stop", "id", session); }
 void replayCommand(const char *cmd) { act("term.replay", "cmd", cmd); }
 void runRecent(const char *id) { act("recent.run", "id", id); }
 void runShortcut(const char *id) { act("shortcut.run", "id", id); }
@@ -995,6 +1084,16 @@ void approveClaude(const char *id, bool always) {
 }
 
 void denyClaude(const char *id) { act("claude.deny", "id", id); }
+
+void answerClaude(const char *id, const int *picks, int count) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "claude.answer";
+  doc["id"] = id;
+  JsonArray list = doc["picks"].to<JsonArray>();
+  for (int i = 0; i < count; i++) list.add(picks[i]);
+  send(doc);
+}
 void interruptCommand() { act("term.interrupt"); }
 void focusTerminal() { act("term.focus"); }
 

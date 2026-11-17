@@ -1,8 +1,4 @@
 using System.Diagnostics;
-using System.Net.WebSockets;
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.Win32;
 
@@ -27,22 +23,19 @@ record CallState(string App, string Name, DateTime Since, bool MicMuted, int Cam
 /// using the microphone right now, as Windows records it (the same data as the taskbar's
 /// microphone icon), so no app has to cooperate to be noticed. Controls per app:
 /// <list type="bullet">
-/// <item>Teams: its local API (Settings › Privacy › Manage API), the one Stream Deck uses:
-/// real mute, camera and hand state, leave and reactions. The first action asks to pair
-/// in Teams; the token is kept encrypted.</item>
+/// <item>Teams: its local API (<see cref="TeamsApi"/>; Settings › Privacy › Manage API), the
+/// one Stream Deck uses: real mute, camera and hand state, leave and reactions. The first
+/// action asks to pair in Teams; the token is kept encrypted.</item>
 /// <item>Zoom: its own toolbar buttons, pressed through accessibility (<see cref="ZoomControl"/>):
 /// mute and video with their real state, whiteboard, annotation and every drawing tool. A
 /// meeting is also noticed by its window, so one joined without audio still counts. Raise
-/// hand is Alt+Y, sent to the meeting window, then the focus goes back.</item>
+/// hand is Alt+Y, sent to the meeting window, then the focus goes back (<see cref="ZoomShortcuts"/>).</item>
 /// <item>Discord: Windows' microphone mute, and Deafen also mutes Discord in the mixer.</item>
 /// </list>
 /// </summary>
 sealed class CallSource
 {
     static readonly TimeSpan Every = TimeSpan.FromSeconds(1.5);
-    const string TeamsPort = "8124";
-    static readonly string TokenPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flex-screen", "teams-token.bin");
 
     // App, its name on the deck, and how Windows lists it (Store package or exe name).
     static readonly (string App, string Name, string[] Keys)[] Apps =
@@ -57,18 +50,13 @@ sealed class CallSource
     readonly DeviceSource _devices;
     readonly MixerSource _mixer;
     readonly ZoomControl _zoom = new();
+    readonly TeamsApi _teams = new();
     readonly System.Threading.Timer _timer;
     readonly object _gate = new();
     DateTime _since = DateTime.MinValue;
     string _app = "";
     bool _deafened;
     string _key = "";
-
-    // Teams' API
-    ClientWebSocket? _teams;
-    JsonNode? _teamsState;  // meetingUpdate: meetingState and meetingPermissions
-    int _requestId;
-    DateTime _teamsTried = DateTime.MinValue;
 
     public CallState Current { get; private set; } = CallState.None;
 
@@ -84,6 +72,7 @@ sealed class CallSource
         _timer = new System.Threading.Timer(_ => Poll(), null, Timeout.Infinite, Timeout.Infinite);
         _devices.MicChanged += _ => Poll();
         _zoom.Changed += Poll;
+        _teams.Changed += Poll;
     }
 
     public void Start() => _timer.Change(TimeSpan.Zero, Every);
@@ -100,7 +89,7 @@ sealed class CallSource
             if (app.App == null && _zoom.Current.InMeeting) app = Apps.First(a => a.App == "zoom");  // joined without audio
             var cameraOn = app.App != null && app.Keys.Any(k => camera.Any(c => c.StartsWith(k, StringComparison.OrdinalIgnoreCase) ||
                                                                              c.EndsWith(k, StringComparison.OrdinalIgnoreCase)));
-            if (Process.GetProcessesByName("ms-teams").Length > 0) _ = EnsureTeamsAsync();
+            if (Process.GetProcessesByName("ms-teams").Length > 0) _ = _teams.EnsureAsync();
             Publish(Build(app.App ?? "", app.Name ?? "", cameraOn));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -114,7 +103,8 @@ sealed class CallSource
         lock (_gate)
         {
             // Teams in a meeting says so itself, even before the mic registers.
-            var teams = _teamsState?["meetingState"];
+            var teamsState = _teams.State;
+            var teams = teamsState?["meetingState"];
             if (app.Length == 0 && (bool?)teams?["isInMeeting"] == true) (app, name) = ("teams", "Teams");
             if (app != _app)
             {
@@ -131,7 +121,7 @@ sealed class CallSource
             {
                 case "teams" when teams != null && (bool?)teams["isInMeeting"] == true:
                 {
-                    var can = _teamsState?["meetingPermissions"];
+                    var can = teamsState?["meetingPermissions"];
                     var list = new List<string>();
                     if ((bool?)can?["canToggleMute"] == true) list.Add("mic");
                     if ((bool?)can?["canToggleVideo"] == true) list.Add("camera");
@@ -143,8 +133,8 @@ sealed class CallSource
                 }
                 case "teams":
                     return new CallState(app, name, _since, systemMuted, cameraOn ? 1 : 0, -1, false, ["mic"],
-                        _teams?.State == WebSocketState.Open ? "Tap a control once, then allow flex-screen in Teams"
-                                                             : "For camera, hand and leave: Teams › Settings › Privacy › Manage API › Enable API");
+                        _teams.Connected ? "Tap a control once, then allow flex-screen in Teams"
+                                         : "For camera, hand and leave: Teams › Settings › Privacy › Manage API › Enable API");
                 case "zoom":
                 {
                     var zoom = _zoom.Current;
@@ -188,7 +178,7 @@ sealed class CallSource
         switch (Current.App)
         {
             case "teams": TeamsAction("toggle-video"); break;
-            case "zoom": _zoom.ToggleVideo(() => ZoomKey('V')); break;
+            case "zoom": _zoom.ToggleVideo(() => ZoomShortcuts.Send('V')); break;
         }
     }
 
@@ -197,7 +187,7 @@ sealed class CallSource
         switch (Current.App)
         {
             case "teams": TeamsAction("toggle-hand"); break;
-            case "zoom": ZoomKey('Y'); break;
+            case "zoom": ZoomShortcuts.Send('Y'); break;
         }
     }
 
@@ -207,7 +197,7 @@ sealed class CallSource
         {
             case "teams": TeamsAction("leave-call"); break;
             case "zoom":
-                _zoom.Leave(() => ZoomKey('Q'));  // Zoom asks to confirm; a host also gets "End for all", so it isn't pressed for them
+                _zoom.Leave(() => ZoomShortcuts.Send('Q'));  // Zoom asks to confirm; a host also gets "End for all", so it isn't pressed for them
                 Toast?.Invoke(new Toast("attention", "Confirm leaving in Zoom"));
                 break;
         }
@@ -312,45 +302,6 @@ sealed class CallSource
         "teams" => "ms-teams", "zoom" => "Zoom", "discord" => "Discord", "webex" => "CiscoCollabHost", "browser" => "chrome", _ => "",
     };
 
-    /// <summary>A Zoom shortcut, sent to the meeting window; then the window that had the focus gets it back.</summary>
-    static void ZoomKey(char key)
-    {
-        var meeting = ZoomMeetingWindow();
-        if (meeting == IntPtr.Zero) return;
-        var before = GetForegroundWindow();
-        WindowFocus.Activate(meeting);
-        Thread.Sleep(120);
-        KeyInput.Chord(KeyInput.Alt, key);
-        Thread.Sleep(80);
-        if (before != IntPtr.Zero && before != meeting) WindowFocus.Activate(before);
-    }
-
-    static IntPtr ZoomMeetingWindow()
-    {
-        var pids = Process.GetProcessesByName("Zoom").Select(p => (uint)p.Id).ToHashSet();
-        IntPtr found = IntPtr.Zero, sharing = IntPtr.Zero;
-        EnumWindows((hwnd, _) =>
-        {
-            GetWindowThreadProcessId(hwnd, out var pid);
-            if (!pids.Contains(pid) || !IsWindowVisible(hwnd)) return true;
-            var cls = new StringBuilder(64);
-            GetClassName(hwnd, cls, cls.Capacity);
-            // The meeting window (Zoom 7's tabbed one, or the older one), not Zoom's home; while
-            // sharing it's hidden and the floating meeting controls take the shortcuts.
-            switch (cls.ToString())
-            {
-                case "ConfMultiTabContentWndClass" or "ZPContentViewWndClass":
-                    found = hwnd;
-                    return false;
-                case "ZPFloatToolbarClass":
-                    sharing = hwnd;
-                    break;
-            }
-            return true;
-        }, IntPtr.Zero);
-        return found != IntPtr.Zero ? found : sharing;
-    }
-
     // ---- what's using the microphone and camera
 
     /// <summary>Apps Windows lists as using this capability right now (LastUsedTimeStop 0): Store package names and exe paths.</summary>
@@ -382,118 +333,10 @@ sealed class CallSource
     static bool Active(RegistryKey? key) =>
         key?.GetValue("LastUsedTimeStart") is long start && start != 0 && key.GetValue("LastUsedTimeStop") is long stop && stop == 0;
 
-    // ---- Teams' third-party API (ws://127.0.0.1:8124, protocol 2.0.0)
-
-    async Task EnsureTeamsAsync()
-    {
-        lock (_gate)
-        {
-            if (_teams is { State: WebSocketState.Open or WebSocketState.Connecting }) return;
-            if (DateTime.UtcNow - _teamsTried < TimeSpan.FromSeconds(10)) return;
-            _teamsTried = DateTime.UtcNow;
-        }
-        var socket = new ClientWebSocket();
-        var token = LoadToken();
-        var url = $"ws://127.0.0.1:{TeamsPort}?token={Uri.EscapeDataString(token)}&protocol-version=2.0.0" +
-                  "&manufacturer=flex-screen&device=deck&app=flex-screen&app-version=1.0";
-        try
-        {
-            await socket.ConnectAsync(new Uri(url), CancellationToken.None);
-        }
-        catch (Exception e) when (e is WebSocketException or HttpRequestException)
-        {
-            socket.Dispose();
-            return;  // the API is off in Teams, or Teams is starting
-        }
-        lock (_gate) _teams = socket;
-        Log.Write("call: connected to Teams' API");
-        _ = ReceiveTeamsAsync(socket);
-    }
-
-    async Task ReceiveTeamsAsync(ClientWebSocket socket)
-    {
-        var buffer = new byte[16 * 1024];
-        try
-        {
-            while (socket.State == WebSocketState.Open)
-            {
-                var text = new StringBuilder();
-                WebSocketReceiveResult result;
-                do
-                {
-                    result = await socket.ReceiveAsync(buffer, CancellationToken.None);
-                    if (result.MessageType == WebSocketMessageType.Close) return;
-                    text.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
-                } while (!result.EndOfMessage);
-                var message = JsonNode.Parse(text.ToString());
-                if (message?["tokenRefresh"] is { } token)
-                {
-                    SaveToken((string?)token ?? "");
-                    Log.Write("call: paired with Teams");
-                }
-                if (message?["meetingUpdate"] is { } update)
-                {
-                    lock (_gate) _teamsState = update.DeepClone();
-                    Poll();
-                }
-                if ((string?)message?["errorMsg"] is { Length: > 0 } error) Log.Write($"call: Teams: {error}");
-            }
-        }
-        catch (Exception e) when (e is WebSocketException or System.Text.Json.JsonException or OperationCanceledException)
-        {
-            // Teams closed or restarted; the next poll reconnects.
-        }
-        finally
-        {
-            lock (_gate)
-            {
-                if (_teams == socket)
-                {
-                    _teams = null;
-                    _teamsState = null;
-                }
-            }
-            socket.Dispose();
-        }
-    }
+    // ---- Teams' API
 
     void TeamsAction(string action, JsonObject? parameters = null)
     {
-        ClientWebSocket? socket;
-        lock (_gate) socket = _teams;
-        if (socket is not { State: WebSocketState.Open })
-        {
-            Toast?.Invoke(new Toast("attention", "Enable Teams' API: Settings › Privacy › Manage API"));
-            return;
-        }
-        var body = new JsonObject { ["action"] = action, ["parameters"] = parameters ?? new JsonObject(), ["requestId"] = Interlocked.Increment(ref _requestId) };
-        _ = socket.SendAsync(Encoding.UTF8.GetBytes(body.ToJsonString()), WebSocketMessageType.Text, true, CancellationToken.None);
+        if (!_teams.Send(action, parameters)) Toast?.Invoke(new Toast("attention", "Enable Teams' API: Settings › Privacy › Manage API"));
     }
-
-    static string LoadToken()
-    {
-        try
-        {
-            return File.Exists(TokenPath) ? Encoding.UTF8.GetString(ProtectedBytes.Unprotect(File.ReadAllBytes(TokenPath))) : "";
-        }
-        catch (Exception e) when (e is IOException or CryptographicException)
-        {
-            return "";
-        }
-    }
-
-    static void SaveToken(string token)
-    {
-        if (token.Length == 0) return;
-        Directory.CreateDirectory(Path.GetDirectoryName(TokenPath)!);
-        File.WriteAllBytes(TokenPath, ProtectedBytes.Protect(Encoding.UTF8.GetBytes(token)));
-    }
-
-    delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
-
-    [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
-    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
-    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder name, int max);
-    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
 }

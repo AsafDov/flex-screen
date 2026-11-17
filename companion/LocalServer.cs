@@ -7,11 +7,15 @@ namespace FlexScreen.Companion;
 
 /// <summary>
 /// The companion's endpoint on this PC only (http://localhost:48151): Claude Code hooks
-/// POST their events to /claude, and the VS Code extension keeps a WebSocket open on /vscode.
+/// POST their events to /claude, Claude Code calls the deck's tools on /mcp, and the VS Code
+/// extension keeps a WebSocket open on /vscode.
 /// </summary>
 sealed class LocalServer
 {
     public const int Port = 48151;
+
+    /// <summary>A companion playing with the simulator runs beside the real one, one port up.</summary>
+    static readonly int Listening = DeckLink.Simulator != null ? Port + 1 : Port;
 
     readonly HttpListener _listener = new();
 
@@ -21,6 +25,9 @@ sealed class LocalServer
     /// <summary>A PermissionRequest hook waiting for a decision: the JSON to answer with, or null for none.</summary>
     public event Func<JsonNode, Task<string?>>? ClaudePermission;
 
+    /// <summary>The stop hook asking whether its session is to stop (the deck's Stop): true to stop it now.</summary>
+    public event Func<string, bool>? ClaudeStop;
+
     /// <summary>The Claude plan's usage, percent of the 5-hour window and of the week, read by a server's hooks.</summary>
     public event Action<double, double?>? ClaudeUsage;
 
@@ -29,6 +36,9 @@ sealed class LocalServer
 
     /// <summary>A message posted to /test as if the deck had sent it (see <see cref="FromLocalTool"/>).</summary>
     public event Action<JsonNode>? TestMessage;
+
+    /// <summary>Claude Code calling the deck's tools (MCP over HTTP, <see cref="DeckTools"/>); the handler answers.</summary>
+    public event Func<HttpListenerContext, Task>? Mcp;
 
     /// <summary>A command for the deck from /deck; a screen shot comes back as PNG bytes.</summary>
     public event Func<JsonNode, Task<byte[]?>>? DeckCommand;
@@ -44,17 +54,17 @@ sealed class LocalServer
     public void Start()
     {
         // "localhost" prefixes need no URL reservation, so this runs without admin rights.
-        _listener.Prefixes.Add($"http://localhost:{Port}/");
+        _listener.Prefixes.Add($"http://localhost:{Listening}/");
         try
         {
             _listener.Start();
         }
         catch (HttpListenerException e)
         {
-            Log.Write($"server: can't listen on {Port}: {e.Message}");
+            Log.Write($"server: can't listen on {Listening}: {e.Message}");
             return;
         }
-        Log.Write($"server: listening on localhost:{Port}");
+        Log.Write($"server: listening on localhost:{Listening}");
         _ = Task.Run(AcceptLoop);
     }
 
@@ -115,6 +125,24 @@ sealed class LocalServer
                     response.Close();
                     return;
 
+                // Claude waits for this one before each tool call: answer at once.
+                case "/claude/stop" when request.HttpMethod == "POST" && FromLocalTool(request, needsTestHeader: false):
+                {
+                    string? session;
+                    using (var reader = new StreamReader(request.InputStream, Encoding.UTF8))
+                        session = (string?)JsonNode.Parse(await reader.ReadToEndAsync())?["session_id"];
+                    if (session is { Length: > 0 } && ClaudeStop?.Invoke(session) == true)
+                    {
+                        var bytes = Encoding.UTF8.GetBytes("{\"continue\":false,\"stopReason\":\"Stopped from the flex-screen deck\"}");
+                        response.ContentType = "application/json";
+                        response.ContentLength64 = bytes.Length;
+                        await response.OutputStream.WriteAsync(bytes);
+                    }
+                    else response.StatusCode = 204;
+                    response.Close();
+                    return;
+                }
+
                 // Held open until the deck answers, Claude moves on, or the hook gives up.
                 case "/claude/permission" when request.HttpMethod == "POST" && FromLocalTool(request, needsTestHeader: false):
                 {
@@ -174,6 +202,10 @@ sealed class LocalServer
                     response.Close();
                     return;
                 }
+
+                case "/mcp" when FromLocalTool(request, needsTestHeader: false) && Mcp is { } serve:
+                    await serve(context);
+                    return;
 
                 case "/vscode" when request.IsWebSocketRequest:
                     var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;

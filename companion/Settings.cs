@@ -12,7 +12,7 @@ namespace FlexScreen.Companion;
 ///   "layerNames": ["BASE", "NAV", "SYMBOL"],                  // the keyboard's layers, from 0
 ///   "cheatSheetSeconds": 10,                                  // a layer key held this long shows the cheat sheet; 0: only from the pill
 ///   "hiddenTaskLists": ["google/MTIzNDU2"],                   // task lists left off the deck (the tray's Task lists on the deck)
-///   "obsidianVault": "C:\\Users\\me\\Notes\\MyVault",           // if it can't be found by itself
+///   "obsidianVault": "C:\\Users\\me\\Notes\\MyVault",           // Task sources › Obsidian daily note picks it; else the vault Obsidian has open
 ///   "obsidianTasks": true,                                    // the latest daily note's "- [ ]" tasks on the deck (on unless false)
 ///   "microsoftTodo": { "clientId": "…", "tenant": "common" },   // the tray's Task sources › Microsoft To Do sets these
 ///   "jira": { "url": "https://acme.atlassian.net", "email": "me@acme.com", "jql": "…", "name": "Jira" },  // Task sources › Jira

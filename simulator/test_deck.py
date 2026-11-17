@@ -7,6 +7,8 @@ worth a look land in out/tests/.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
 import sys
 import time
@@ -17,6 +19,7 @@ from deck import Deck, HERE
 
 OUT = os.path.join(HERE, 'out', 'tests')
 PREV, PLAY, PAUSE, NEXT = '', '', '', ''
+CLOSE = ''  # LV_SYMBOL_CLOSE
 SHUFFLE, LOOP = '', ''
 results: list[tuple[str, bool, str]] = []
 
@@ -109,7 +112,10 @@ def test_status_bar(d: Deck) -> None:
     mark = d.mark()
     d.tap(767, 21)
     check('bar: mic button mutes the mic', did(d, mark, 'mic.mute') is not None)
-    expect_act(d, 'bar: Claude pill opens the session', 'Claude working', 'claude.open', id='s1')
+    tap(d, 'Claude working', exact=True)
+    check('bar: Claude pill opens the session board', on_screen(d, 'Claude sessions', exact=True))
+    tap(d, CLOSE, exact=True)
+    check('bar: and its X closes it', not on_screen(d, 'Claude sessions', exact=True))
     tap(d, 'Build passed')
     check('bar: build pill opens Dev', on_screen(d, 'TERMINAL'))
     tap(d, 'Standup ·')
@@ -882,6 +888,134 @@ def test_approval(d: Deck) -> None:
     check('approval: answered at the PC, it goes', not on_screen(d, 'Bash: A very long'))
 
 
+def test_question(d: Deck) -> None:
+    d.page(1)
+    d.state('question', fixtures.question())
+    d.settle()
+    title = label(d, 'Claude · flex-screen asks')
+    check('question: Claude asking shows on any page', title is not None and on_screen(d, 'Convert the other 12 files too?'))
+    check('question: under the status bar', title is not None and title['y'] > 44, str(title))
+    check('question: its options as buttons', all(on_screen(d, o, exact=True) for o in ('Yes', 'No', 'Only the icons')))
+    d.shot(os.path.join(OUT, 'question.png'))
+    expect_act(d, 'question: a tap answers it', 'Only the icons', 'claude.answer', exact=True, id='q1', picks=[2])
+    check('question: and the card goes at once', not on_screen(d, 'Convert the other 12 files too?'))
+
+    # Claude's own question: several asked together, options with notes, one taking several picks.
+    d.state('question', fixtures.question('q2', 'Which checks should run?', ('Unit tests', 'Simulator', 'Lint'),
+                                          notes=('Fast', 'Takes a minute', ''), multi=True, step=2, steps=3))
+    d.settle()
+    check('question: says which of several it is', on_screen(d, '2 of 3') and on_screen(d, 'pick any'))
+    check("question: an option's note shows under it", on_screen(d, 'Takes a minute', exact=True))
+    d.shot(os.path.join(OUT, 'question-multi.png'))
+    mark = d.mark()
+    tap(d, 'Unit tests', exact=True)
+    tap(d, 'Lint', exact=True)
+    check('question: picking several sends nothing yet', d.took('claude.answer', since=mark) is None)
+    expect_act(d, 'question: Done sends the picks', 'Done', 'claude.answer', exact=True, id='q2', picks=[0, 2])
+
+    d.state('question', fixtures.question('q3', count=2))
+    d.state('approval', fixtures.approval())
+    d.settle()
+    banner = label(d, 'Claude · flex-screen wants to')
+    card = label(d, 'Claude · flex-screen asks')
+    check('question: under the approval banner when both show',
+          banner is not None and card is not None and card['y'] > banner['y'] + 60, f'{banner} {card}')
+    check('question: says when more are waiting', on_screen(d, 'more waiting'))
+    d.state('approval', fixtures.NO_APPROVAL)
+    d.settle()
+    card = label(d, 'Claude · flex-screen asks')
+    check('question: back up once the approval goes', card is not None and card['y'] < 70, str(card))
+    mark = d.mark()
+    close = [n for n in shown(d) if n.get('text') == CLOSE and n['y'] < 120]
+    if close:
+        tap_node(d, close[-1])
+    check('question: X dismisses it', did(d, mark, 'claude.answer', id='q3', picks=[]) is not None)
+
+    d.state('question', fixtures.note())
+    d.settle()
+    check('question: a note shows with OK', on_screen(d, 'All 12 files converted; 2 need a look') and on_screen(d, 'OK', exact=True))
+    check('question: and no X', not [n for n in shown(d) if n.get('text') == CLOSE and n['y'] < 120])
+    d.shot(os.path.join(OUT, 'note.png'))
+    expect_act(d, "question: a note's Open brings up the session", 'Open', 'claude.open', exact=True, id='s1')
+    expect_act(d, 'question: OK marks it read', 'OK', 'claude.answer', exact=True, id='n1', picks=[])
+    check('question: and it goes', not on_screen(d, 'All 12 files converted'))
+
+    d.state('question', fixtures.question('q4'))
+    d.settle()
+    d.offline()
+    check('question: offline it goes', not on_screen(d, 'Convert the other 12 files too?'))
+    d.online()
+    d.state('question', fixtures.NO_QUESTION)
+    d.settle()
+    check('question: answered at the PC, it goes', not on_screen(d, 'Convert the other 12 files too?'))
+
+
+def test_sessions(d: Deck) -> None:
+    d.page(0)
+    d.state('claude', fixtures.sessions())
+    d.settle()
+    tap(d, 'Claude needs you', exact=True)
+    check('sessions: the board opens from the pill', on_screen(d, 'Claude sessions', exact=True))
+    check('sessions: says how many and who needs you', on_screen(d, '5 sessions · 1 needs you'))
+    rows = [label(d, p, exact=True) for p in ('api-gateway', 'flex-screen', 'icons', 'website', 'notes')]
+    check('sessions: every session, needing you first', all(rows) and [r['y'] for r in rows] == sorted(r['y'] for r in rows),
+          str([r and r['y'] for r in rows]))
+    check('sessions: where each runs and its model', on_screen(d, 'VS Code · Sonnet 4.5') and on_screen(d, 'VS Code · SSH · Opus 5.5'))
+    check('sessions: what it waits on', on_screen(d, 'Needs you · Bash: kubectl'))
+    check("sessions: a long job's progress", on_screen(d, 'Converting icons · 7 of 12'))
+    check('sessions: how long each has been at it', on_screen(d, '14 min', exact=True))
+    stops = [n for n in shown(d) if n.get('text') == 'Stop']
+    check('sessions: Stop only for those at work or waiting', len(stops) == 3, str(len(stops)))
+    check('sessions: the usage figure', on_screen(d, '62%', exact=True) and on_screen(d, 'week 17%', exact=True))
+    check('sessions: when it resets', on_screen(d, 'Resets at 12:42 · in 2 h'))
+    check('sessions: when the limit comes at this pace', on_screen(d, 'At this pace you hit the limit around 12:18'))
+    d.shot(os.path.join(OUT, 'sessions.png'))
+
+    expect_act(d, 'sessions: a row brings up its window', 'website', 'claude.open', exact=True, id='s4')
+    mark = d.mark()
+    tap_node(d, stops[0])
+    check('sessions: a tap on Stop only says Hold', on_screen(d, 'Hold', exact=True) and d.took('claude.stop', since=mark) is None)
+    tap_node(d, stops[1], hold=True)
+    check('sessions: holding Stop stops that session', did(d, mark, 'claude.stop', id='s1') is not None)
+    s = fixtures.sessions()
+    s['sessions'][1]['stopping'] = True
+    d.state('claude', s)
+    d.settle()
+    check('sessions: says it stops before its next step', on_screen(d, 'Stopping before its next step'))
+
+    d.state('usage', fixtures.usage(30, 4.0, limit=False))
+    d.settle()
+    check('sessions: a slow pace lasts to the reset', on_screen(d, 'At this pace it lasts until the reset'))
+    d.state('usage', {'five': -1, 'week': -1, 'start': 0, 'resets': 0, 'eta': 0, 'rate': 0, 'points': []})
+    d.settle()
+    check('sessions: no usage known, it says why', on_screen(d, 'Shows once Claude Code is signed in'))
+    d.state('claude', {'sessions': []})
+    d.settle()
+    check('sessions: none, it says where they come from', on_screen(d, 'No Claude sessions.'))
+    tap(d, CLOSE, exact=True)
+
+    d.page(2)
+    d.state('claude', fixtures.sessions())
+    d.settle()
+    tap(d, 'Claude needs your approval')
+    check("sessions: the Dev page's banner opens it too", on_screen(d, 'Claude sessions', exact=True))
+    d.tap(400, 20)  # beside the panel: over the status bar
+    check('sessions: a tap beside it closes it', not on_screen(d, 'Claude sessions', exact=True))
+
+
+def test_progress(d: Deck) -> None:
+    d.page(2)
+    d.state('claude', {'sessions': [{'id': 's1', 'project': 'flex-screen', 'state': 'working', 'detail': 'Edit: icons.cpp', 'secs': 40,
+                                     'progress': {'label': 'Converting icons', 'done': 3, 'total': 12}}]})
+    d.settle()
+    check('progress: the status bar counts', on_screen(d, 'Claude 3/12', exact=True))
+    check('progress: the Dev banner says how far', on_screen(d, 'Converting icons · 3 of 12'))
+    d.shot(os.path.join(OUT, 'progress.png'))
+    d.state('claude', {'sessions': [{'id': 's1', 'project': 'flex-screen', 'state': 'working', 'detail': 'Edit: icons.cpp', 'secs': 40}]})
+    d.settle()
+    check('progress: without it, the step again', on_screen(d, 'Claude working', exact=True) and on_screen(d, 'Edit: icons.cpp'))
+
+
 def test_picker(d: Deck) -> None:
     d.page(0)
     d.send({'t': 'pick', 'id': 'claude-model', 'title': 'Model', 'current': 'opus', 'choices': [
@@ -914,6 +1048,82 @@ def test_offline(d: Deck) -> None:
     check('offline: back online', not on_screen(d, 'PC offline'))
 
 
+def ota_send(d: Deck, image: bytes, start: int = 0, end: int | None = None) -> int:
+    """Sends the image's 4 KB parts from `start` to `end`, each after the last one's ack, as
+    the companion does; returns where it stopped."""
+    end = len(image) if end is None else end
+    for off in range(start, end, 4096):
+        mark = d.mark()
+        part = image[off:off + 4096]
+        d.send({'t': 'ota_data', 'off': off, 'b64': base64.b64encode(part).decode()})
+        d.wait_for(lambda m: m.get('t') in ('ota_ack', 'ota_error'), since=mark)
+    return min(end, len(image))
+
+
+def ota_start(d: Deck, image: bytes, version: str = '0.21.0') -> dict:
+    mark = d.mark()
+    d.send({'t': 'ota', 'size': len(image), 'md5': hashlib.md5(image).hexdigest(), 'version': version})
+    return d.wait_for(lambda m: m.get('t') in ('ota_ready', 'ota_error'), since=mark)
+
+
+def test_firmware_update(d: Deck) -> None:
+    """Last: a finished update restarts the simulator, as the deck restarts into its new firmware."""
+    d.page(0)
+    image = b'\xe9' + bytes(3 * 4096 + 99)  # three full parts and a short one
+    check('firmware: the deck takes an update', ota_start(d, image).get('t') == 'ota_ready')
+    d.settle()
+    check('firmware: it says so over every page', on_screen(d, 'Updating the deck', exact=True))
+    check('firmware: with the version coming', on_screen(d, 'Firmware 0.21.0  ·  0%'))
+    check('firmware: and to keep it plugged in', on_screen(d, 'Keep it plugged in'))
+    mark = d.mark()
+    tap(d, PLAY, exact=True, below=180) or tap(d, PAUSE, exact=True, below=180) or d.tap(400, 300)
+    check('firmware: taps stop at the progress screen', did(d, mark, 'media.toggle', timeout=0.5) is None)
+    ota_send(d, image, 0, 2 * 4096)
+    d.settle()
+    check('firmware: progress moves', on_screen(d, 'Firmware 0.21.0  ·  66%'))
+    d.shot(os.path.join(OUT, 'firmware-update.png'))
+
+    mark = d.mark()
+    d.send({'t': 'ota_data', 'off': 0, 'b64': base64.b64encode(image[:4096]).decode()})
+    error = d.wait_for(lambda m: m.get('t') in ('ota_ack', 'ota_error'), since=mark)
+    check('firmware: a part out of order ends it', error.get('msg') == 'out-of-order chunk', str(error))
+    d.settle()
+    check('firmware: and the screen comes back', not on_screen(d, 'Updating the deck', exact=True))
+
+    mark = d.mark()
+    d.send({'t': 'ota', 'size': len(image)})  # older companions send no md5 or version
+    d.settle()
+    check('firmware: without a version it says new firmware', on_screen(d, 'New firmware  ·  0%'))
+    try:
+        error = d.wait_for(lambda m: m.get('t') == 'ota_error', since=mark, timeout=25)
+    except TimeoutError:
+        error = {}
+    check('firmware: an update that stops coming is given up', error.get('msg') == 'the update stopped coming', str(error))
+    d.settle()
+    check('firmware: and the screen comes back after that too', not on_screen(d, 'Updating the deck', exact=True))
+
+    mark = d.mark()
+    d.send({'t': 'ota', 'size': 8192})
+    d.wait_for(lambda m: m.get('t') in ('ota_ready', 'ota_error'), since=mark)
+    mark = d.mark()
+    d.send({'t': 'ota_data', 'off': 0, 'b64': base64.b64encode(b'\x00' * 4096).decode()})
+    error = d.wait_for(lambda m: m.get('t') in ('ota_ack', 'ota_error'), since=mark)
+    check('firmware: something not a firmware image is refused', error.get('t') == 'ota_error', str(error))
+
+    ota_start(d, image)
+    ota_send(d, image)
+    mark = d.mark()
+    d.send({'t': 'ota_end'})
+    done = d.wait_for(lambda m: m.get('t') in ('ota_done', 'ota_error'), since=mark)
+    check('firmware: a whole image is taken', done.get('t') == 'ota_done', str(done))
+    d.restarted = True
+    d.reconnect()
+    hello = d.sync()
+    check('firmware: the deck restarts and says hello', hello.get('reset') == 'software', str(hello))
+    d.settle()
+    check('firmware: with its screen back', not on_screen(d, 'Updating the deck', exact=True))
+
+
 def main() -> int:
     os.makedirs(OUT, exist_ok=True)
     with Deck.launch(log_path=os.path.join(OUT, 'sim.log')) as d:
@@ -921,13 +1131,13 @@ def main() -> int:
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
         for test in (test_today, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
-                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_picker, test_idle, test_offline):
+                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)
             except Exception:
                 check(test.__name__, False, traceback.format_exc(limit=3))
-            if d.process.poll() is not None:
+            if not d.alive():  # a restart it was told to do (test_firmware_update) is fine
                 check('the simulator is still running', False, f'exit code {d.process.returncode}')
                 break
     failed = [r for r in results if not r[1]]

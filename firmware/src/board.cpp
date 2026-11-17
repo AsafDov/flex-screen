@@ -6,6 +6,7 @@
 
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_rgb.h"
+#include "esp_ota_ops.h"
 
 namespace board {
 namespace {
@@ -216,6 +217,13 @@ bool readTouch(int16_t &x, int16_t &y) {
   x = touch_x;
   y = touch_y;
   return touch_down || millis() - touch_seen_ms < kReleaseDebounceMs;
+}
+
+bool keepFirmware() {
+  const esp_partition_t *running = esp_ota_get_running_partition();
+  esp_ota_img_states_t state;
+  if (!running || esp_ota_get_state_partition(running, &state) != ESP_OK || state != ESP_OTA_IMG_PENDING_VERIFY) return false;
+  return esp_ota_mark_app_valid_cancel_rollback() == ESP_OK;
 }
 
 }  // namespace board

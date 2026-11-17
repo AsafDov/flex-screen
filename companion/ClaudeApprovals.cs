@@ -18,7 +18,7 @@ sealed class ClaudeApprovals
                           JsonNode? Suggestions, DateTime At, TaskCompletionSource<string?> Answer);
 
     /// <summary>Longest a request waits for the deck; the hook itself gives up a little later.</summary>
-    static readonly TimeSpan Wait = TimeSpan.FromSeconds(ClaudeHooks.PermissionSeconds - 15);
+    public static readonly TimeSpan Wait = TimeSpan.FromSeconds(ClaudeHooks.PermissionSeconds - 15);
 
     readonly object _gate = new();
     readonly List<Request> _pending = [];
@@ -44,8 +44,8 @@ sealed class ClaudeApprovals
     public async Task<string?> Ask(JsonNode hook, string project, string detail, bool deckConnected)
     {
         if (!deckConnected || !Settings.ApproveFromDeck) return null;
-        // A question is answered by picking an option, at the PC: Approve or Deny can't answer
-        // it. The deck says "Claude has a question" instead (the session's state).
+        // A question is answered by picking an option: Approve or Deny can't answer it. The
+        // deck shows its options instead (DeckQuestions).
         if ((string?)hook["tool_name"] == "AskUserQuestion") return null;
         var request = new Request(
             $"p{Interlocked.Increment(ref _next)}", (string?)hook["session_id"] ?? "", project, (string?)hook["tool_name"] ?? "tool",

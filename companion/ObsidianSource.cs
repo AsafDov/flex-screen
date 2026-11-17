@@ -10,7 +10,8 @@ record ObsidianState(bool Found, string Vault, IReadOnlyList<ObsidianNote> Recen
 
 /// <summary>
 /// The Obsidian vault: today's note and recently opened notes. The vault is settings.json's
-/// "obsidianVault", else the one Obsidian has open. If that folder moved (Google Drive
+/// "obsidianVault" (the tray's Task sources › Obsidian daily note › Vault picks it), else the
+/// one Obsidian has open, looked at again every poll. If that folder moved (Google Drive
 /// reorganizes folders), a folder of the same name is looked for near where it was, and
 /// Obsidian's own vault list is pointed at it, since Obsidian can't open notes otherwise.
 /// </summary>
@@ -39,25 +40,36 @@ sealed class ObsidianSource
 
     public void Start() => _timer.Change(TimeSpan.Zero, Poll);
 
-    void Refresh()
+    /// <summary>
+    /// Looks again at which vault to use and its recent notes. On the timer, and from the tray
+    /// right after a vault is picked. The choice is looked at every time (settings.json's,
+    /// else the one Obsidian has open), so picking another vault, or opening another in
+    /// Obsidian, moves the deck to it.
+    /// </summary>
+    public void Refresh()
     {
-        try
+        lock (_gate)
         {
-            if (_root == null || !Directory.Exists(Path.Combine(_root, ".obsidian"))) _root = FindVault();
-            if (_root != null) RepairRegistry(_root);
-            var state = _root == null ? new ObsidianState(false, "", []) : new ObsidianState(true, Path.GetFileName(_root), Recent(_root));
-            var key = $"{state.Found}|{state.Vault}|{string.Join("|", state.Recent.Select(n => n.Path))}";
-            if (key == _key) return;
-            _key = key;
-            Current = state;
-            Log.Write(state.Found ? $"obsidian: vault {_root}" : "obsidian: no vault found");
-            Changed?.Invoke(state);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-        {
-            Log.Write($"obsidian: {e.Message}");
+            try
+            {
+                _root = Choose();
+                if (_root != null) RepairRegistry(_root);
+                var state = _root == null ? new ObsidianState(false, "", []) : new ObsidianState(true, Path.GetFileName(_root), Recent(_root));
+                var key = $"{_root}|{string.Join("|", state.Recent.Select(n => n.Path))}";
+                if (key == _key) return;
+                _key = key;
+                Current = state;
+                Log.Write(state.Found ? $"obsidian: vault {_root}" : "obsidian: no vault found");
+                Changed?.Invoke(state);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            {
+                Log.Write($"obsidian: {e.Message}");
+            }
         }
     }
+
+    readonly object _gate = new();
 
     /// <summary>The vault's folder, or null while none is found.</summary>
     public string? Root => _root;
@@ -69,13 +81,28 @@ sealed class ObsidianSource
         Open(CreateDailyNote(_root, DateTime.Now));
     }
 
-    /// <summary>The Daily notes plugin's folder, file name format (Moment's) and template.</summary>
+    /// <summary>
+    /// The daily notes' folder, file name format (Moment's) and template: the Periodic Notes
+    /// plugin's when it's on and makes the daily notes (it takes them over from the core
+    /// plugin), else the core Daily notes plugin's.
+    /// </summary>
     static (string Folder, string Format, string? Template) DailySettings(string root)
     {
         var settings = ReadJson(Path.Combine(root, ".obsidian", "daily-notes.json"));
+        var periodic = ReadJson(Path.Combine(root, ".obsidian", "plugins", "periodic-notes", "data.json"))?["daily"];
+        if (periodic is JsonObject && (bool?)periodic["enabled"] == true && PluginOn(root, "periodic-notes")) settings = periodic;
         var template = (string?)settings?["template"] is { Length: > 0 } t ? Path.Combine(root, t.EndsWith(".md") ? t : t + ".md") : null;
-        return ((string?)settings?["folder"] ?? "", (string?)settings?["format"] is { Length: > 0 } f ? f : "YYYY-MM-DD", template);
+        var folder = ((string?)settings?["folder"] ?? "").Trim('/', '\\');
+        return (folder, (string?)settings?["format"] is { Length: > 0 } f ? f : "YYYY-MM-DD", template);
     }
+
+    /// <summary>Whether a community plugin is turned on in the vault.</summary>
+    internal static bool PluginOn(string root, string id) =>
+        ReadJson(Path.Combine(root, ".obsidian", "community-plugins.json")) is JsonArray plugins && plugins.Any(p => (string?)p == id);
+
+    /// <summary>Where today's daily note would be, relative to the vault ("Daily Log/2026-11-17.md"): for the log.</summary>
+    public static string DailyNoteWhere(string root) =>
+        Path.GetRelativePath(root, DailyNotePath(root, DateTime.Today, DailySettings(root))).Replace('\\', '/');
 
     static string DailyNotePath(string root, DateTime day, (string Folder, string Format, string? Template) daily) =>
         Path.Combine(root, daily.Folder, MomentFormat(day, daily.Format) + ".md");
@@ -198,23 +225,60 @@ sealed class ObsidianSource
             .ToList();
     }
 
-    /// <summary>The open vault from Obsidian's own list, or one that still exists; if its folder moved, a same-named one near where it was.</summary>
-    static string? FindVault()
-    {
-        if (Settings.ObsidianVault is { } chosen && Directory.Exists(Path.Combine(chosen, ".obsidian"))) return chosen;
-        var vaults = (ReadJson(Registry)?["vaults"] as JsonObject ?? [])
+    static bool IsVault(string folder) => Directory.Exists(Path.Combine(folder, ".obsidian"));
+
+    /// <summary>The vaults in Obsidian's own list (the open ones first), whether or not their folders are still there.</summary>
+    static List<(string Path, bool Open)> Registered() =>
+        (ReadJson(Registry)?["vaults"] as JsonObject ?? [])
             .Select(v => (Path: (string?)v.Value?["path"] ?? "", Open: (bool?)v.Value?["open"] ?? false))
             .Where(v => v.Path.Length > 0)
             .OrderByDescending(v => v.Open)
             .ToList();
-        foreach (var v in vaults)
+
+    /// <summary>The vaults Obsidian knows on this PC whose folders are there, open ones first: what the tray offers.</summary>
+    public static IReadOnlyList<string> KnownVaults() =>
+        Registered().Where(v => IsVault(v.Path)).Select(v => Path.GetFullPath(v.Path).TrimEnd('\\')).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>
+    /// The vault to use: settings.json's "obsidianVault" (the tray's pick); if that folder moved,
+    /// where it went (and the setting follows it). Else the one Obsidian has open, any other it
+    /// knows that's there, the one in use, or one of its list that moved. Null when none is.
+    /// </summary>
+    string? Choose()
+    {
+        if (Settings.ObsidianVault is { } chosen)
         {
-            if (Directory.Exists(Path.Combine(v.Path, ".obsidian"))) return v.Path;
+            if (IsVault(chosen))
+            {
+                _missing = null;
+                return Path.GetFullPath(chosen).TrimEnd('\\');
+            }
+            if (!string.Equals(_missing, chosen, StringComparison.OrdinalIgnoreCase))
+            {
+                _missing = chosen;  // looked for once per choice: the search is slow on a cloud drive
+                if (Moved([chosen]) is { } moved)
+                {
+                    Settings.Set("obsidianVault", moved);
+                    Log.Write($"obsidian: the chosen vault moved to {moved}");
+                    return moved;
+                }
+                Log.Write($"obsidian: the chosen vault {chosen} isn't there; using the one Obsidian has open");
+            }
         }
-        foreach (var v in vaults)
+        if (KnownVaults().FirstOrDefault() is { } known) return known;
+        if (_root != null && IsVault(_root)) return _root;
+        return Moved(Registered().Select(v => v.Path));
+    }
+
+    string? _missing;  // a chosen vault that isn't there and wasn't found moved
+
+    /// <summary>A vault whose folder moved: a same-named one near where it was.</summary>
+    static string? Moved(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
         {
-            var name = Path.GetFileName(v.Path.TrimEnd('\\', '/'));
-            for (var dir = Path.GetDirectoryName(v.Path); dir != null; dir = Path.GetDirectoryName(dir))
+            var name = Path.GetFileName(path.TrimEnd('\\', '/'));
+            for (var dir = Path.GetDirectoryName(path); dir != null; dir = Path.GetDirectoryName(dir))
             {
                 if (!Directory.Exists(dir)) continue;
                 var found = Search(dir, name, depth: 3);

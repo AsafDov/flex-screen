@@ -30,4 +30,8 @@ struct TouchInfo {
 };
 TouchInfo touchInfo();
 
+// Keeps the running firmware if it came as an update and is still on trial (see main.cpp):
+// the chip's bootloader stops going back to the previous one. True if it was on trial.
+bool keepFirmware();
+
 }  // namespace board

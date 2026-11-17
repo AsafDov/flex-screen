@@ -6,10 +6,10 @@ namespace FlexScreen.Companion;
 
 /// <summary>
 /// The tray's Task sources menu: connecting Google Tasks, Microsoft To Do, Jira and GitHub,
-/// and turning the Obsidian daily note on or off. Site addresses and choices go in
+/// and the Obsidian daily note (on or off, and which vault). Site addresses and choices go in
 /// settings.json; tokens only in <see cref="Secrets"/>. Runs on the UI thread.
 /// </summary>
-sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, Action connectGoogle)
+sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSource obsidian, Action connectGoogle)
 {
     public ToolStripMenuItem Menu()
     {
@@ -18,13 +18,8 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, Action connec
         var microsoft = new ToolStripMenuItem("Microsoft To Do…", null, (_, _) => ConnectMicrosoft());
         var jira = new ToolStripMenuItem("Jira…", null, (_, _) => ConnectJira());
         var github = new ToolStripMenuItem("GitHub…", null, (_, _) => ConnectGitHub());
-        var obsidian = new ToolStripMenuItem("Obsidian daily note");
-        obsidian.Click += (_, _) =>
-        {
-            Settings.Set("obsidianTasks", !Settings.ObsidianTasks);
-            _ = tasks.RefreshAsync();
-        };
-        menu.DropDownItems.AddRange([google, microsoft, jira, github, obsidian]);
+        var daily = ObsidianMenu();
+        menu.DropDownItems.AddRange([google, microsoft, jira, github, daily]);
         menu.DropDownOpening += (_, _) =>
         {
             // A tick on each source that's set up on this PC.
@@ -33,9 +28,84 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, Action connec
             microsoft.Checked = connected.Contains("mstodo");
             jira.Checked = connected.Contains("jira");
             github.Checked = connected.Contains("github");
-            obsidian.Checked = Settings.ObsidianTasks;
+            daily.Checked = Settings.ObsidianTasks;
         };
         return menu;
+    }
+
+    /// <summary>
+    /// Obsidian daily note ›  its tasks on or off; then the vaults Obsidian knows on this PC,
+    /// the one it has open, or another folder. A PC with several vaults (home and work) picks
+    /// one here; it's settings.json's "obsidianVault".
+    /// </summary>
+    ToolStripMenuItem ObsidianMenu()
+    {
+        var menu = new ToolStripMenuItem("Obsidian daily note");
+        menu.DropDownItems.Add(new ToolStripMenuItem());  // filled on opening; a submenu needs an item to open
+        menu.DropDownOpening += (_, _) =>
+        {
+            menu.DropDownItems.Clear();
+            var show = new ToolStripMenuItem("Its tasks on the deck") { Checked = Settings.ObsidianTasks };
+            show.Click += (_, _) =>
+            {
+                Settings.Set("obsidianTasks", !Settings.ObsidianTasks);
+                _ = tasks.RefreshAsync();
+            };
+            menu.DropDownItems.Add(show);
+            menu.DropDownItems.Add(new ToolStripSeparator());
+            var chosen = Settings.ObsidianVault is { } c ? Path.GetFullPath(c).TrimEnd('\\') : null;
+            var vaults = ObsidianSource.KnownVaults().ToList();
+            if (chosen != null && !vaults.Contains(chosen, StringComparer.OrdinalIgnoreCase)) vaults.Insert(0, chosen);
+            foreach (var vault in vaults)
+            {
+                // A vault's name; with its parent folder too when two have the same name.
+                var name = Path.GetFileName(vault);
+                if (vaults.Count(v => string.Equals(Path.GetFileName(v), name, StringComparison.OrdinalIgnoreCase)) > 1)
+                    name += $"  ({Path.GetFileName(Path.GetDirectoryName(vault))})";
+                var item = new ToolStripMenuItem($"Vault: {name}")
+                {
+                    Checked = string.Equals(vault, obsidian.Root, StringComparison.OrdinalIgnoreCase),
+                    ToolTipText = vault,
+                };
+                item.Click += (_, _) => UseVault(vault);
+                menu.DropDownItems.Add(item);
+            }
+            var auto = new ToolStripMenuItem("The vault Obsidian has open") { Checked = chosen == null };
+            auto.Click += (_, _) => UseVault(null);
+            menu.DropDownItems.Add(auto);
+            menu.DropDownItems.Add(new ToolStripMenuItem("Another vault folder…", null, (_, _) => PickVaultFolder()));
+        };
+        return menu;
+    }
+
+    /// <summary>Keeps <paramref name="vault"/> (null: the one Obsidian has open) and moves the deck to it now.</summary>
+    void UseVault(string? vault)
+    {
+        Settings.Set("obsidianVault", vault);
+        Log.Write(vault == null ? "obsidian: vault: the one Obsidian has open" : $"obsidian: vault chosen: {vault}");
+        _ = Task.Run(async () =>
+        {
+            obsidian.Refresh();
+            await tasks.RefreshAsync();
+        });
+    }
+
+    void PickVaultFolder()
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "The Obsidian vault whose daily notes the deck shows",
+            UseDescriptionForTitle = true,
+            InitialDirectory = obsidian.Root ?? "",
+        };
+        if (dialog.ShowDialog() != DialogResult.OK) return;
+        if (!Directory.Exists(Path.Combine(dialog.SelectedPath, ".obsidian")))
+        {
+            MessageBox.Show("That folder isn't an Obsidian vault: it has no .obsidian folder. Pick the vault's own folder, the one Obsidian opens.",
+                "flex-screen", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        UseVault(Path.GetFullPath(dialog.SelectedPath).TrimEnd('\\'));
     }
 
     async void ConnectMicrosoft()

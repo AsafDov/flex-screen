@@ -26,6 +26,21 @@ After installing
   - Claude sessions started after the install report to the deck; restart running ones.
   - The Dev page lists the last commands run in VS Code's terminal; tap one to run it again.
 
+Updates
+  The deck's firmware: this kit carries it. When the deck runs older firmware (it was
+  last updated on another PC, say), the tray icon says so and the deck shows "Firmware
+  0.21.0 is ready - tap to update". Tap it, or tray icon > "Update the deck's firmware".
+  It goes over the same USB cable in about half a minute, with the progress on the deck;
+  keep it plugged in meanwhile. If the update stops on the way, nothing changes on the
+  deck. If the new firmware can't start, unplug the deck and plug it back in: it goes back
+  to the firmware it had.
+  The companion: it looks for a newer flex-screen release on GitHub a minute after it
+  starts and every 6 hours after (tray icon > "Check for updates" looks now). When there
+  is one, the tray icon says so; "Update flex-screen to ..." downloads the release's kit,
+  checks it, and installs it as install.cmd does. The companion restarts by itself a
+  minute later and then offers the deck its new firmware. Reload VS Code windows for the
+  new extension.
+
 Google Calendar and Tasks (optional, once)
   google-setup.md in this folder is the full guide, with screens to look for and
   troubleshooting. In short:
@@ -50,7 +65,8 @@ Other task sources (optional): Microsoft To Do, Jira, GitHub, Obsidian
   task-sources.md in this folder is the guide. Tray icon > "Task sources": Microsoft To Do
   needs an app registration of your own (like Google's); Jira a site and an API token (or
   a personal access token); GitHub a token, or the GitHub CLI's sign-in. Obsidian's latest
-  daily note is read on its own once the vault is found. A source not set up is left out.
+  daily note is read on its own from the vault Obsidian has open; with more than one vault
+  on this PC, pick it in "Task sources" > "Obsidian daily note". A source not set up is left out.
 
 VS Code Remote-SSH (working on a Linux server from this PC)
   The extension runs on this PC even in a Remote-SSH window, so the deck gets the server's
@@ -63,7 +79,8 @@ VS Code Remote-SSH (working on a Linux server from this PC)
          RemoteForward 48151 localhost:48151
      then reconnect: Ctrl+Shift+P, "Remote-SSH: Kill VS Code Server on Host...", and open
      the folder again.
-  2. The hooks on the server. Copy remote-claude-hooks.sh there and run it once, from this
+  2. The hooks on the server (and the deck's tools for Claude Code there). Copy
+     remote-claude-hooks.sh there and run it once, from this
      folder (use the server's name from your SSH config):
          scp remote-claude-hooks.sh myserver:
          ssh myserver sh remote-claude-hooks.sh
@@ -72,7 +89,10 @@ VS Code Remote-SSH (working on a Linux server from this PC)
      model of Claude's last reply (read from the session's transcript on the server), for
      the deck's Model key, and run Claude Code's own /usage there after each turn (at most
      every 3 minutes, in the background, through ~/.claude/flex-screen-usage.sh), for the
-     Usage key's "5h 42%".
+     Usage key's "5h 42%". And again after updating from a kit older than 0.19.0: it
+     registers the deck's tools with Claude Code there (deck_ask, deck_notify,
+     deck_progress) and allows them without a prompt. And after updating from one older
+     than 0.20.0: it adds the hook behind the session board's Stop.
   Restart Claude sessions on the server afterwards.
   With Claude Code's chat tab in front in VS Code, the deck's bar turns into Claude's. That
   needs Claude in an editor tab (its default, "Open in New Tab"), not in the side bar.
@@ -129,8 +149,9 @@ Settings (optional)
   Deck colors).
   idle: minutes with no touch and no PC input before the clock screen and before the
   screen goes off (0 turns either off); a locked PC shows the clock right away.
-  layerNames: the keyboard's layers from 0 (these are the defaults). obsidianVault: only
-  if the vault can't be found by itself (normally it's the one Obsidian has open).
+  layerNames: the keyboard's layers from 0 (these are the defaults). obsidianVault: the
+  vault the deck uses (normally the one Obsidian has open); the tray's "Task sources" >
+  "Obsidian daily note" sets it.
 
 Uninstall
   Double-click uninstall.cmd. It removes the hooks (leaving the rest of settings.json),

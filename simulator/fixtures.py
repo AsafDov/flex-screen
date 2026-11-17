@@ -51,6 +51,45 @@ def approval(id: str = 'p1', detail: str = 'Bash: npm run build', always: bool =
     return {'id': id, 'project': 'flex-screen', 'tool': detail.split(':')[0], 'detail': detail, 'always': always, 'count': count}
 
 
+def sessions() -> dict:
+    """A busy afternoon: one waiting on you, two at work (one with progress), one done, one on a server."""
+    return {'sessions': [
+        {'id': 's2', 'project': 'api-gateway', 'state': 'input', 'detail': 'Bash: kubectl rollout restart deploy/api', 'secs': 95,
+         'app': 'VS Code', 'model': 'Sonnet 4.5'},
+        {'id': 's1', 'project': 'flex-screen', 'state': 'working', 'detail': 'Edit: sessions.cpp', 'secs': 14 * 60,
+         'app': 'Claude app', 'model': 'Opus 5.5'},
+        {'id': 's3', 'project': 'icons', 'state': 'working', 'detail': 'Write: arrow.svg', 'secs': 6 * 60, 'app': 'Terminal',
+         'model': 'Haiku 4.5', 'progress': {'label': 'Converting icons', 'done': 7, 'total': 12}},
+        {'id': 's4', 'project': 'website', 'state': 'done', 'detail': 'Finished', 'secs': 22 * 60, 'app': 'VS Code · SSH',
+         'model': 'Opus 5.5'},
+        {'id': 's5', 'project': 'notes', 'state': 'idle', 'detail': '', 'secs': 50 * 60, 'app': 'Claude app', 'model': ''},
+    ]}
+
+
+def usage(five: int = 62, rate: float = 18.0, limit: bool = True) -> dict:
+    """Two and a half hours into the window, 62% used and climbing."""
+    start = NOW - int(2.5 * HOUR)
+    points = [[m * 60, round(min(five, five * (m / 150) ** 1.3))] for m in range(0, 151, 5)]
+    return {'five': five, 'week': 17, 'start': start, 'resets': start + 5 * HOUR,
+            'eta': NOW + int((100 - five) / rate * HOUR) if limit else 0, 'rate': rate, 'points': points}
+
+
+def question(id: str = 'q1', text: str = 'Convert the other 12 files too?', options=('Yes', 'No', 'Only the icons'),
+             notes=None, multi: bool = False, step: int = 1, steps: int = 1, count: int = 1) -> dict:
+    notes = notes or [''] * len(options)
+    return {'id': id, 'kind': 'ask', 'level': '', 'session': 's1', 'project': 'flex-screen', 'text': text,
+            'options': [{'label': o, 'note': n} for o, n in zip(options, notes)], 'multi': multi, 'step': step,
+            'steps': steps, 'count': count}
+
+
+def note(id: str = 'n1', text: str = 'All 12 files converted; 2 need a look', level: str = 'done') -> dict:
+    return {'id': id, 'kind': 'note', 'level': level, 'session': 's1', 'project': 'flex-screen', 'text': text,
+            'options': [], 'multi': False, 'step': 1, 'steps': 1, 'count': 1}
+
+
+NO_QUESTION = {'id': ''}
+
+
 def bank(items: list[tuple[str, str, str]]) -> list[dict]:
     return [{'id': i, 'name': n, 'glyph': g} for i, n, g in items]
 
@@ -118,7 +157,8 @@ def day() -> dict[str, dict]:
         },
         'mic': {'available': True, 'muted': False},
         'claude': {'sessions': [{'id': 's1', 'project': 'flex-screen', 'state': 'working',
-                                 'detail': 'Bash: pio run -e deck -t upload', 'secs': 40}]},
+                                 'detail': 'Bash: pio run -e deck -t upload', 'secs': 40, 'app': 'Claude app', 'model': 'Opus 5.5'}]},
+        'usage': usage(),
         'term': {'repo': 'flex-screen', 'cmd': 'git status', 'running': False, 'secs': 120, 'exit': 0, 'ms': 300,
                  'lines': ['On branch master', "Your branch is ahead of 'origin/master' by 2 commits."]},
         'build': {'state': 'passed', 'cmd': 'dotnet build companion', 'ms': 4800, 'secs': 600, 'history': 'PPFPPPPFPP'},

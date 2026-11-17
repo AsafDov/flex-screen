@@ -84,8 +84,17 @@ progress` or `blocked` as its status, and a milestone's due date as its due day.
 
 On by itself once the companion finds your vault (as for the Capture page's Obsidian card).
 It reads the **latest daily note** (today's, or the newest before it, as the Daily notes
-plugin names them), for the way of working where each day's note carries the open tasks
-over:
+plugin names them, or the Periodic Notes plugin when that makes your daily notes), for the
+way of working where each day's note carries the open tasks over.
+
+**Which vault.** Normally the one Obsidian has open, looked at again every 30 seconds. On a
+PC with more than one vault (a home vault and a work vault), pick it: Task sources ›
+Obsidian daily note › **Vault: …** lists the vaults Obsidian knows on this PC, and
+**Another vault folder…** takes any other (the folder with `.obsidian` in it). **The vault
+Obsidian has open** goes back to automatic. The pick is `"obsidianVault"` in settings.json,
+per PC; if Google Drive moves the vault's folder, it's found again and the setting follows.
+The companion log says which note it reads (`tasks: obsidian: reading WorkVault/Daily
+Log/2026-11-17.md`), or where it looked when there's none.
 
 - `- [ ]` and `- [/]` (in progress) lines are tasks; `[x]`, `[-]` and the rest aren't.
 - An indented task is a subtask; indented bullets under a task are its notes.
@@ -96,5 +105,5 @@ over:
 - **+** adds `- [ ] the task` (and `📅 date`) at the end of the latest daily note, or makes
   today's note from your template when there's none yet.
 
-To leave Obsidian off the deck: Task sources › untick **Obsidian daily note**
-(`"obsidianTasks": false`).
+To leave Obsidian off the deck: Task sources › Obsidian daily note › untick **Its tasks on
+the deck** (`"obsidianTasks": false`).

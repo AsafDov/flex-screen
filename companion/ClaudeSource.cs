@@ -4,7 +4,15 @@ namespace FlexScreen.Companion;
 
 /// <param name="State">"working", "input" (waiting for an approval), "done" or "idle".</param>
 /// <param name="Since">When the session entered this state.</param>
-record ClaudeSession(string Id, string Project, string Cwd, string State, string Detail, DateTime Since);
+/// <param name="Progress">How far a long job has got, as Claude reported it (deck_progress), or null.</param>
+/// <param name="App">Where it runs: "Claude app", "VS Code", "Terminal", "VS Code · SSH"…; "" if not known.</param>
+/// <param name="Model">Its model's name, "Opus 5.5"; "" if not known.</param>
+/// <param name="Stopping">Asked to stop on the deck: it stops before its next step.</param>
+record ClaudeSession(string Id, string Project, string Cwd, string State, string Detail, DateTime Since, ClaudeProgress? Progress = null,
+                     string App = "", string Model = "", bool Stopping = false);
+
+/// <summary>A long job's progress, from Claude's deck_progress tool: <paramref name="Done"/> of <paramref name="Total"/>.</summary>
+record ClaudeProgress(string Label, int Done, int Total);
 
 /// <summary>
 /// Claude Code sessions as reported by its hooks (<see cref="ClaudeHooks"/> installs them;
@@ -12,7 +20,7 @@ record ClaudeSession(string Id, string Project, string Cwd, string State, string
 /// </summary>
 sealed class ClaudeSource
 {
-    const int MaxShown = 4;
+    const int MaxShown = 8;  // the deck's session board
     static readonly TimeSpan StaleQuiet = TimeSpan.FromMinutes(30);  // idle or done
     static readonly TimeSpan StaleBusy = TimeSpan.FromHours(2);      // a missed Stop/SessionEnd
 
@@ -24,6 +32,11 @@ sealed class ClaudeSource
     readonly Dictionary<string, (string Model, DateTime At)> _replied = new();  // session → its last reply's model, and since when
     readonly Dictionary<string, (long Length, string Model)> _transcriptModels = new();  // file → the model of its last reply
     readonly Dictionary<string, string> _asking = new();  // session → a question its turn ends with
+    readonly Dictionary<string, (ClaudeProgress Progress, DateTime At)> _progress = new();  // session → its deck_progress
+    static readonly TimeSpan StaleProgress = TimeSpan.FromMinutes(15);
+    readonly Dictionary<string, DateTime> _stopping = new();  // session → when the deck asked it to stop
+    static readonly TimeSpan StopLasts = TimeSpan.FromMinutes(10);
+    readonly Dictionary<int, string> _appNames = new();  // process → its app's name
     readonly System.Threading.Timer _sweep;
 
     public IReadOnlyList<ClaudeSession> Current { get; private set; } = [];
@@ -149,12 +162,91 @@ sealed class ClaudeSource
     {
         "AskUserQuestion" => "Asks: " + ((string?)hook["tool_input"]?["questions"]?[0]?["question"] ?? "a question"),
         "ExitPlanMode" => "Plan ready for your approval",
+        { } tool when DeckTools.ToolOf(tool) == "deck_ask" => "Asks: " + ((string?)hook["tool_input"]?["question"] ?? "a question"),
         _ => null,
     };
 
     static string? EndOfTurnQuestion(JsonNode hook) =>
         (string?)hook["tool_name"] is { } tool && tool.EndsWith("wrap_up", StringComparison.Ordinal) &&
         (string?)hook["tool_input"]?["ask"] is { Length: > 0 } ask ? "Asks: " + ask : null;
+
+    /// <summary>
+    /// The deck's Stop: the session's next PreToolUse hook (the synchronous one,
+    /// <see cref="ClaudeHooks"/>) gets "don't continue", which ends the turn before that step.
+    /// </summary>
+    public void RequestStop(string session)
+    {
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(session, out var s) || s.State is not ("working" or "input")) return;
+            _stopping[session] = DateTime.UtcNow;
+        }
+        Log.Write($"claude: stop asked on the deck for {session[..Math.Min(8, session.Length)]}");
+        Publish();
+    }
+
+    /// <summary>For the stop hook: whether this session is to stop now. Its turn ends, so it shows as stopped.</summary>
+    public bool ShouldStop(string session)
+    {
+        lock (_gate)
+        {
+            if (!_stopping.TryGetValue(session, out var at)) return false;
+            if (DateTime.UtcNow - at > StopLasts)
+            {
+                _stopping.Remove(session);
+                return false;
+            }
+            if (_sessions.TryGetValue(session, out var s))
+                _sessions[session] = s with { State = "done", Detail = "Stopped from the deck", Since = DateTime.UtcNow };
+        }
+        Publish();
+        return true;
+    }
+
+    /// <summary>The app a session runs in, for the board: by its window's process, or a server's for Remote-SSH.</summary>
+    string AppOf(ClaudeSession s)
+    {
+        var remote = s.Cwd.StartsWith('/');
+        if (!_windowOf.TryGetValue(s.Id, out var pid) || pid == 0) return remote ? "SSH" : "";
+        if (!_appNames.TryGetValue(pid, out var name))
+        {
+            try
+            {
+                name = System.Diagnostics.Process.GetProcessById(pid).ProcessName;
+            }
+            catch (ArgumentException)
+            {
+                name = "";
+            }
+            name = name.ToLowerInvariant() switch
+            {
+                "claude" => "Claude app",
+                "code" or "code - insiders" => "VS Code",
+                "windowsterminal" or "powershell" or "pwsh" or "cmd" or "conhost" or "wezterm-gui" or "alacritty" => "Terminal",
+                "cursor" => "Cursor",
+                "" => "",
+                _ => name,
+            };
+            if (_appNames.Count > 50) _appNames.Clear();
+            _appNames[pid] = name;
+        }
+        return remote ? (name.Length > 0 ? name + " · SSH" : "SSH") : name;
+    }
+
+    /// <summary>The model of the session's last reply, else the one a hook named.</summary>
+    string ModelOf(string id) =>
+        ClaudeKeys.ModelName(_replied.TryGetValue(id, out var r) && r.Model.Length > 0 ? r.Model : _info.TryGetValue(id, out var i) ? i.Model : "");
+
+    /// <summary>A long job's progress for the deck, or null to take it off.</summary>
+    public void SetProgress(string session, ClaudeProgress? progress)
+    {
+        lock (_gate)
+        {
+            if (progress == null) _progress.Remove(session);
+            else _progress[session] = (progress, DateTime.UtcNow);
+        }
+        Publish();
+    }
 
     /// <summary>The session's project (its git repo or folder), or the folder's name for one not seen yet.</summary>
     public string ProjectFor(string id, string cwd)
@@ -198,18 +290,25 @@ sealed class ClaudeSource
             var (project, cwd) = s != null ? (s.Project, s.Cwd) : ProjectOf((string?)hook["cwd"] ?? "");
             var name = (string?)hook["hook_event_name"];
             if (name is "UserPromptSubmit" or "SessionStart") _asking.Remove(id);
+            if (name is "UserPromptSubmit" or "Stop" or "SessionStart") _progress.Remove(id);  // a job's progress lasts its turn
+            var stopped = _stopping.ContainsKey(id);
+            if (stopped && name is "PreToolUse" or "PostToolUse") return;  // stopped already: its last step's events
+            if (name is "UserPromptSubmit" or "Stop" or "SessionStart") _stopping.Remove(id);
             if (name == "PreToolUse" && EndOfTurnQuestion(hook) is { } ask) _asking[id] = ask;
             var next = name switch
             {
                 "SessionStart" => new ClaudeSession(id, project, cwd, "idle", "", now),
                 "UserPromptSubmit" => new ClaudeSession(id, project, cwd, "working", Short((string?)hook["prompt"]), now),
                 "PreToolUse" when QuestionOf(hook) is { } question => new ClaudeSession(id, project, cwd, "input", Short(question), now),
+                // A note or progress for the deck isn't what the session is doing.
+                "PreToolUse" or "PostToolUse" when s != null && DeckTools.ToolOf((string?)hook["tool_name"] ?? "") is "deck_notify" or "deck_progress" => s,
                 "PreToolUse" => new ClaudeSession(id, project, cwd, "working", ToolDetail(hook),
                                                   s?.State == "working" ? s.Since : now),
                 "PostToolUse" => s is { State: "working" } ? s
                     : new ClaudeSession(id, project, cwd, "working", s?.Detail ?? "", now),  // an approval or an answer went through
                 "Notification" => FromNotification(s, id, project, cwd, (string?)hook["message"] ?? "", now),
                 "PermissionRequest" => new ClaudeSession(id, project, cwd, "input", ToolDetail(hook), now),
+                "Stop" when stopped => new ClaudeSession(id, project, cwd, "done", "Stopped from the deck", now),
                 "Stop" => _asking.Remove(id, out var asked) ? new ClaudeSession(id, project, cwd, "input", Short(asked), now)
                                                           : new ClaudeSession(id, project, cwd, "done", "Finished", now),
                 "SessionEnd" => null,
@@ -223,6 +322,8 @@ sealed class ClaudeSource
                 _switchedAt.Remove(id);
                 _replied.Remove(id);
                 _asking.Remove(id);
+                _progress.Remove(id);
+                _stopping.Remove(id);
             }
             else _sessions[id] = next;
         }
@@ -288,8 +389,12 @@ sealed class ClaudeSource
                 _info.Remove(id);
                 _switchedAt.Remove(id);
                 _replied.Remove(id);
+                _progress.Remove(id);
+                _stopping.Remove(id);
             }
-            removed = stale.Count > 0;
+            var quiet = _progress.Where(p => now - p.Value.At > StaleProgress).Select(p => p.Key).ToList();
+            foreach (var id in quiet) _progress.Remove(id);
+            removed = stale.Count > 0 || quiet.Count > 0;
         }
         if (removed) Publish();
     }
@@ -303,6 +408,13 @@ sealed class ClaudeSource
                 .OrderBy(s => s.State switch { "input" => 0, "working" => 1, "done" => 2, _ => 3 })
                 .ThenByDescending(s => s.Since)
                 .Take(MaxShown)
+                .Select(s => s with
+                {
+                    Progress = _progress.TryGetValue(s.Id, out var p) ? p.Progress : null,
+                    App = AppOf(s),
+                    Model = ModelOf(s.Id),
+                    Stopping = _stopping.ContainsKey(s.Id) && s.State is "working" or "input",
+                })
                 .ToList();
             Current = shown;
         }

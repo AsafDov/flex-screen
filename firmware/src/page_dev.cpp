@@ -2,6 +2,7 @@
 
 #include "model.h"
 #include "pc.h"
+#include "sessions.h"
 #include "ui_kit.h"
 
 namespace ui::dev {
@@ -32,6 +33,7 @@ BannerStyle bannerStyle(const model::ClaudeSession *s) {
 
 struct {
   lv_obj_t *banner, *banner_icon_bg, *banner_icon, *banner_title, *banner_detail, *banner_more, *banner_open;
+  lv_obj_t *banner_progress;  // a long job's, along the banner's foot
 
   lv_obj_t *git_title, *git_busy, *git_branch, *git_ab, *git_chips, *git_last, *git_buttons;
   lv_obj_t *chip_m, *chip_a, *chip_d, *chip_u, *chip_clean;
@@ -55,6 +57,8 @@ bool recent_online = false;
 uint32_t tick_ms = 0;
 
 // ---- actions
+
+void onBoard(lv_event_t *) { sessions::open(); }
 
 void onOpenClaude(lv_event_t *) {
   if (model::claude.count > 0) pc::openClaude(model::claude.sessions[0].id.c_str());
@@ -116,9 +120,9 @@ void buildBanner(lv_obj_t *page) {
   lv_obj_set_style_pad_hor(w.banner, 12, 0);
   lv_obj_set_style_pad_ver(w.banner, 0, 0);
   flexRow(w.banner, 12);
-  // The whole banner brings up the session's window, not just its button.
+  // The banner opens the session board; its Open button brings up the top session's window.
   lv_obj_set_clickable(w.banner, true);
-  lv_obj_add_event_cb(w.banner, onOpenClaude, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(w.banner, onBoard, LV_EVENT_CLICKED, nullptr);
   w.banner_icon_bg = box(w.banner);
   lv_obj_set_size(w.banner_icon_bg, 34, 34);
   lv_obj_set_style_radius(w.banner_icon_bg, LV_RADIUS_CIRCLE, 0);
@@ -138,6 +142,17 @@ void buildBanner(lv_obj_t *page) {
 
   w.banner_open = textButton(w.banner, LV_SIZE_CONTENT, 38, kAccent, "Open  " LV_SYMBOL_RIGHT, kOnAccent, onOpenClaude);
   lv_obj_set_style_pad_hor(w.banner_open, 14, 0);
+
+  w.banner_progress = lv_bar_create(w.banner);
+  lv_obj_add_flag(w.banner_progress, LV_OBJ_FLAG_FLOATING);  // out of the row, along the foot
+  lv_obj_remove_flag(w.banner_progress, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_size(w.banner_progress, LV_PCT(100), 4);
+  lv_obj_align(w.banner_progress, LV_ALIGN_BOTTOM_MID, 0, 2);
+  lv_obj_set_style_radius(w.banner_progress, 2, 0);
+  lv_obj_set_style_radius(w.banner_progress, 2, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_color(w.banner_progress, hex(kTrack), 0);
+  lv_obj_set_style_bg_color(w.banner_progress, hex(kAccent), LV_PART_INDICATOR);
+  lv_obj_set_hidden(w.banner_progress, true);
 }
 
 // The terminal across the page: the last few commands run in VS Code's terminal, whole
@@ -276,6 +291,12 @@ void updateClaude() {
   setTextColor(w.banner_title, st.title);
   setTextColor(w.banner_detail, st.detail);
   setHidden(w.banner_open, s == nullptr);
+  const bool progress = s && s->total > 0;
+  setHidden(w.banner_progress, !progress);
+  if (progress) {
+    lv_bar_set_range(w.banner_progress, 0, s->total);
+    lv_bar_set_value(w.banner_progress, s->done, LV_ANIM_OFF);
+  }
 
   if (!s) {
     setText(w.banner_detail, pc::connected() ? "Sessions in VS Code and the Claude app show here" : "PC offline");
@@ -285,7 +306,13 @@ void updateClaude() {
   char ago[24];
   formatAgo(ago, sizeof(ago), model::agedSecs(s->secs, model::claude.at_ms));
   String detail = s->project;
-  if (s->detail.length()) detail += " · " + s->detail;
+  if (s->total > 0) {
+    // A long job says how far it's got rather than its latest step.
+    if (s->progress.length()) detail += " · " + s->progress;
+    detail += " · " + String(s->done) + " of " + String(s->total);
+  } else if (s->detail.length()) {
+    detail += " · " + s->detail;
+  }
   if (ago[0]) detail += String(" · ") + ago;
   setText(w.banner_detail, detail.c_str());
   if (model::claude.count > 1) setTextf(w.banner_more, "+%d more", model::claude.count - 1);

@@ -55,6 +55,9 @@ sealed class ObsidianTasks(ObsidianSource obsidian) : ITaskProvider, ITaskOpener
     {
         if (!Settings.ObsidianTasks || obsidian.Root is not { } root) return new TaskRead("setup", [], []);
         var note = Latest(root)?.Path;
+        if (note != _note)
+            Log.Write(note == null ? $"tasks: obsidian: no daily note in {Path.GetFileName(root)} in the last 92 days (today's would be {ObsidianSource.DailyNoteWhere(root)})"
+                                   : $"tasks: obsidian: reading {Path.GetFileName(root)}/{Path.GetRelativePath(root, note).Replace('\\', '/')}");
         _note = note;
         var list = new TaskList(Id, List, ListName);
         if (note == null) return new TaskRead("ok", [list], []);
@@ -217,9 +220,7 @@ sealed class ObsidianTasks(ObsidianSource obsidian) : ITaskProvider, ITaskOpener
 
     static readonly TimeSpan Quiet = TimeSpan.FromSeconds(2.5);
 
-    static bool TasksPluginOn(string root) =>
-        ObsidianSource.ReadJson(Path.Combine(root, ".obsidian", "community-plugins.json")) is System.Text.Json.Nodes.JsonArray plugins &&
-        plugins.Any(p => (string?)p == "obsidian-tasks-plugin");
+    static bool TasksPluginOn(string root) => ObsidianSource.PluginOn(root, "obsidian-tasks-plugin");
 
     /// <summary>The note a task was read from: yesterday's for one ticked before today's note came, so it can still be unticked.</summary>
     string NoteOf(string id) => _noteOf.TryGetValue(id, out var file) ? file : _note ?? throw new InvalidOperationException("no daily note");
