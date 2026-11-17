@@ -9,7 +9,7 @@ record ObsidianNote(string Name, string Path);
 record ObsidianState(bool Found, string Vault, IReadOnlyList<ObsidianNote> Recent);
 
 /// <summary>
-/// The Obsidian vault: today's note and recently opened notes. The vault is settings.json's
+/// The Obsidian vault: today's note and recently opened notes. The vault is machine.json's
 /// "obsidianVault" (the tray's Task sources › Obsidian daily note › Vault picks it), else the
 /// one Obsidian has open, looked at again every poll. If that folder moved (Google Drive
 /// reorganizes folders), a folder of the same name is looked for near where it was, and
@@ -42,7 +42,7 @@ sealed class ObsidianSource
 
     /// <summary>
     /// Looks again at which vault to use and its recent notes. On the timer, and from the tray
-    /// right after a vault is picked. The choice is looked at every time (settings.json's,
+    /// right after a vault is picked. The choice is looked at every time (machine.json's,
     /// else the one Obsidian has open), so picking another vault, or opening another in
     /// Obsidian, moves the deck to it.
     /// </summary>
@@ -240,7 +240,7 @@ sealed class ObsidianSource
         Registered().Where(v => IsVault(v.Path)).Select(v => Path.GetFullPath(v.Path).TrimEnd('\\')).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     /// <summary>
-    /// The vault to use: settings.json's "obsidianVault" (the tray's pick); if that folder moved,
+    /// The vault to use: machine.json's "obsidianVault" (the tray's pick); if that folder moved,
     /// where it went (and the setting follows it). Else the one Obsidian has open, any other it
     /// knows that's there, the one in use, or one of its list that moved. Null when none is.
     /// </summary>

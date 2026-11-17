@@ -1255,6 +1255,68 @@ Gotchas found after phase 6:
     bullet), and yesterday's note when today's isn't made yet. The companion, firmware and
     simulator build. Not checked: the work vault itself (not on this PC), the tray submenu
     by hand, or on the deck.
+- Profiles and accounts, companion only (2026-11-17; asked for: "abstract away data that may
+  be changing between user to user, and pc to pc, like implementing user specific and
+  configurable profiles", first of four steps: profiles and accounts, then calendar
+  providers and filters, then context packs and a Chrome link, then one firmware release
+  that makes the deck a generic renderer):
+  - Settings in two layers over the defaults: a profile (`profiles\<name>.json`: who you
+    are and what the deck shows, nothing tied to one PC, nothing secret) and this PC's
+    `machine.json` (the profile in use, `profilesFolder`, `obsidianVault`). Any setting in
+    `machine.json` wins over the profile's on this PC (`"jira": null` turns it off there).
+    `Settings.Set` writes this PC's own keys and the ones `machine.json` already overrides
+    there, everything else into the profile. Its API stayed, so the sources didn't change.
+  - The profiles folder can be a synced one (tray: Profile › Keep the profiles in…; the
+    profiles not there are copied in), so PCs share profiles. Writes are whole files (written
+    beside, then moved over) so a sync never reads half of one. A profile file that can't be
+    read keeps its last good settings, and a write never overwrites it. A file is read
+    again when its time moves and while that time is recent: a file time only moves every
+    ~15 ms, and two writes that close together (the companion's, then a sync client's) were
+    taken for one. The first test runs caught it.
+  - Migration: the old `settings.json` becomes `profiles\default.json` (with `"$schema"`
+    first) and `machine.json` (its `obsidianVault`) the first time; the old file is kept as
+    `settings.json.before-profiles`. One with a mistake in it is left in place and tried
+    again once it's saved. A fresh PC writes nothing until a setting is set.
+  - Switching (tray: Profile: … › a profile) is seen at the next tick (`Settings.Version`,
+    now a counter): the deck shows a *Profile: work* toast, and Google, the tasks and the
+    vault are read again at once rather than at their next turn. Same when the accounts
+    change by hand.
+  - Accounts: the profile's `accounts`, by id; without any, one Google account, `google`,
+    which keeps `google-token.bin` and the `google` task source id (so `hiddenTaskLists`
+    keys and the deck's `src` stay as they were). `GoogleAccount` is one sign-in (its own
+    `<id>-token.bin`, its own OAuth `client` file or the shared `google-client.json`,
+    `calendar` and `tasks` on unless false; the consent shows Google's account picker).
+    `GoogleSource` reads every account's calendars and merges them as before (a meeting on
+    several shows once); an account that can't be read keeps its last events. Each account
+    with tasks on is a `GoogleTasks` source of its own ("Google Tasks (Work)"), and
+    `TaskSource` takes a function for its sources so they follow the profile. It learns
+    who signed in from the primary calendar's id, and warns when two accounts are the same
+    Google account. Tray: Google accounts (also Task sources › Google Tasks): each account
+    with its state, Sign in, its calendar or tasks on the deck, Sign out on this PC, Remove
+    from the profile; Add a Google account (a name, optionally its own client file).
+  - Tokens per site: Jira's under its site, GitHub's under its host, Microsoft To Do's under
+    its app registration (`Secrets.LoadFor`). A work profile's Jira and a home one's each
+    keep their own, and switching never sends one site another's token. The token kept
+    under the plain name before becomes the first site's that asks. To Do's access token
+    in memory is dropped when the app registration changes.
+  - `AppPaths.Data` is the one data folder; `FLEX_SCREEN_DATA` points it elsewhere, so a
+    companion started for testing leaves the PC's own files alone.
+  - `companion/profile.schema.json`: every profile setting, for completion and checks in
+    editors (the profile's `"$schema"` points at it on GitHub).
+  - Checked: 62 checks in a throwaway harness on a scratch data folder, all passing (the settings ones on five runs in a row).
+    They cover the migration (with a comment and a trailing comma), a broken settings.json
+    migrated once fixed, and a fresh PC writing nothing. They cover which file each write
+    goes to, machine.json overrides and `null`, hand edits, a broken profile kept and left
+    alone, accounts, new, copied and missing profiles, a synced profiles folder, and per-site
+    tokens with the old token moved. Then the dev companion on a copy of this PC's data folder (`FLEX_SCREEN_DATA`),
+    talking to a stand-in deck over `FLEX_SCREEN_DECK`. It migrated the real settings.json,
+    read the real Google calendar (2 events) and tasks (the 3 hidden lists still hidden),
+    switched to a work profile with a second, unsigned Google account (in 3 s: its colors,
+    the *Profile: work* toast, the Tasks card's "Google Tasks (Work)" sign-in warning), and
+    back. That run found the switch going unnoticed when the deck's hello had sent the
+    settings first: the profile is now compared every tick. Not checked: the tray menus by
+    hand, a second Google account actually signed in, Jira, GitHub or To Do across two
+    sites, a synced folder with a real sync client, or on the deck.
 
 ## Decisions
 

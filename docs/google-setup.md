@@ -53,24 +53,26 @@ project, so no one else's app ever holds access to your account.
    `%LOCALAPPDATA%\flex-screen\google-client.json`
    (paste `%LOCALAPPDATA%\flex-screen` into File Explorer's address bar, copy the downloaded
    file there, and rename it).
-2. **Sign in.** Right-click the flex-screen tray icon → **Connect Google Calendar and
-   Tasks…**. Your browser opens Google's sign-in:
+2. **Sign in.** Right-click the flex-screen tray icon → **Google accounts** → **Google** →
+   **Sign in…**. Your browser opens Google's sign-in:
    - Pick the account from part 1.
    - *Google hasn't verified this app*: that's your own app, unverified because you didn't
      submit it. Click **Advanced** → **Go to flex-screen (unsafe)**.
    - **Tick both boxes** (calendar and tasks) → **Continue**.
    - The tab says *flex-screen is connected to Google*, and the deck shows
-     *Connected to Google Calendar and Tasks*. You have five minutes to finish the sign-in;
-     after that, choose the menu item again.
+     *Connected to Google*. You have five minutes to finish the sign-in; after that, choose
+     **Sign in…** again.
 3. **Check the deck.** Within a few seconds Today's *Up next* shows your next event (or
    *Nothing else today*). After that the companion reads Google every 5 minutes.
 
 The sign-in is stored on the PC encrypted for your Windows account (`google-token.bin` next to
-the client file), so it's useless anywhere else.
+the client file; another account's is `<its id>-token.bin`), so it's useless anywhere else.
+The accounts themselves are part of your [profile](../README.md#profiles): a PC on the same
+profile lists the same accounts, and signs in to each one once.
 
 ## Tasks on the deck
 
-The Tasks card on the Capture page shows the signed-in account's Google Tasks (up to 40 on
+The Tasks card on the Capture page shows each signed-in account's Google Tasks (up to 40 on
 the deck, soonest due first; the counts include the rest). A task's notes give the grey line
 under its title (their first line; the `todo` skill's `[todo src=…]` tag is left out).
 
@@ -93,22 +95,40 @@ under its title (their first line; the `todo` skill's `[todo src=…]` tag is le
 
 ## More than one Google account
 
-- **Calendar:** the deck shows every calendar *ticked* in Google Calendar for the signed-in
-  account. To add another account's calendar, in that account: Google Calendar → Settings →
-  the calendar → **Share with specific people** → add your main address with **See all event
-  details**; accept the invite in the main account. A meeting on both calendars shows once.
-- **Tasks:** Google Tasks can't be shared between accounts; the deck shows the signed-in
-  account's.
+Add the other account (a work one beside your own, say): tray icon → **Google accounts** →
+**Add a Google account…**, give it a name (*Work*), and pick that account in Google's
+account picker. Then:
+
+- **Calendar:** its events join the deck's calendar: every calendar *ticked* in Google
+  Calendar, for each account. A meeting on several of them (both accounts invited) shows once.
+- **Tasks:** its lists join the Tasks card as *Google Tasks (Work)*, with their own chips in
+  **Task lists on the deck**.
+- **Either one off:** **Google accounts** → the account → **Its calendar on the deck** or
+  **Its tasks on the deck** (a work calendar without the work tasks, say).
+- **The OAuth client:** the one from part 1 serves every account, but while its app is in
+  *Testing*, add each account under **Audience** → **Test users** first. A Google Workspace
+  domain that only allows its own apps needs a client made in that domain's Google Cloud
+  project: save its JSON in `%LOCALAPPDATA%\flex-screen\` under another name and give that
+  name when adding the account (it's the account's `"client"` in the profile).
+- **Per profile:** the accounts are in your [profile](../README.md#profiles), so a work
+  profile can have the work account and a home profile not.
+
+Without adding it, another account's calendar can still show by sharing it: in that
+account, Google Calendar → Settings → the calendar → **Share with specific people** → add
+your main address with **See all event details**; accept the invite in the main account.
+Google Tasks can't be shared that way.
 
 ## On another PC
 
-Copy `google-client.json` to `%LOCALAPPDATA%\flex-screen\` on that PC and do part 2 there.
+Copy `google-client.json` (and any other account's client file) to
+`%LOCALAPPDATA%\flex-screen\` on that PC and sign in to each account there (part 2, step 2).
 One client serves any number of PCs; each signs in on its own.
 
 ## Disconnecting
 
-- To stop on one PC: delete `google-token.bin` from `%LOCALAPPDATA%\flex-screen\` (the deck
-  then asks to connect again). `uninstall.cmd` removes both files.
+- To stop on one PC: tray icon → **Google accounts** → the account → **Sign out on this PC**
+  (the deck then asks to connect again). **Remove from the … profile…** also takes the
+  account out of the profile. `uninstall.cmd` removes the client files and the sign-ins.
 - To revoke access everywhere: [myaccount.google.com/permissions](https://myaccount.google.com/permissions)
   → flex-screen → **Remove access**.
 
@@ -121,7 +141,7 @@ The companion's log says what Google answered: tray icon → **Open log**, lines
 |---|---|
 | Deck: *Connect Google Calendar*, and the tray item shows a note instead of a browser | The client file isn't at `%LOCALAPPDATA%\flex-screen\google-client.json` (check the name: Windows may have kept `.json.json` or the long downloaded name). |
 | Log: `Google Calendar API has not been used in project … or it is disabled` (or the same for Tasks) | Part 1, step 2: enable that API. It can take a few minutes to take effect; the companion tries again every 5 minutes. |
-| Toast: *Google didn't grant Calendar (or Tasks) access* | A box was left unticked on the consent page. Choose the tray item again and tick both. |
+| Toast: *Google didn't grant Calendar (or Tasks) access* | A box was left unticked on the consent page. Sign in again (tray icon → **Google accounts** → the account) and tick both. |
 | It worked, then stopped after about a week | The app was still in *Testing* (part 1, step 4). Publish it, then connect again from the tray. |
 | Log: `token request failed: invalid_grant` | The sign-in was revoked or expired; the companion drops it. Connect again from the tray. |
 | *Error 403: access_denied* in the browser | The app is in *Testing* and this account isn't a test user: publish it (step 4), or add the account under **Audience** → **Test users**. |

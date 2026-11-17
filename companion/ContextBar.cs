@@ -17,7 +17,7 @@ namespace FlexScreen.Companion;
 /// on the bar swaps places with it), removes the key, or resets the app's bar; "+" adds one.
 /// Those choices are kept per app (by the bar's key: "code", "chrome:gmail") in
 /// %LOCALAPPDATA%\flex-screen\context-bar.json.
-/// settings.json's "contextBar" adds actions to an app's bank (by exe name, "chrome", or
+/// The profile's "contextBar" adds actions to an app's bank (by exe name, "chrome", or
 /// the name the deck shows, "Chrome"; "*" for apps without a bank) and makes them its
 /// default bar, or turns the bar off:
 /// <code>
@@ -59,7 +59,7 @@ sealed class ContextBar
 
     const int Neutral = 0x8A94A6;  // an icon without a color of its own
 
-    static readonly string LayoutsPath = Path.Combine(Path.GetDirectoryName(Settings.FilePath)!, "context-bar.json");
+    static readonly string LayoutsPath = Path.Combine(AppPaths.Data, "context-bar.json");
 
     readonly WindowSource _windows;
     readonly Action<string> _act;
@@ -172,7 +172,7 @@ sealed class ContextBar
         return new Bar(app, key, front.Icon, color, keys, bank, own.Count);
     }
 
-    /// <summary>An app's actions from settings.json, by exe name or the app's name on the deck; null if it has none.</summary>
+    /// <summary>An app's actions from the settings, by exe name or the app's name on the deck; null if it has none.</summary>
     static AppBank? FromSettings(JsonObject? config, string exe, string app)
     {
         if (config == null) return null;

@@ -569,7 +569,7 @@ def test_cheat_sheet(d: Deck) -> None:
     d.state('kbd', fixtures.day()['kbd'])
     d.settle()
     check('cheat sheet: letting go hides it', not on_screen(d, 'Tap the layer pill'))
-    # settings.json's cheatSheetSeconds
+    # the profile's cheatSheetSeconds
     d.settings('base', cheat_s=6)
     d.state('kbd', dict(held, held_ms=2000))
     d.settle()

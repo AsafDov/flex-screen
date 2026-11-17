@@ -9,7 +9,7 @@ using System.Text.Json.Nodes;
 namespace FlexScreen.Companion;
 
 /// <summary>
-/// The deck's shortcuts launcher: up to 12 tiles from settings.json's "shortcuts", each one of
+/// The deck's shortcuts launcher: up to 12 tiles from the profile's "shortcuts", each one of
 /// <list type="bullet">
 /// <item><c>{ "name": "Gmail", "url": "https://mail.google.com" }</c>: opens in the default browser</item>
 /// <item><c>{ "name": "Spotify", "app": "Spotify" }</c>: a Start menu app, by its name there; brought to the front if it's open</item>
@@ -82,7 +82,7 @@ sealed class Shortcuts
 
     public event Action<Toast>? Toast;
 
-    /// <summary>Reads the list again if settings.json's changed; cheap otherwise. Call every tick.</summary>
+    /// <summary>Reads the list again if the settings changed; cheap otherwise. Call every tick.</summary>
     public void Refresh()
     {
         var config = (Settings.Shortcuts ?? Defaults()).ToJsonString();
@@ -94,18 +94,11 @@ sealed class Shortcuts
         thread.Start();
     }
 
-    /// <summary>Settings.json opened for editing, with the current list written in if it has none.</summary>
+    /// <summary>The file the list is in opened for editing (the profile's, or this PC's when it has its own), with the current list written in if it has none.</summary>
     public static void Edit()
     {
         if (Settings.Shortcuts == null) Settings.Set("shortcuts", Defaults());
-        try
-        {
-            Process.Start(new ProcessStartInfo(Settings.FilePath) { UseShellExecute = true });
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            Process.Start("notepad.exe", $"\"{Settings.FilePath}\"");  // nothing opens .json files
-        }
+        AppPaths.Open(Settings.FileOf("shortcuts"));
     }
 
     void Resolve(string config, int generation)

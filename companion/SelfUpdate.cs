@@ -60,7 +60,7 @@ sealed class SelfUpdate
 
     static bool IsDevBuild => Current.Contains('-') || DeckFirmware.Compare(Current, "0.0.1") is null or < 0;
 
-    static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flex-screen", "update");
+    static string Folder => Path.Combine(AppPaths.Data, "update");
     static string MarkerPath => Path.Combine(Folder, "update.json");
     static string InstallLog => Path.Combine(Folder, "install.log");
 

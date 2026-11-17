@@ -42,10 +42,11 @@ record TaskRead(string Status, IReadOnlyList<TaskList> Lists, IReadOnlyList<Task
 record TasksState(string Status, IReadOnlyList<TaskList> Lists, IReadOnlyList<TaskItem> Tasks, string From = "", string Warn = "");
 
 /// <summary>
-/// A place tasks come from: Google Tasks, Microsoft To Do, the latest Obsidian daily note,
-/// Jira, GitHub. Each one is a class of its own (GoogleTasks.cs, MicrosoftTodo.cs…) added to
-/// <see cref="TaskSource"/> in TrayApp; nothing else needs to know about it. A source that
-/// isn't set up on this PC reads as "setup" and is left out.
+/// A place tasks come from: Google Tasks (one per Google account), Microsoft To Do, the
+/// latest Obsidian daily note, Jira, GitHub. Each one is a class of its own (GoogleTasks.cs,
+/// MicrosoftTodo.cs…) listed for <see cref="TaskSource"/> in TrayApp; nothing else needs to
+/// know about it. A source that isn't set up (in this profile, or on this PC) reads as
+/// "setup" and is left out.
 /// </summary>
 interface ITaskProvider
 {
@@ -82,16 +83,17 @@ sealed class TaskSource
 {
     static readonly TimeSpan Every = TimeSpan.FromMinutes(2);
 
-    readonly IReadOnlyList<ITaskProvider> _providers;
+    readonly Func<IReadOnlyList<ITaskProvider>> _sources;
     readonly System.Threading.Timer _timer;
     readonly SemaphoreSlim _busy = new(1, 1);
     readonly Dictionary<string, TaskItem> _doneHere = [];  // by source/list/id: ticked from the deck today
     DateTime _doneDay = DateTime.Today;
     bool _again;  // a change came in mid-read: read once more after it
 
-    public TaskSource(params ITaskProvider[] providers)
+    /// <param name="sources">The sources there are now: they follow the profile (its Google accounts).</param>
+    public TaskSource(Func<IReadOnlyList<ITaskProvider>> sources)
     {
-        _providers = providers;
+        _sources = sources;
         _timer = new System.Threading.Timer(_ => _ = RefreshAsync(), null, Timeout.Infinite, Timeout.Infinite);
     }
 
@@ -136,7 +138,8 @@ sealed class TaskSource
             _doneHere.Clear();
             _doneDay = DateTime.Today;
         }
-        var reads = await Task.WhenAll(_providers.Select(ReadOneAsync));
+        var providers = _sources();
+        var reads = await Task.WhenAll(providers.Select(ReadOneAsync));
         var lists = new List<TaskList>();
         var tasks = new List<TaskItem>();
         for (var i = 0; i < reads.Length; i++)
@@ -147,8 +150,8 @@ sealed class TaskSource
                 // Can't be read just now: keep showing what it last had.
                 if (read.Status == "error")
                 {
-                    lists.AddRange(Current.Lists.Where(l => l.Source == _providers[i].Id));
-                    tasks.AddRange(Current.Tasks.Where(t => t.Source == _providers[i].Id));
+                    lists.AddRange(Current.Lists.Where(l => l.Source == providers[i].Id));
+                    tasks.AddRange(Current.Tasks.Where(t => t.Source == providers[i].Id));
                 }
                 continue;
             }
@@ -157,7 +160,7 @@ sealed class TaskSource
         }
         // Ticked off from the deck today: still shown, ticked; one ticked back on comes back by
         // itself. Not once its source is disconnected.
-        var live = _providers.Where((_, i) => reads[i].Status is "ok" or "error").Select(p => p.Id).ToHashSet();
+        var live = providers.Where((_, i) => reads[i].Status is "ok" or "error").Select(p => p.Id).ToHashSet();
         foreach (var key in _doneHere.Where(d => !live.Contains(d.Value.Source)).Select(d => d.Key).ToList()) _doneHere.Remove(key);
         tasks.RemoveAll(t => _doneHere.ContainsKey(Key(t)));
         tasks.AddRange(_doneHere.Values);
@@ -167,10 +170,10 @@ sealed class TaskSource
         var why = ok ? -1 : Array.FindIndex(reads, r => r.Status == "error") is >= 0 and var e ? e
                           : Array.FindIndex(reads, r => r.Status == "signin") is >= 0 and var s ? s : reads.Length > 0 ? 0 : -1;
         var status = ok ? "ok" : why >= 0 ? reads[why].Status : "setup";
-        var from = why >= 0 && status != "setup" ? _providers[why].Name : "";
+        var from = why >= 0 && status != "setup" ? providers[why].Name : "";
         // Read, but a source that was set up needs signing in again (the Google sign-in was
         // revoked, say): the deck says so above the others' tasks, which would hide it otherwise.
-        var signedOut = ok ? _providers.Where((_, i) => reads[i].Status == "signin").Select(p => p.Name).ToList() : [];
+        var signedOut = ok ? providers.Where((_, i) => reads[i].Status == "signin").Select(p => p.Name).ToList() : [];
         var warn = signedOut.Count switch
         {
             0 => "",
@@ -188,7 +191,7 @@ sealed class TaskSource
         }
         catch (Exception e)
         {
-            // Whatever went wrong in one source (a mistyped site in settings.json, a reply of
+            // Whatever went wrong in one source (a mistyped site in the profile, a reply of
             // an unexpected shape), the others are still read and shown.
             Log.Write($"tasks: {provider.Id}: {e.GetType().Name}: {e.Message}");
             return new TaskRead("error", [], []);
@@ -202,11 +205,14 @@ sealed class TaskSource
 
     static string Key(TaskItem t) => $"{t.Source}/{t.List}/{t.Id}";
 
-    ITaskProvider? Provider(string source) =>
-        _providers.FirstOrDefault(p => p.Id == source) ?? (source.Length == 0 ? _providers.FirstOrDefault() : null);
+    ITaskProvider? Provider(string source)
+    {
+        var providers = _sources();
+        return providers.FirstOrDefault(p => p.Id == source) ?? (source.Length == 0 ? providers.FirstOrDefault() : null);
+    }
 
     /// <summary>"Google Tasks" for "google"; the id itself for a source not known.</summary>
-    public string SourceName(string source) => _providers.FirstOrDefault(p => p.Id == source)?.Name ?? source;
+    public string SourceName(string source) => _sources().FirstOrDefault(p => p.Id == source)?.Name ?? source;
 
     public TaskItem? Find(string source, string list, string id) =>
         Current.Tasks.FirstOrDefault(t => t.Source == source && t.List == list && t.Id == id);

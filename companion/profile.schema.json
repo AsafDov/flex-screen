@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/AsafDov/flex-screen/master/companion/profile.schema.json",
+  "title": "flex-screen profile",
+  "description": "A flex-screen profile (%LOCALAPPDATA%\\flex-screen\\profiles\\<name>.json, or the synced profiles folder). Everything is optional; the companion re-reads the file when it's saved. This PC's own settings (the profile in use, the profiles folder, the Obsidian vault's folder) are in machine.json, which can also set any of these to override the profile on this PC.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "palette": {
+      "description": "The deck's colors.",
+      "enum": ["base", "vibrant", "ember", "violet"],
+      "default": "base"
+    },
+    "idle": {
+      "description": "Idle minutes before the deck shows its clock, and before its screen goes off. 0 turns either off.",
+      "type": "object",
+      "properties": {
+        "clockAfterMinutes": { "type": "number", "minimum": 0, "default": 10 },
+        "screenOffAfterMinutes": { "type": "number", "minimum": 0, "default": 30 }
+      },
+      "additionalProperties": false
+    },
+    "layerNames": {
+      "description": "The keyboard's layers, from 0.",
+      "type": "array",
+      "items": { "type": "string" },
+      "default": ["BASE", "NAV", "SYMBOL"]
+    },
+    "cheatSheetSeconds": {
+      "description": "How long a layer key is held before the deck shows the cheat sheet; 0: only from the pill.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 600,
+      "default": 10
+    },
+    "approveFromDeck": {
+      "description": "Claude's permission requests wait for Approve or Deny on the deck.",
+      "type": "boolean",
+      "default": true
+    },
+    "accounts": {
+      "description": "The accounts this profile uses, by id (lower-case letters, digits and \"-\"). Without it, one Google account: \"google\". Each PC signs in to each account once (tray: Google accounts); the sign-ins stay on the PC.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9-]{1,40}$" },
+      "additionalProperties": { "$ref": "#/$defs/googleAccount" }
+    },
+    "hiddenTaskLists": {
+      "description": "Task lists left off the deck's Tasks card, as \"source/list id\" (the tray's Task lists on the deck). Their dated tasks still show under Scheduled.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "obsidianTasks": {
+      "description": "The latest Obsidian daily note's \"- [ ]\" tasks on the deck.",
+      "type": "boolean",
+      "default": true
+    },
+    "microsoftTodo": {
+      "description": "Microsoft To Do, with your own app registration (tray: Task sources, Microsoft To Do).",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string", "description": "The app registration's Application (client) ID." },
+        "tenant": { "type": "string", "default": "common", "description": "common; consumers for personal accounts only; or your organization's." }
+      },
+      "required": ["clientId"]
+    },
+    "jira": {
+      "description": "Jira issues assigned to you (tray: Task sources, Jira). The token is kept on each PC, per site.",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "description": "https://yourcompany.atlassian.net, or your Jira server." },
+        "email": { "type": "string", "description": "Jira Cloud only: your Atlassian email." },
+        "jql": { "type": "string", "default": "assignee = currentUser() AND statusCategory != Done ORDER BY priority DESC, updated DESC" },
+        "name": { "type": "string", "default": "Jira", "description": "The list's name on the deck." }
+      },
+      "required": ["url"]
+    },
+    "github": {
+      "description": "GitHub issues assigned to you (tray: Task sources, GitHub). The token is kept on each PC, per host.",
+      "type": "object",
+      "properties": {
+        "host": { "type": "string", "default": "github.com", "description": "github.com, or your GitHub Enterprise server." },
+        "query": { "type": "string", "default": "is:open is:issue assignee:@me" },
+        "name": { "type": "string", "default": "GitHub", "description": "The list's name on the deck." }
+      }
+    },
+    "shortcuts": {
+      "description": "The launcher's tiles, up to 12 (tray: Shortcuts…).",
+      "type": "array",
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/shortcut" }
+    },
+    "contextBar": {
+      "description": "Your own keys for the context bar, per app: by exe name (\"chrome\") or the name the deck shows (\"Chrome\"); \"*\" for apps without keys of their own. false turns the bar off.",
+      "oneOf": [
+        { "const": false },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "array", "items": { "$ref": "#/$defs/barKey" }, "maxItems": 8 },
+              {
+                "type": "object",
+                "properties": {
+                  "color": { "type": "string", "pattern": "^#?[0-9A-Fa-f]{6}$", "description": "The bar's color, #RRGGBB." },
+                  "keys": { "type": "array", "items": { "$ref": "#/$defs/barKey" }, "maxItems": 8 }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "googleAccount": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "google", "description": "Taken from the id's start when left out (\"google-work\")." },
+        "label": { "type": "string", "description": "Its name on the deck and in the tray: \"Work\" makes \"Google Tasks (Work)\"." },
+        "client": { "type": "string", "description": "Its own OAuth client file, in %LOCALAPPDATA%\\flex-screen (or a full path). Without it, google-client.json, which every account can share." },
+        "calendar": { "type": "boolean", "default": true, "description": "Its events on the deck's calendar." },
+        "tasks": { "type": "boolean", "default": true, "description": "Its task lists on the deck's Tasks card." }
+      }
+    },
+    "shortcut": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string", "description": "Opens in the default browser." },
+        "app": { "type": "string", "description": "A Start menu app, by its name there; brought to the front if it's open." },
+        "path": { "type": "string", "description": "A file, folder or program." },
+        "args": { "type": "string", "description": "For a program." },
+        "action": { "$ref": "#/$defs/deckAction" },
+        "keys": { "type": "string", "description": "Keys pressed in the window in front: \"Win+Shift+S\"." },
+        "glyph": { "type": "string", "description": "The symbol shown without an icon: mail, calendar, note, terminal, code, music, media, volume, lock, desktop, folder, keys, git, call." },
+        "icon": { "type": "string", "description": "A picture file, or a program whose icon to use." }
+      },
+      "required": ["name"]
+    },
+    "barKey": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "keys": { "type": "string", "description": "Pressed in the app's window; \"g, i\" presses one after the other." },
+        "text": { "type": "string", "description": "Typed; \\n for Enter." },
+        "action": {
+          "oneOf": [{ "$ref": "#/$defs/deckAction" }, { "const": "close", "description": "Closes the window." }]
+        },
+        "glyph": { "type": "string", "description": "An icon of the deck's icon font: search, split-right, back, play… (firmware/scripts/gen_font_icons.py)." }
+      }
+    },
+    "deckAction": {
+      "description": "Something the deck already does.",
+      "enum": [
+        "obs.today", "mail.open", "pc.lock", "desktop.show", "media.toggle", "media.next", "media.prev", "vol.mute", "mic.mute",
+        "term.focus", "term.interrupt", "git.commit", "git.fetch", "git.pull", "git.push", "git.stash",
+        "call.mic", "call.camera", "call.hand", "call.leave", "call.focus"
+      ]
+    }
+  }
+}

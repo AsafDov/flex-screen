@@ -5,16 +5,17 @@ using System.Text.Json.Nodes;
 namespace FlexScreen.Companion;
 
 /// <summary>
-/// The tray's Task sources menu: connecting Google Tasks, Microsoft To Do, Jira and GitHub,
-/// and the Obsidian daily note (on or off, and which vault). Site addresses and choices go in
-/// settings.json; tokens only in <see cref="Secrets"/>. Runs on the UI thread.
+/// The tray's Task sources menu: connecting Google Tasks (the Google accounts' menu),
+/// Microsoft To Do, Jira and GitHub, and the Obsidian daily note (on or off, and which
+/// vault). Site addresses and choices go in the profile (the vault's folder in this PC's
+/// machine.json); tokens only in <see cref="Secrets"/>, per site. Runs on the UI thread.
 /// </summary>
-sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSource obsidian, Action connectGoogle)
+sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSource obsidian, GoogleSetup googleSetup)
 {
     public ToolStripMenuItem Menu()
     {
         var menu = new ToolStripMenuItem("Task sources");
-        var google = new ToolStripMenuItem("Google Tasks…", null, (_, _) => connectGoogle());
+        var google = googleSetup.Menu("Google Tasks");
         var microsoft = new ToolStripMenuItem("Microsoft To Do…", null, (_, _) => ConnectMicrosoft());
         var jira = new ToolStripMenuItem("Jira…", null, (_, _) => ConnectJira());
         var github = new ToolStripMenuItem("GitHub…", null, (_, _) => ConnectGitHub());
@@ -22,9 +23,9 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSourc
         menu.DropDownItems.AddRange([google, microsoft, jira, github, daily]);
         menu.DropDownOpening += (_, _) =>
         {
-            // A tick on each source that's set up on this PC.
+            // A tick on each source that's set up (in this profile, on this PC).
             var connected = tasks.Current.Lists.Select(l => l.Source).ToHashSet();
-            google.Checked = connected.Contains("google");
+            google.Checked = googleSetup.HasTasks(connected);
             microsoft.Checked = connected.Contains("mstodo");
             jira.Checked = connected.Contains("jira");
             github.Checked = connected.Contains("github");
@@ -36,7 +37,7 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSourc
     /// <summary>
     /// Obsidian daily note ›  its tasks on or off; then the vaults Obsidian knows on this PC,
     /// the one it has open, or another folder. A PC with several vaults (home and work) picks
-    /// one here; it's settings.json's "obsidianVault".
+    /// one here; it's machine.json's "obsidianVault".
     /// </summary>
     ToolStripMenuItem ObsidianMenu()
     {
@@ -126,7 +127,7 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSourc
         if (clientId.Length == 0)
         {
             Settings.Set("microsoftTodo", null);
-            Secrets.Delete(MicrosoftTodo.TokenName);
+            Secrets.DeleteFor(MicrosoftTodo.TokenName, ((string?)current?["clientId"] ?? "").Trim());
             Log.Write("tasks: mstodo: disconnected");
             await tasks.RefreshAsync();
             return;
@@ -146,13 +147,13 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSourc
     async void ConnectJira()
     {
         var current = Settings.Source("jira");
-        var has = Secrets.Load(JiraIssues.TokenName) != null;
+        var has = Token(JiraIssues.TokenName, JiraIssues.TokenSite((string?)current?["url"] ?? "")) != null;
         var values = InputDialog.Ask(
             "flex-screen: Jira",
             "The deck shows the Jira issues assigned to you that aren't done, and opens one in the browser. It doesn't change them.\n\n" +
             "Jira Cloud: your site, your Atlassian email and an API token (Atlassian account settings, Security, API tokens). " +
             "Jira Server or Data Center: your site and a personal access token (your Jira profile), with no email.\n\n" +
-            "Leave the site empty to disconnect Jira. The query (JQL) can be changed in settings.json.",
+            "Leave the site empty to disconnect Jira. The query (JQL) can be changed in the profile (Profile, Open profile file).",
             "https://id.atlassian.com/manage-profile/security/api-tokens",
             [new("Site", (string?)current?["url"] ?? "", Hint: "https://yourcompany.atlassian.net"),
              new("Email", (string?)current?["email"] ?? "", Hint: "Jira Cloud only"),
@@ -162,12 +163,12 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSourc
         if (url.Length == 0)
         {
             Settings.Set("jira", null);
-            Secrets.Delete(JiraIssues.TokenName);
+            Secrets.DeleteFor(JiraIssues.TokenName, JiraIssues.TokenSite((string?)current?["url"] ?? ""));
             Log.Write("tasks: jira: disconnected");
             await tasks.RefreshAsync();
             return;
         }
-        if (token.Length == 0) token = Secrets.Load(JiraIssues.TokenName) ?? "";
+        if (token.Length == 0) token = Token(JiraIssues.TokenName, JiraIssues.TokenSite(url)) ?? "";
         try
         {
             var me = await JiraIssues.WhoAmIAsync(url, email, token);
@@ -175,7 +176,7 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSourc
             settings["url"] = url;
             settings["email"] = email;
             Settings.Set("jira", settings);
-            Secrets.Save(JiraIssues.TokenName, token);
+            Secrets.SaveFor(JiraIssues.TokenName, JiraIssues.TokenSite(url), token);
             Log.Write("tasks: jira: connected");
             MessageBox.Show($"Connected to Jira{(me.Length > 0 ? $" as {me}" : "")}.", "flex-screen", MessageBoxButtons.OK, MessageBoxIcon.Information);
             await tasks.RefreshAsync();
@@ -190,13 +191,13 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSourc
     async void ConnectGitHub()
     {
         var current = Settings.Source("github");
-        var has = Secrets.Load(GitHubIssues.TokenName) != null;
+        var has = current != null && Token(GitHubIssues.TokenName, GitHubIssues.HostOf((string?)current["host"])) != null;
         var values = InputDialog.Ask(
             "flex-screen: GitHub",
             "The deck shows the open GitHub issues assigned to you, in every repository, and opens one in the browser. It doesn't change them.\n\n" +
             "The token needs read access to issues (a fine-grained token with Issues: Read, or a classic one with repo). " +
             "Leave it empty to use the GitHub CLI's sign-in (gh auth login) instead.\n\n" +
-            "Leave the host empty to disconnect GitHub. The search can be changed in settings.json.",
+            "Leave the host empty to disconnect GitHub. The search can be changed in the profile (Profile, Open profile file).",
             "https://github.com/settings/personal-access-tokens",
             [new("Host", (string?)current?["host"] ?? "github.com", Hint: "github.com, or your GitHub Enterprise server"),
              new("Token", "", Secret: true, Hint: has ? "kept; type a new one to change it" : "empty: the GitHub CLI's")]);
@@ -205,19 +206,19 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSourc
         if (host.Length == 0)
         {
             Settings.Set("github", null);
-            Secrets.Delete(GitHubIssues.TokenName);
+            Secrets.DeleteFor(GitHubIssues.TokenName, GitHubIssues.HostOf((string?)current?["host"]));
             Log.Write("tasks: github: disconnected");
             await tasks.RefreshAsync();
             return;
         }
-        if (token.Length == 0) token = Secrets.Load(GitHubIssues.TokenName) ?? "";
+        if (token.Length == 0) token = Token(GitHubIssues.TokenName, GitHubIssues.HostOf(host)) ?? "";
         try
         {
             var me = await GitHubIssues.WhoAmIAsync(host, token);
             var settings = current?.DeepClone() as JsonObject ?? [];
             settings["host"] = host;
             Settings.Set("github", settings);
-            if (token.Length > 0) Secrets.Save(GitHubIssues.TokenName, token);
+            if (token.Length > 0) Secrets.SaveFor(GitHubIssues.TokenName, GitHubIssues.HostOf(host), token);
             Log.Write("tasks: github: connected");
             MessageBox.Show($"Connected to GitHub{(me.Length > 0 ? $" as {me}" : "")}.", "flex-screen", MessageBoxButtons.OK, MessageBoxIcon.Information);
             await tasks.RefreshAsync();
@@ -228,6 +229,9 @@ sealed class TaskSourceSetup(TaskSource tasks, MicrosoftTodo todo, ObsidianSourc
             MessageBox.Show($"GitHub didn't accept that: {e.Message}", "flex-screen", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
+
+    /// <summary>The site's kept token; none without a site (so no old token is taken for "").</summary>
+    static string? Token(string name, string site) => site.Length > 0 ? Secrets.LoadFor(name, site) : null;
 }
 
 /// <summary>A small form of labelled text boxes, for the tray's connect dialogs.</summary>

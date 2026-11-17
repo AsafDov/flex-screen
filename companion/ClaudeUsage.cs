@@ -62,8 +62,7 @@ sealed class ClaudeUsage
     public record Pace(DateTime? Start, double PerHour, DateTime? Limit);
 
     static readonly TimeSpan Window = TimeSpan.FromHours(5);
-    static readonly string HistoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                                      "flex-screen", "usage-history.json");
+    static readonly string HistoryPath = Path.Combine(AppPaths.Data, "usage-history.json");
     readonly List<Point> _history = [];
     DateTime? _windowResets;
 

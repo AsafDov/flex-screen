@@ -3,17 +3,19 @@ using System.Text.Json.Nodes;
 namespace FlexScreen.Companion;
 
 /// <summary>
-/// Google Tasks as a task source: every task list's open tasks (subtasks too), ticking
-/// off and adding. Signs in through <see cref="GoogleSource"/>, whose consent already asks
-/// for Tasks (read and write).
+/// One Google account's Google Tasks as a task source: every task list's open tasks
+/// (subtasks too), ticking off and adding. Signs in through the <see cref="GoogleAccount"/>,
+/// whose consent already asks for Tasks (read and write). Its id is the account's ("google",
+/// "google-work"), so the first account's lists keep the ids they had before accounts.
 /// </summary>
-sealed class GoogleTasks(GoogleSource google) : ITaskProvider
+sealed class GoogleTasks(GoogleAccount google) : ITaskProvider
 {
     const string Api = "https://tasks.googleapis.com/tasks/v1";
     const int MaxPages = 5;  // 100 tasks a page, per list
 
-    public string Id => "google";
-    public string Name => "Google Tasks";
+    public GoogleAccount Account => google;
+    public string Id => google.Id;
+    public string Name => google.Label.Length > 0 ? $"Google Tasks ({google.Label})" : "Google Tasks";
 
     // The lists as last read, for the default list and the toast's list name.
     List<TaskList> _lists = [];

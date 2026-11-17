@@ -11,7 +11,7 @@ namespace FlexScreen.Companion;
 /// default the open issues assigned to me), with each one's project, key, priority and
 /// status. The deck opens an issue in the browser; ticking off and adding stay in Jira.
 /// Jira Cloud signs in with an email and an API token, Jira Server and Data Center with a
-/// personal access token (no email). The site, email and query are settings.json's "jira";
+/// personal access token (no email). The site, email and query are the profile's "jira";
 /// the token is kept encrypted (<see cref="Secrets"/>). The tray's Task sources › Jira sets them.
 /// </summary>
 sealed class JiraIssues : ITaskProvider
@@ -34,7 +34,7 @@ sealed class JiraIssues : ITaskProvider
     {
         var settings = Settings.Source("jira");
         if (SiteOf(settings) is not { } site) return new TaskRead("setup", [], []);
-        if (Secrets.Load(TokenName) is not { Length: > 0 } token) return new TaskRead("signin", [], []);
+        if (Secrets.LoadFor(TokenName, TokenSite(site.Url)) is not { Length: > 0 } token) return new TaskRead("signin", [], []);
         var jql = (string?)settings?["jql"] is { Length: > 0 } q ? q : DefaultJql;
         // Jira Cloud retired /search in 2025 for /search/jql; Server and Data Center have only /search.
         var path = site.Cloud ? "/rest/api/2/search/jql" : "/rest/api/2/search";
@@ -103,6 +103,12 @@ sealed class JiraIssues : ITaskProvider
         var email = ((string?)settings?["email"] ?? "").Trim();
         return new Site(url, email, email.Length > 0);
     }
+
+    /// <summary>What a site's token is kept under (<see cref="Secrets.LoadFor"/>): "acme.atlassian.net", or with Jira's path on a server; "" without a site.</summary>
+    public static string TokenSite(string url) =>
+        SiteOf(new JsonObject { ["url"] = url }) is { } site && Uri.TryCreate(site.Url, UriKind.Absolute, out var uri)
+            ? uri.Authority + uri.AbsolutePath.TrimEnd('/')
+            : "";
 
     static async Task<JsonNode?> GetAsync(Site site, string token, string url)
     {

@@ -21,7 +21,7 @@ sealed class ClipboardSource : NativeWindow
     const int MaxShown = 6;  // the deck's list
     const int MaxLength = 100_000;  // longer copies (whole files, logs) aren't kept
     const int MaxTries = 8;  // reading while another app has the clipboard open, ~1 s in all
-    static readonly string Folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flex-screen");
+    static readonly string Folder = AppPaths.Data;
     static readonly string PinsPath = Path.Combine(Folder, "clipboard-pins.json");
     static readonly string RecentPath = Path.Combine(Folder, "clipboard-recent.bin");
 

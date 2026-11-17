@@ -43,8 +43,11 @@ sealed class TrayApp : ApplicationContext
     readonly DeckShot _shot = new();
     readonly ObsidianSource _obsidian = new();
     readonly GoogleSource _google = new();
+    readonly GoogleSetup _googleSetup;
     readonly MicrosoftTodo _todo = new();
     readonly TaskSource _tasks;
+    readonly ITaskProvider[] _otherTaskSources;
+    readonly Dictionary<string, GoogleTasks> _googleTasks = [];  // by account
     readonly CallSource _calls;
     readonly ZoneSource _zones;
     readonly RecentActions _recent = new();
@@ -67,7 +70,9 @@ sealed class TrayApp : ApplicationContext
     string _loggedMedia = "";
     string _loggedClaude = "";
     string _loggedWindows = "";
-    DateTime _settingsSent = DateTime.MinValue;
+    long _settingsSent = -1;
+    string _profileSeen = Settings.Profile;  // the profile and accounts at start: a change is a switch
+    string _accountsSeen = Settings.AccountsStamp;
     bool _locked;
     string _loggedZones = "";
     HashSet<string> _claudeWaiting = [];
@@ -78,7 +83,12 @@ sealed class TrayApp : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add(_status);
         menu.Items.Add(new ToolStripSeparator());
-        var connectGoogle = menu.Items.Add("Connect Google Calendar and Tasks…", null, (_, _) => ConnectGoogle());
+        var profile = ProfileSetup.Menu();
+        menu.Items.Add(profile);
+        menu.Opening += (_, _) => profile.Text = ProfileSetup.Title;
+        _googleSetup = new GoogleSetup(_google);
+        var googleAccounts = _googleSetup.Menu("Google accounts");
+        menu.Items.Add(googleAccounts);
         menu.Items.Add("Shortcuts…", null, (_, _) => Shortcuts.Edit());
         var approve = new ToolStripMenuItem("Approve Claude from the deck");
         approve.Click += (_, _) => Settings.Set("approveFromDeck", !Settings.ApproveFromDeck);
@@ -115,7 +125,6 @@ sealed class TrayApp : ApplicationContext
             if (taskLists.DropDownItems.Count == 0) taskLists.DropDownItems.Add(new ToolStripMenuItem("No task lists yet") { Enabled = false });
         };
         menu.Items.Add(taskLists);
-        menu.Items.Add("Open settings file", null, (_, _) => OpenSettings());
         menu.Items.Add("Open log", null, (_, _) => OpenLog());
         menu.Items.Add("Quit", null, (_, _) => Quit());
         _icon = new NotifyIcon { Icon = MakeIcon(), Text = "flex-screen", ContextMenuStrip = menu, Visible = true };
@@ -218,14 +227,16 @@ sealed class TrayApp : ApplicationContext
         _obsidian.Changed += o => _link.Send(ObsidianMessage(o));
         _obsidian.Toast += SendToast;
         _google.Changed += g => _link.Send(GoogleMessage(g));
-        // Every task source; one not set up on this PC (Jira at home) reads as "setup" and is left out.
-        _tasks = new TaskSource(new GoogleTasks(_google), _todo, new ObsidianTasks(_obsidian), new JiraIssues(), new GitHubIssues());
+        // Every task source: Google Tasks for each of the profile's Google accounts, then the
+        // others. One not set up (Jira at home) reads as "setup" and is left out.
+        _otherTaskSources = [_todo, new ObsidianTasks(_obsidian), new JiraIssues(), new GitHubIssues()];
+        _tasks = new TaskSource(TaskProviders);
         _tasks.Changed += t => _link.Send(TasksMessage(t, _tasks.Revision));
         _tasks.Toast += SendToast;
         _google.SignedIn += () => _ = _tasks.RefreshAsync();
         _todo.SignedIn += () => _ = _tasks.RefreshAsync();
         _todo.Toast += SendToast;
-        menu.Items.Insert(menu.Items.IndexOf(connectGoogle) + 1, new TaskSourceSetup(_tasks, _todo, _obsidian, ConnectGoogle).Menu());
+        menu.Items.Insert(menu.Items.IndexOf(googleAccounts) + 1, new TaskSourceSetup(_tasks, _todo, _obsidian, _googleSetup).Menu());
         _calls = new CallSource(_devices, _mixer);
         _calls.Changed += c => _link.Send(CallMessage(c));
         _calls.Toast += SendToast;
@@ -323,6 +334,9 @@ sealed class TrayApp : ApplicationContext
             SendSettings();
             _link.Send(TasksMessage(_tasks.Current, _tasks.Revision));  // hiddenTaskLists edited by hand
         }
+        // Not only when the version moved: the deck's hello sends the settings too, and one
+        // that came just after a switch would hide it.
+        OnProfileOrAccounts();
         _shortcuts.Refresh();
         _context.Refresh();
         if (DateTime.UtcNow - _timeSentAt > TimeResync) SendTime();
@@ -600,33 +614,53 @@ sealed class TrayApp : ApplicationContext
 
     static string OneLine(string text, int max) => Strings.OneLine(text, max);
 
-    /// <summary>Starts the Google sign-in, or explains where the OAuth client file goes.</summary>
-    void ConnectGoogle()
+    /// <summary>The task sources there are now: one Google Tasks per Google account with its tasks on, then the others.</summary>
+    IReadOnlyList<ITaskProvider> TaskProviders()
     {
-        if (!_google.HasClient)
+        var accounts = _google.Accounts.Where(a => a.Tasks).ToList();
+        lock (_googleTasks)
         {
-            MessageBox.Show(
-                "flex-screen reads Google Calendar and Tasks with your own Google OAuth client.\n\n" +
-                "In Google Cloud Console (APIs & Services), enable the Google Calendar API and the Google Tasks API, " +
-                "create an OAuth client of type \"Desktop app\", download its JSON and save it as:\n\n" +
-                GoogleSource.ClientPath + "\n\nThen choose this menu item again to sign in.",
-                "flex-screen: connect Google", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
+            var providers = new List<ITaskProvider>();
+            foreach (var account in accounts)
+            {
+                // The same object while the account stays, so it keeps its lists between reads.
+                if (!_googleTasks.TryGetValue(account.Id, out var tasks) || tasks.Account != account)
+                    _googleTasks[account.Id] = tasks = new GoogleTasks(account);
+                providers.Add(tasks);
+            }
+            providers.AddRange(_otherTaskSources);
+            return providers;
         }
+    }
+
+    /// <summary>
+    /// Another profile, or other accounts (by hand, from the tray): the calendar, the tasks and
+    /// the vault are read again now, rather than at their next turn. The deck says which
+    /// profile it's on when that changes. Each tick.
+    /// </summary>
+    void OnProfileOrAccounts()
+    {
+        var profile = Settings.Profile;
+        var accounts = Settings.AccountsStamp;
+        var switched = profile != _profileSeen;
+        var refresh = switched || accounts != _accountsSeen;
+        _profileSeen = profile;
+        _accountsSeen = accounts;
+        if (switched)
+        {
+            Log.Write($"settings: now on the {profile} profile");
+            SendToast(new Toast("ok", $"Profile: {profile}"));
+            _obsidian.Refresh();
+        }
+        if (!refresh) return;
         _ = Task.Run(async () =>
         {
-            try
-            {
-                await _google.SignInAsync();
-            }
-            catch (Exception e) when (e is TimeoutException or HttpListenerException or InvalidOperationException)
-            {
-                Log.Write($"google: sign-in didn't finish: {e.Message}");
-            }
+            await _google.RefreshAsync();
+            await _tasks.RefreshAsync();
         });
     }
 
-    /// <summary>The deck's palette and idle timings, from settings.json.</summary>
+    /// <summary>The deck's palette and idle timings, from the settings.</summary>
     void SendSettings()
     {
         _settingsSent = Settings.Version;
@@ -1300,30 +1334,6 @@ sealed class TrayApp : ApplicationContext
         _link.Send(new { t = "state", topic = "context", d });
     }
 
-    /// <summary>
-    /// settings.json in the user's editor, with the everyday settings it doesn't have yet
-    /// written in at their current values, so they can be seen and changed. Saving applies
-    /// them: the file is re-read when it changes.
-    /// </summary>
-    static void OpenSettings()
-    {
-        try
-        {
-            Settings.AddMissing();
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-        {
-            Log.Write($"settings: opened as it is ({e.Message})");  // a mistake in the file: opened to be fixed
-        }
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Settings.FilePath) { UseShellExecute = true });
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            System.Diagnostics.Process.Start("notepad.exe", $"\"{Settings.FilePath}\"");  // no app set for .json
-        }
-    }
 
     static void OpenLog() =>
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Log.FilePath) { UseShellExecute = true });

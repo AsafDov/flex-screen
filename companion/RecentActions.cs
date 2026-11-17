@@ -32,8 +32,7 @@ sealed class RecentActions
 {
     public const int Max = 5;
 
-    static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flex-screen", "recent-actions.bin");
+    static readonly string FilePath = Path.Combine(AppPaths.Data, "recent-actions.bin");
 
     readonly object _gate = new();
     readonly List<RecentAction> _list = Load();

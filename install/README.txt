@@ -55,11 +55,12 @@ Google Calendar and Tasks (optional, once)
   3. Credentials > Create credentials > OAuth client ID > Application type "Desktop app".
      Download the JSON.
   4. Save it as %LOCALAPPDATA%\flex-screen\google-client.json
-  5. Tray icon > "Connect Google Calendar and Tasks..." and approve in the browser.
+  5. Tray icon > "Google accounts" > "Google" > "Sign in..." and approve in the browser.
   The sign-in is kept encrypted for your Windows account only.
-  The deck shows every calendar ticked in Google Calendar. To add another Google account's
-  calendar, share it with this account (in the other account: Google Calendar > Settings >
-  the calendar > Share with specific people > "See all event details"), and accept.
+  The deck shows every calendar ticked in Google Calendar. For another Google account (a
+  work one beside your own), tray icon > "Google accounts" > "Add a Google account...": its
+  calendar joins the deck's and its task lists the Tasks card. docs\google-setup.md has
+  the details (test users, a work domain's own client).
 
 Other task sources (optional): Microsoft To Do, Jira, GitHub, Obsidian
   task-sources.md in this folder is the guide. Tray icon > "Task sources": Microsoft To Do
@@ -106,7 +107,7 @@ Calls (Teams, Zoom, Discord)
 Shortcuts
   The grid button at the right end of the deck's tab bar opens up to 12 shortcuts. Out
   of the box: Gmail, Calendar, Today's note, Spotify, VS Code and Terminal. To change
-  them, tray icon > "Shortcuts...": settings.json opens with the list written in. Each
+  them, tray icon > "Shortcuts...": the profile opens with the list written in. Each
   is one of:
     { "name": "Gmail", "url": "https://mail.google.com" }      a link
     { "name": "Spotify", "app": "Spotify" }                    a Start menu app, by its name
@@ -130,7 +131,7 @@ Context bar
   its place from that app's list (one already on the bar swaps places with it), remove
   it, or reset the app's keys; "+" adds a key. The companion keeps each app's keys in
   %LOCALAPPDATA%\flex-screen\context-bar.json. To add your own actions to an app's list,
-  in settings.json:
+  in the profile:
     "contextBar": {
       "Spotify": { "color": "#1DB954", "keys": [
         { "name": "Like", "keys": "Alt+Shift+B", "glyph": "heart" } ] }
@@ -139,24 +140,36 @@ Context bar
   list of their own; they're the app's keys until you rearrange them on the deck. Keys are "keys", "action" (as for shortcuts) or
   "action": "close". "contextBar": false turns the bar off. The README lists the glyphs.
 
-Settings (optional)
-  %LOCALAPPDATA%\flex-screen\settings.json, for instance:
+Profiles and settings (optional)
+  Settings live in a profile: %LOCALAPPDATA%\flex-screen\profiles\<name>.json. Tray icon >
+  "Profile: ..." switches between profiles (work and home, say), makes a new one, opens
+  the profile's file, and can keep the profiles in a synced folder (OneDrive, Dropbox) so
+  every PC has the same ones. Sign-ins stay on each PC: a profile names the accounts, and
+  each PC signs in to them once. A profile, for instance:
     { "palette": "vibrant",
       "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },
-      "layerNames": ["BASE", "NAV", "SYMBOL"],
-      "obsidianVault": "C:\\Users\\me\\Notes\\MyVault" }
+      "layerNames": ["BASE", "NAV", "SYMBOL"] }
   palette: the deck's colors, "base", "vibrant", "ember" or "violet" (also in the tray menu,
   Deck colors).
   idle: minutes with no touch and no PC input before the clock screen and before the
   screen goes off (0 turns either off); a locked PC shows the clock right away.
-  layerNames: the keyboard's layers from 0 (these are the defaults). obsidianVault: the
-  vault the deck uses (normally the one Obsidian has open); the tray's "Task sources" >
-  "Obsidian daily note" sets it.
+  layerNames: the keyboard's layers from 0 (these are the defaults).
+  This PC's own settings are in %LOCALAPPDATA%\flex-screen\machine.json (tray icon >
+  Profile > "Open this PC's settings"):
+    { "profile": "work",
+      "profilesFolder": "C:\\Users\\me\\OneDrive\\flex-screen",
+      "obsidianVault": "C:\\Users\\me\\Notes\\MyVault" }
+  obsidianVault: the vault the deck uses (normally the one Obsidian has open); the tray's
+  "Task sources" > "Obsidian daily note" sets it. Any profile setting written here wins
+  on this PC only ("jira": null turns the profile's Jira off on this PC).
+  The settings.json of earlier versions becomes the "default" profile when this version
+  first starts; the old file is kept as settings.json.before-profiles.
 
 Uninstall
   Double-click uninstall.cmd. It removes the hooks (leaving the rest of settings.json),
   the extension, the shortcuts, the app and its data in %LOCALAPPDATA%\flex-screen
-  (clipboard pins, the Google sign-in and your google-client.json).
+  (clipboard pins, the profiles kept there, the sign-ins and your google-client.json). A
+  profiles folder elsewhere (a synced one) stays.
 
 Troubleshooting
   The log is %LOCALAPPDATA%\Programs\flex-screen\companion.log (tray icon > Open log).

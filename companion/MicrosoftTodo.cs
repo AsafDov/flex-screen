@@ -9,7 +9,7 @@ namespace FlexScreen.Companion;
 /// <summary>
 /// Microsoft To Do as a task source, through Microsoft Graph: every list's open tasks,
 /// ticking off and adding (not into Flagged email, which only Outlook fills). Signs in with
-/// the user's own app registration (settings.json's "microsoftTodo": "clientId", and
+/// the user's own app registration (the profile's "microsoftTodo": "clientId", and
 /// "tenant", "common" unless set: "consumers" for an app that takes personal accounts
 /// only), a one-time browser consent from the tray's Task sources › Microsoft To Do. The
 /// refresh token is kept encrypted (<see cref="Secrets"/>).
@@ -27,6 +27,7 @@ sealed class MicrosoftTodo : ITaskProvider
 
     readonly SemaphoreSlim _tokenGate = new(1, 1);
     string? _access;
+    string _accessClient = "";  // the app registration _access is for
     DateTime _expires;
     bool _personal = true;  // to-do.live.com links; a work account's open to-do.office.com
     List<(TaskList List, string Known)> _lists = [];
@@ -168,8 +169,11 @@ sealed class MicrosoftTodo : ITaskProvider
         await _tokenGate.WaitAsync();  // lists are read side by side; one refresh for all of them
         try
         {
-            if (_access != null && DateTime.UtcNow < _expires) return true;
-            if (Secrets.Load(TokenName) is not { Length: > 0 } refresh || Client() is not { } client) return false;
+            // Another app registration (another profile's) has a sign-in of its own.
+            if (Client() is not { } client) return false;
+            if (_access != null && DateTime.UtcNow < _expires && _accessClient == client.ClientId) return true;
+            _access = null;
+            if (Secrets.LoadFor(TokenName, client.ClientId) is not { Length: > 0 } refresh) return false;
             var tokens = await PostTokenAsync(client, new Dictionary<string, string>
             {
                 ["grant_type"] = "refresh_token", ["refresh_token"] = refresh, ["scope"] = Scopes,
@@ -193,12 +197,13 @@ sealed class MicrosoftTodo : ITaskProvider
         {
             var error = (string?)json?["error"];
             Log.Write($"tasks: mstodo: token request failed: {error}: {((string?)json?["error_description"])?.Split('\n')[0]}");
-            if (error == "invalid_grant") Secrets.Delete(TokenName);  // revoked or expired: sign in again
+            if (error == "invalid_grant") Secrets.DeleteFor(TokenName, client.ClientId);  // revoked or expired: sign in again
             return null;
         }
         _access = access;
+        _accessClient = client.ClientId;
         _expires = DateTime.UtcNow.AddSeconds(((int?)json["expires_in"] ?? 3600) - 60);
-        if ((string?)json["refresh_token"] is { Length: > 0 } refresh) Secrets.Save(TokenName, refresh);
+        if ((string?)json["refresh_token"] is { Length: > 0 } refresh) Secrets.SaveFor(TokenName, client.ClientId, refresh);
         if (TenantOf((string?)json["id_token"]) is { } tenant) _personal = tenant == PersonalTenant;
         return json;
     }

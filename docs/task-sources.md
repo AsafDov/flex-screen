@@ -12,9 +12,11 @@ keeping where it came from and a link back to it:
 | GitHub | open issues assigned to you, in every repository | no: open them on GitHub | no | below |
 
 All of them are under the companion's tray icon, **Task sources**. A source that isn't set
-up on a PC is simply left out, so the same companion works at home (Google, To Do,
-Obsidian) and at work (Jira, GitHub). Tokens are kept encrypted for your Windows account
-(`%LOCALAPPDATA%\flex-screen\*.bin`); addresses and choices go in `settings.json`.
+up is simply left out. Sites and choices go in your [profile](../README.md#profiles), so a
+work profile can have Jira and GitHub and a home profile Google, To Do and Obsidian, and
+switching profiles switches sources. Tokens stay on each PC, encrypted for your Windows
+account (`%LOCALAPPDATA%\flex-screen\*.bin`), one per site: a work Jira and a home one each
+keep their own, and each PC signs in once.
 
 Tap a task on the deck to open it: its notes, what its source says about it, and an
 **Open in …** button that opens it on the PC (the issue's page, the note in Obsidian,
@@ -54,7 +56,7 @@ home.
    checks it and says who you're signed in as.
 
 Which issues: `assignee = currentUser() AND statusCategory != Done ORDER BY priority DESC,
-updated DESC`. Change it in settings.json:
+updated DESC`. Change it in the profile (tray icon › Profile › **Open profile file**):
 
 ```jsonc
 "jira": { "url": "https://acme.atlassian.net", "email": "me@acme.com",
@@ -91,7 +93,7 @@ way of working where each day's note carries the open tasks over.
 PC with more than one vault (a home vault and a work vault), pick it: Task sources ›
 Obsidian daily note › **Vault: …** lists the vaults Obsidian knows on this PC, and
 **Another vault folder…** takes any other (the folder with `.obsidian` in it). **The vault
-Obsidian has open** goes back to automatic. The pick is `"obsidianVault"` in settings.json,
+Obsidian has open** goes back to automatic. The pick is `"obsidianVault"` in this PC's `machine.json`,
 per PC; if Google Drive moves the vault's folder, it's found again and the setting follows.
 The companion log says which note it reads (`tasks: obsidian: reading WorkVault/Daily
 Log/2026-11-17.md`), or where it looked when there's none.

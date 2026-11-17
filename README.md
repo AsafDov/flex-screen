@@ -146,7 +146,7 @@ ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app
   swaps places with it, which is how you reorder. **Remove** takes the key off, **Reset**
   puts the app's defaults back, and **+** at the end adds a key. Each app's arrangement is
   kept by the companion on that PC.
-- Add your own actions to an app's list in settings.json's `contextBar` (see [Settings](#settings)).
+- Add your own actions to an app's list in the profile's `contextBar` (see [Settings](#settings)).
 
 ### Shortcuts (on every page)
 
@@ -397,11 +397,44 @@ The deck's UI also runs on the PC, in a window or headless, driven over a local 
 made-up data: `simulator\build.ps1` builds it (needs Visual Studio's C++ build tools), and
 `simulator\test_deck.py` taps through every feature. See [simulator/README.md](simulator/README.md).
 
+### Profiles
+Your settings live in a **profile**: its Google accounts and task sources, shortcuts,
+context bar keys, colors and the rest. Keep one, or several to switch between (work and
+home, say): tray icon → **Profile: …** lists them, and **New profile…** starts one as a copy
+of the current one or from the defaults. The deck says *Profile: work* when it switches,
+and reads the calendar and the tasks again at once.
+
+- **Profiles are files**, `%LOCALAPPDATA%\flex-screen\profiles\<name>.json`. **Keep the
+  profiles in…** moves them to another folder: a synced one (OneDrive, Dropbox, a git repo)
+  gives every PC the same profiles. Pick the same folder on each PC.
+- **Sign-ins stay on each PC.** A profile names the accounts and sites; each PC signs in to
+  each one once, and keeps the tokens encrypted for its Windows user, one per account or site.
+  A profile can go anywhere: there's nothing secret in it.
+- **This PC's own settings** are in `%LOCALAPPDATA%\flex-screen\machine.json` (tray icon →
+  Profile → **Open this PC's settings**): the profile it uses, where the profiles are, and
+  the Obsidian vault's folder. Any profile setting written there wins on this PC only, so
+  one profile can still differ per PC: `"jira": null` turns the profile's Jira off here, a
+  `"shortcuts"` list of its own gives this PC other tiles.
+
+```jsonc
+// machine.json
+{
+  "profile": "work",                                   // profiles\work.json; "default" when not set
+  "profilesFolder": "C:\\Users\\me\\OneDrive\\flex-screen",  // else %LOCALAPPDATA%\flex-screen\profiles
+  "obsidianVault": "C:\\path\\to\\vault"                // Task sources › Obsidian daily note picks it; else the open vault
+}
+```
+
+The `settings.json` from before profiles becomes the `default` profile (and the vault goes
+to `machine.json`) the first time the companion starts; the old file stays beside it as
+`settings.json.before-profiles`.
+
 ### Settings
-Optional, per PC, in `%LOCALAPPDATA%\flex-screen\settings.json`. The tray icon's **Open
-settings file** opens it, with the everyday settings it doesn't have yet (colors, idle
-times, layer names, cheat sheet time) written in at their current values. Saved changes
-apply straight away.
+Optional, in the profile. The tray icon's **Profile → Open profile file** opens it, with the
+everyday settings it doesn't have yet (colors, idle times, layer names, cheat sheet time)
+written in at their current values. Saved changes apply straight away. Its `"$schema"` line
+gives editors that read it (VS Code) completion and checks for everything here
+([companion/profile.schema.json](companion/profile.schema.json)).
 
 ```jsonc
 {
@@ -409,7 +442,10 @@ apply straight away.
   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
   "layerNames": ["BASE", "NAV", "SYMBOL"],             // your keyboard's layers
   "cheatSheetSeconds": 10,                             // hold a layer key this long for its cheat sheet; 0: only from the pill
-  "obsidianVault": "C:\\path\\to\\vault",               // Task sources › Obsidian daily note picks it; else the open vault
+  "accounts": {                                        // Google accounts, by id (the tray's Google accounts); without it, one: "google"
+    "google": { "type": "google", "label": "Personal" },
+    "google-work": { "type": "google", "label": "Work", "client": "google-client-work.json", "tasks": false }
+  },
   "hiddenTaskLists": ["google/MTIzNDU2"],              // task lists left off the deck (the tray's Task lists on the deck)
   "obsidianTasks": true,                               // the latest daily note's tasks on the deck
   "jira": { "url": "https://acme.atlassian.net", "email": "me@acme.com", "jql": "…" },  // set by Task sources › Jira

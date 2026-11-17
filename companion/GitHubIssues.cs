@@ -11,7 +11,7 @@ namespace FlexScreen.Companion;
 /// GitHub issues as a task source, to see and open, not to change: what a search finds (by
 /// default the open issues assigned to me, in every repository), with the repository, the
 /// number, a priority and a status label if it has them, and its milestone's due date. The
-/// deck opens one in the browser. github.com or GitHub Enterprise (settings.json's "github":
+/// deck opens one in the browser. github.com or GitHub Enterprise (the profile's "github":
 /// "host", "query"); signs in with a token kept encrypted (<see cref="Secrets"/>), or without
 /// one, with the GitHub CLI's own sign-in (gh auth token). The tray's Task sources › GitHub sets them.
 /// </summary>
@@ -82,15 +82,17 @@ sealed class GitHubIssues : ITaskProvider
         };
     }
 
-    static string HostOf(JsonObject? settings) =>
-        ((string?)settings?["host"] is { Length: > 0 } h ? h : "github.com").Trim().Replace("https://", "").TrimEnd('/');
+    static string HostOf(JsonObject? settings) => HostOf((string?)settings?["host"]);
+
+    /// <summary>"github.com" or the Enterprise server, as written or not: also what its token is kept under (<see cref="Secrets.LoadFor"/>).</summary>
+    public static string HostOf(string? host) => (host is { Length: > 0 } h ? h : "github.com").Trim().Replace("https://", "").TrimEnd('/');
 
     static string ApiOf(string host) => host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ? "https://api.github.com" : $"https://{host}/api/v3";
 
     /// <summary>The kept token, else the GitHub CLI's (asked again every half hour; every 5 minutes while it has none).</summary>
     async Task<string?> TokenAsync(string host)
     {
-        if (Secrets.Load(TokenName) is { Length: > 0 } kept) return kept;
+        if (Secrets.LoadFor(TokenName, host) is { Length: > 0 } kept) return kept;
         if (DateTime.UtcNow - _cliTokenAt < (_cliToken != null ? CliTokenFor : NoCliTokenFor)) return _cliToken;
         _cliToken = await CliTokenAsync(host);
         _cliTokenAt = DateTime.UtcNow;

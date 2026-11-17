@@ -200,7 +200,7 @@ sealed class KeyboardSource
         bool? _locked;
         int _default;
         bool _matrixSeen;
-        DateTime _namesVersion;
+        long _namesVersion = -1;
 
         public Board(Device device)
         {

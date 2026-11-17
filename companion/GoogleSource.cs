@@ -1,7 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
@@ -10,25 +8,22 @@ namespace FlexScreen.Companion;
 /// <param name="Join">A Meet, Zoom or Teams link, or "".</param>
 record CalendarEvent(string Id, string Title, DateTimeOffset Start, DateTimeOffset End, bool AllDay, string Join);
 
-/// <param name="Status">"ok", "setup" (no OAuth client file yet), "signin" (not connected), "error", or "" before the first read.</param>
+/// <param name="Status">"ok", "setup" (no OAuth client file yet, or no Google account), "signin" (not connected), "error", or "" before the first read.</param>
 record GoogleState(string Status, IReadOnlyList<CalendarEvent> Events);
 
 /// <summary>
-/// Google Calendar (today's and tomorrow's events on every calendar ticked in Google
-/// Calendar, so a calendar another account shares with this one shows too), read with the
-/// user's own OAuth client; the sign-in also covers Google Tasks, which GoogleTasks reads
-/// through <see cref="SendAsync"/>. Signing in is a one-time browser consent from the tray
-/// menu; the refresh token is kept encrypted for this Windows user (DPAPI).
+/// Google Calendar: today's and tomorrow's events of every Google account in the profile
+/// (<see cref="GoogleAccount"/>; a personal and a work one, say), on every calendar ticked in
+/// Google Calendar, so a calendar another account shares with one of them shows too. A
+/// meeting on several of them shows once. Read with the user's own OAuth client; the sign-in
+/// also covers Google Tasks, which GoogleTasks reads through the account. Signing in is a
+/// one-time browser consent per account, from the tray menu; the refresh tokens are kept
+/// encrypted for this Windows user (DPAPI).
 /// </summary>
 sealed class GoogleSource
 {
     const int MaxEvents = 8;
-    const string Scopes = "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/tasks";
     static readonly TimeSpan Every = TimeSpan.FromMinutes(5);
-    static readonly string Folder = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flex-screen");
-    public static readonly string ClientPath = Path.Combine(Folder, "google-client.json");
-    const string TokenName = "google-token";  // %LOCALAPPDATA%\flex-screen\google-token.bin (Secrets)
     // Zoom (a meeting or someone's personal room), Teams (classic and short links, and Teams
     // free), Meet, and Discord (an invite, an event, a channel).
     static readonly Regex MeetingLink = new(
@@ -47,11 +42,13 @@ sealed class GoogleSource
         return "";
     }
 
-    readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
     readonly System.Threading.Timer _timer;
     readonly SemaphoreSlim _busy = new(1, 1);
-    string? _accessToken;
-    DateTime _accessExpires;
+    readonly object _gate = new();
+    readonly Dictionary<string, List<JsonNode?>> _kept = [];  // by account: its events as last read, for when it can't be read
+    List<GoogleAccount> _accounts = [];
+    string _accountsSeen = "\0";
+    bool _again;  // asked to read while reading (another profile, a sign-in): once more after
 
     // Not "setup" until the first read says so: a slow first read (it timed out once, right
     // after a restart) left the deck asking to connect Google for minutes.
@@ -62,7 +59,7 @@ sealed class GoogleSource
 
     public event Action<Toast>? Toast;
 
-    /// <summary>Raised after a sign-in, so the other Google readers (Tasks) read again.</summary>
+    /// <summary>Raised after a sign-in or a sign-out, so the other Google readers (Tasks) read again.</summary>
     public event Action? SignedIn;
 
     public GoogleSource()
@@ -72,74 +69,116 @@ sealed class GoogleSource
 
     public void Start() => _timer.Change(TimeSpan.Zero, Every);
 
-    public bool HasClient => File.Exists(ClientPath);
-
-    /// <summary>The browser consent, from the tray menu. Listens on localhost for Google's redirect.</summary>
-    public async Task SignInAsync()
+    /// <summary>The profile's Google accounts, in its order. The same object stays for an account while the profile has it.</summary>
+    public IReadOnlyList<GoogleAccount> Accounts
     {
-        if (ReadClient() is not { } client) return;
-        var (clientId, clientSecret) = client;
-        var pending = OAuthLoopback.Prepare();
-        var url = "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&access_type=offline&prompt=consent" +
-                  $"&client_id={Uri.EscapeDataString(clientId)}&redirect_uri={Uri.EscapeDataString(pending.Redirect)}" +
-                  $"&scope={Uri.EscapeDataString(Scopes)}&code_challenge={pending.Challenge}&code_challenge_method=S256&state={pending.State}";
-        if (await OAuthLoopback.CodeAsync(pending, url, "Google") is not { } code) return;
-        var tokens = await PostTokenAsync(new Dictionary<string, string>
+        get
         {
-            ["grant_type"] = "authorization_code", ["code"] = code, ["redirect_uri"] = pending.Redirect,
-            ["client_id"] = clientId, ["client_secret"] = clientSecret, ["code_verifier"] = pending.Verifier,
-        });
-        if ((string?)tokens?["refresh_token"] is not { Length: > 0 } refresh)
-        {
-            Log.Write("google: no refresh token in the reply");
-            return;
+            lock (_gate)
+            {
+                var stamp = Settings.AccountsStamp;
+                if (stamp == _accountsSeen) return _accounts;
+                _accountsSeen = stamp;
+                var accounts = new List<GoogleAccount>();
+                foreach (var (id, config) in Settings.Accounts("google"))
+                {
+                    var account = _accounts.FirstOrDefault(a => a.Id == id);
+                    if (account != null) account.Configure(config);
+                    else account = new GoogleAccount(id, config);
+                    accounts.Add(account);
+                }
+                _accounts = accounts;
+                return accounts;
+            }
         }
-        SaveRefreshToken(refresh);
-        _accessToken = (string?)tokens["access_token"];
-        _accessExpires = DateTime.UtcNow.AddSeconds(((int?)tokens["expires_in"] ?? 3600) - 60);
-        // Google's consent page has a box per scope, and unticked ones aren't granted.
-        var granted = ((string?)tokens["scope"] ?? Scopes).Split(' ');
-        var missing = Scopes.Split(' ').Where(s => !granted.Contains(s)).Select(s => s.EndsWith("tasks") ? "Tasks" : "Calendar").ToList();
-        Log.Write(missing.Count == 0 ? "google: connected" : $"google: connected without {string.Join(" and ", missing)} access");
+    }
+
+    public GoogleAccount? Account(string id) => Accounts.FirstOrDefault(a => a.Id == id);
+
+    /// <summary>The browser consent for one account, from the tray menu.</summary>
+    public async Task SignInAsync(GoogleAccount account)
+    {
+        if (await account.SignInAsync() is not { } missing) return;
+        Log.Write(missing.Count == 0 ? $"google: {account.Id}: connected" : $"google: {account.Id}: connected without {string.Join(" and ", missing)} access");
         Toast?.Invoke(missing.Count == 0
-            ? new Toast("ok", "Connected to Google Calendar and Tasks")
+            ? new Toast("ok", $"Connected to {account.Name}")
             : new Toast("error", $"Google didn't grant {string.Join(" and ", missing)} access. Connect again and tick every box."));
         await RefreshAsync();
+        // Each account is meant to be another Google account: the same one twice shows its
+        // tasks twice.
+        if (account.Email.Length > 0 && Accounts.FirstOrDefault(a => a != account && a.Email == account.Email) is { } twin)
+            Toast?.Invoke(new Toast("attention", $"{account.Name} is the same Google account as {twin.Name}"));
         SignedIn?.Invoke();
     }
 
-    /// <summary>"ok" when signed in, else "setup" (no OAuth client file) or "signin".</summary>
-    public async Task<string> AuthStatusAsync()
+    /// <summary>Forgets one account's sign-in on this PC.</summary>
+    public async Task SignOutAsync(GoogleAccount account)
     {
-        if (!HasClient) return "setup";
-        return await EnsureTokenAsync() ? "ok" : "signin";
+        account.SignOut();
+        lock (_gate) _kept.Remove(account.Id);
+        Log.Write($"google: {account.Id}: signed out on this PC");
+        await RefreshAsync();
+        SignedIn?.Invoke();  // its tasks go too
     }
 
     public async Task RefreshAsync()
     {
-        if (!await _busy.WaitAsync(0)) return;
+        if (!await _busy.WaitAsync(0))
+        {
+            _again = true;
+            return;
+        }
         try
         {
-            if (!HasClient)
+            do
             {
-                Publish(new GoogleState("setup", []));
-                return;
-            }
-            if (!await EnsureTokenAsync())
-            {
-                Publish(new GoogleState("signin", []));
-                return;
-            }
-            Publish(new GoogleState("ok", await EventsAsync()));
-        }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
-        {
-            Log.Write($"google: {e.Message}");
-            Publish(Current with { Status = Current.Status == "ok" ? "ok" : "error" });  // keep showing the last good data
+                _again = false;
+                await ReadAllAsync();
+            } while (_again);
         }
         finally
         {
             _busy.Release();
+        }
+    }
+
+    async Task ReadAllAsync()
+    {
+        var accounts = Accounts.Where(a => a.Calendar).ToList();
+        if (accounts.Count == 0)
+        {
+            Publish(new GoogleState("setup", []));
+            return;
+        }
+        var now = DateTimeOffset.Now;
+        var until = now.Date.AddDays(2);  // the rest of today and tomorrow
+        var span = $"&timeMin={Uri.EscapeDataString(now.ToString("o"))}&timeMax={Uri.EscapeDataString(new DateTimeOffset(until).ToString("o"))}";
+        var reads = await Task.WhenAll(accounts.Select(a => ReadAccountAsync(a, span)));
+        var statuses = reads.Select(r => r.Status).ToList();
+        // One account that can't be read just now keeps its last events; the deck says
+        // something is wrong only when none can be.
+        var ok = statuses.Contains("ok") || (statuses.Contains("error") && Current.Status == "ok");
+        var status = ok ? "ok" : statuses.Contains("error") ? "error" : statuses.Contains("signin") ? "signin" : "setup";
+        Publish(new GoogleState(status, Merge(reads.SelectMany(r => r.Items))));
+    }
+
+    /// <summary>One account's events in the span, as Google has them; the last ones it had when it can't be read.</summary>
+    async Task<(string Status, List<JsonNode?> Items)> ReadAccountAsync(GoogleAccount account, string span)
+    {
+        try
+        {
+            var status = await account.AuthStatusAsync();
+            if (status != "ok") return (status, []);
+            var calendars = await CalendarIdsAsync(account);
+            var replies = await Task.WhenAll(calendars.Select(id => CalendarEventsAsync(account, id, span)));
+            var items = replies.SelectMany(i => i).ToList();
+            lock (_gate) _kept[account.Id] = items;
+            return ("ok", items);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            Log.Write($"google: {account.Id}: {e.Message}");
+            lock (_gate) return ("error", _kept.GetValueOrDefault(account.Id) ?? []);
         }
     }
 
@@ -150,16 +189,12 @@ sealed class GoogleSource
         if (changed) Changed?.Invoke(state);
     }
 
-    async Task<List<CalendarEvent>> EventsAsync()
+    /// <summary>The events the deck shows, from every account's: soonest first, each meeting once.</summary>
+    static List<CalendarEvent> Merge(IEnumerable<JsonNode?> items)
     {
-        var now = DateTimeOffset.Now;
-        var until = now.Date.AddDays(2);  // the rest of today and tomorrow
-        var span = $"&timeMin={Uri.EscapeDataString(now.ToString("o"))}&timeMax={Uri.EscapeDataString(new DateTimeOffset(until).ToString("o"))}";
-        var calendars = await CalendarIdsAsync();
-        var replies = await Task.WhenAll(calendars.Select(id => CalendarEventsAsync(id, span)));
         var events = new List<CalendarEvent>();
         var seen = new HashSet<string>();
-        foreach (var e in replies.SelectMany(items => items))
+        foreach (var e in items)
         {
             if (e == null || (string?)e["status"] == "cancelled") continue;
             // "self" is the calendar this copy is on, so a meeting declined in one account
@@ -180,14 +215,17 @@ sealed class GoogleSource
     }
 
     /// <summary>
-    /// The calendars ticked in Google Calendar's list: the user's own and the ones shared
-    /// with them (another Google account's, say), as Google Calendar itself shows them.
-    /// Free/busy-only shares are left out, since they have no event details to show.
+    /// The calendars ticked in the account's Google Calendar list: its own and the ones shared
+    /// with it (another Google account's, say), as Google Calendar itself shows them.
+    /// Free/busy-only shares are left out, since they have no event details to show. Also
+    /// learns who is signed in: the primary calendar's id is the account's address.
     /// </summary>
-    async Task<List<string>> CalendarIdsAsync()
+    static async Task<List<string>> CalendarIdsAsync(GoogleAccount account)
     {
-        var json = await GetAsync("https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader&maxResults=250");
-        var ids = (json?["items"] as JsonArray ?? [])
+        var json = await account.SendAsync(HttpMethod.Get, "https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader&maxResults=250");
+        var items = json?["items"] as JsonArray ?? [];
+        if (items.FirstOrDefault(c => (bool?)c?["primary"] == true) is { } primary) account.Email = (string?)primary["id"] ?? "";
+        var ids = items
             .Where(c => (bool?)c?["selected"] == true && (bool?)c?["hidden"] != true && (bool?)c?["deleted"] != true)
             .Select(c => (string?)c?["id"])
             .OfType<string>()
@@ -197,17 +235,17 @@ sealed class GoogleSource
 
     /// <summary>One calendar's events in the span; none if it can't be read (the share was
     /// withdrawn since the list was read, say), so one calendar doesn't blank the rest.</summary>
-    async Task<IEnumerable<JsonNode?>> CalendarEventsAsync(string calendar, string span)
+    static async Task<IEnumerable<JsonNode?>> CalendarEventsAsync(GoogleAccount account, string calendar, string span)
     {
         try
         {
-            var json = await GetAsync($"https://www.googleapis.com/calendar/v3/calendars/{Uri.EscapeDataString(calendar)}/events" +
-                                      "?singleEvents=true&orderBy=startTime&maxResults=30" + span);
+            var json = await account.SendAsync(HttpMethod.Get, $"https://www.googleapis.com/calendar/v3/calendars/{Uri.EscapeDataString(calendar)}/events" +
+                                                              "?singleEvents=true&orderBy=startTime&maxResults=30" + span);
             return json?["items"] as JsonArray ?? [];
         }
         catch (HttpRequestException e) when (e.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden)
         {
-            Log.Write($"google: skipped a calendar that can't be read ({(int)e.StatusCode!})");
+            Log.Write($"google: {account.Id}: skipped a calendar that can't be read ({(int)e.StatusCode!})");
             return [];
         }
     }
@@ -229,84 +267,4 @@ sealed class GoogleSource
         var text = $"{(string?)e["location"]} {(string?)e["description"]}";
         return MeetingLink.Match(text) is { Success: true } m ? WebUtility.HtmlDecode(m.Value) : "";
     }
-
-    Task<JsonNode?> GetAsync(string url) => SendAsync(HttpMethod.Get, url);
-
-    /// <summary>An authorized Google API request (signed in first, if need be); the reply's
-    /// JSON, or null for an empty reply. Throws HttpRequestException, with Google's reason.</summary>
-    public async Task<JsonNode?> SendAsync(HttpMethod method, string url, JsonNode? body = null)
-    {
-        if (!await EnsureTokenAsync()) throw new HttpRequestException("not signed in to Google");
-        using var request = new HttpRequestMessage(method, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-        if (body != null) request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
-        using var reply = await _http.SendAsync(request);
-        var text = await reply.Content.ReadAsStringAsync();
-        if (!reply.IsSuccessStatusCode)
-        {
-            // Google says why (the API isn't enabled in the Cloud project, a scope wasn't
-            // granted, a quota…): put that in the log, not just the status code.
-            var api = url.Contains("tasks.googleapis.com") ? "Tasks" : "Calendar";
-            string? reason = null;
-            try
-            {
-                var error = JsonNode.Parse(text)?["error"];
-                reason = (string?)error?["message"] ?? (string?)error?["status"];
-            }
-            catch (System.Text.Json.JsonException)
-            {
-            }
-            throw new HttpRequestException($"{api} API: {(int)reply.StatusCode} {reason ?? reply.ReasonPhrase}", null, reply.StatusCode);
-        }
-        return string.IsNullOrWhiteSpace(text) ? null : JsonNode.Parse(text);
-    }
-
-    async Task<bool> EnsureTokenAsync()
-    {
-        if (_accessToken != null && DateTime.UtcNow < _accessExpires) return true;
-        var refresh = LoadRefreshToken();
-        if (refresh == null || ReadClient() is not { } client) return false;
-        var (clientId, clientSecret) = client;
-        var tokens = await PostTokenAsync(new Dictionary<string, string>
-        {
-            ["grant_type"] = "refresh_token", ["refresh_token"] = refresh, ["client_id"] = clientId, ["client_secret"] = clientSecret,
-        });
-        if ((string?)tokens?["access_token"] is not { Length: > 0 } access) return false;
-        _accessToken = access;
-        _accessExpires = DateTime.UtcNow.AddSeconds(((int?)tokens["expires_in"] ?? 3600) - 60);
-        return true;
-    }
-
-    async Task<JsonNode?> PostTokenAsync(Dictionary<string, string> form)
-    {
-        using var reply = await _http.PostAsync("https://oauth2.googleapis.com/token", new FormUrlEncodedContent(form));
-        var json = JsonNode.Parse(await reply.Content.ReadAsStringAsync());
-        if (!reply.IsSuccessStatusCode)
-        {
-            Log.Write($"google: token request failed: {(string?)json?["error"]}");
-            if ((string?)json?["error"] == "invalid_grant") Secrets.Delete(TokenName);  // revoked: sign in again
-            return null;
-        }
-        return json;
-    }
-
-    /// <summary>The OAuth client (a "Desktop app" client from Google Cloud Console, as downloaded).</summary>
-    static (string Id, string Secret)? ReadClient()
-    {
-        try
-        {
-            var json = JsonNode.Parse(File.ReadAllText(ClientPath));
-            var c = json?["installed"] ?? json?["web"];
-            return (string?)c?["client_id"] is { } id && (string?)c?["client_secret"] is { } secret ? (id, secret) : null;
-        }
-        catch (Exception e) when (e is IOException or System.Text.Json.JsonException)
-        {
-            return null;
-        }
-    }
-
-    // google-token.bin, as before Secrets: an existing sign-in still reads.
-    static void SaveRefreshToken(string token) => Secrets.Save(TokenName, token);
-
-    static string? LoadRefreshToken() => Secrets.Load(TokenName);
 }

@@ -12,7 +12,7 @@ namespace FlexScreen.Companion;
 /// that plugin is on; unticking puts it back. A task added from the deck goes at the end of
 /// the latest daily note (today's, from the template, when there's none yet). Only the latest
 /// note: the way of working where each day's note carries the open tasks over. Off with
-/// settings.json's "obsidianTasks": false.
+/// the profile's "obsidianTasks": false.
 /// </summary>
 sealed class ObsidianTasks(ObsidianSource obsidian) : ITaskProvider, ITaskOpener
 {

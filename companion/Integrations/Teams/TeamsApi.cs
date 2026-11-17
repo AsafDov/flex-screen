@@ -14,8 +14,7 @@ namespace FlexScreen.Companion;
 sealed class TeamsApi
 {
     const string Port = "8124";
-    static readonly string TokenPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flex-screen", "teams-token.bin");
+    static readonly string TokenPath = Path.Combine(AppPaths.Data, "teams-token.bin");
 
     readonly object _gate = new();
     ClientWebSocket? _socket;
