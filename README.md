@@ -416,7 +416,7 @@ A key is `keys` (pressed in that app's window; `"g, i"` presses one after the ot
 | Folder | What's in it |
 |---|---|
 | `firmware/` | PlatformIO project: pages, panel, touch, USB link |
-| `companion/` | The Windows tray app |
+| `companion/` | The Windows tray app; each app's context bar keys and call controls in `companion/Integrations/<App>/` |
 | `vscode-ext/` | The VS Code extension |
 | `protocol/` | [v0.md](protocol/v0.md): every message between the parts |
 | `install/` | Install kit builder and install/uninstall scripts |

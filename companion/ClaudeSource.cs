@@ -235,7 +235,7 @@ sealed class ClaudeSource
 
     /// <summary>The model of the session's last reply, else the one a hook named.</summary>
     string ModelOf(string id) =>
-        ContextBar.ModelName(_replied.TryGetValue(id, out var r) && r.Model.Length > 0 ? r.Model : _info.TryGetValue(id, out var i) ? i.Model : "");
+        ClaudeKeys.ModelName(_replied.TryGetValue(id, out var r) && r.Model.Length > 0 ? r.Model : _info.TryGetValue(id, out var i) ? i.Model : "");
 
     /// <summary>A long job's progress for the deck, or null to take it off.</summary>
     public void SetProgress(string session, ClaudeProgress? progress)

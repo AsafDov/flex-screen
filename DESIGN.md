@@ -72,7 +72,7 @@ renders under 12px.
 | 15 | Tasks | Capture, Today | Companion | Open tasks from the task sources (Google Tasks first; `ITaskProvider` takes more): Scheduled (every dated task) or one of the lists chosen in the tray, grouped by due day; tap = tick off, + = add one with the on-screen keyboard. Today has a count pill |
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
-| 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (long press) and kept per app; settings.json's `contextBar` adds actions. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
+| 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (its integration's, `companion/Integrations/<App>/`) (long press) and kept per app; settings.json's `contextBar` adds actions. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
 | 18 | Shortcuts launcher | Every page (tab bar) | Companion | Up to 12 tiles from settings.json: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
 
 Extras on the canvas: **Lock PC** (`LockWorkStation`) and the **Headset** quick switch are
@@ -1063,6 +1063,44 @@ Gotchas found after phase 6:
     2.7 s after the request, at its next step; the usage history filled from real
     readings (57%, 58%). Not checked: the board on the real panel (it opens with a tap),
     and Remote-SSH.
+- App integrations as modules, companion only (agreed 2026-11-15 on outside advice: make
+  the app integrations modular before adding more features; the task sources went first):
+  - Each app the deck knows is an `IAppIntegration` in `companion/Integrations/<App>/`, as
+    each task source is an `ITaskProvider`. It gives its detection (the exe names of its
+    windows), its context (what the window is doing that has keys of its own: Gmail,
+    YouTube or Google Calendar in Chrome and Edge by the tab's title, Claude's tab in VS
+    Code as the extension says, a meeting in Teams or Zoom), its actions (the bank and the
+    default keys per context, what a key shows right now, and how its own kinds of key
+    run: VS Code commands through the extension, Explorer's open folder, Claude's Model
+    and Effort lists and slash commands) and its state (the deck topics it feeds, for the
+    record: the log lists them at start).
+  - Eleven so far: VS Code, the Claude app, Windows Terminal, Chrome and Edge (one
+    `BrowserApp`, with `WebSites` for Gmail, YouTube and Calendar), Explorer, Obsidian,
+    Spotify, Teams, Zoom, Discord. Shared keys: `ClaudeKeys` (Approve, Deny, Model,
+    Effort, Usage, wherever Claude Code runs) and `MeetingKeys` (next meeting, Join, Mute,
+    Camera, New meeting). A new app is a folder and a line in `AppIntegrations.All`.
+  - `ContextBar` keeps what every app shares: the everyday bank, settings.json's
+    `contextBar`, the layouts arranged on the deck and their editing, and pressing keys,
+    typing text or closing the window. It asks the integration of the window in front for
+    the rest.
+  - Calls: `CallSource` moved to `Integrations/Meetings/` and `ZoomControl` to
+    `Integrations/Zoom/`; Teams' local API client is its own class (`TeamsApi`, in
+    `Integrations/Teams/`), and so is the Alt-shortcut sender for Zoom's meeting window
+    (`ZoomShortcuts`). They work as before.
+  - Nothing changes for the deck: the same keys and ids, the same bar keys
+    ("chrome:gmail", "ms-teams:call"), so layouts saved in `context-bar.json` load as
+    before, and the same messages. The data sources (`ObsidianSource`, `VsCodeHub`, the
+    Claude ones) stay where they were for now.
+  - Checked: the companion builds with no warnings. A throwaway harness, compiled once
+    against master's sources and once against these, printed the same 10,600 lines byte
+    for byte: every app's bar under several window titles and 18 call, meeting, mic and
+    Claude states; settings.json variants; saved layouts; and what each key in each bank
+    does when tapped (aimed at a window that doesn't exist, so nothing was typed). The
+    simulator's checks pass. Not checked: on the real deck, and with live Teams and Zoom
+    calls (that code moved without changing).
+  - Found on the way and left as it was (this change keeps behaviour): a `contextBar`
+    entry written as a plain list of keys (`"Chrome": [ … ]`, as the README shows) throws
+    when the bar reads its color, so that app's bar can't be made.
 
 ## Decisions
 

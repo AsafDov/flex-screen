@@ -222,9 +222,14 @@ sealed class TrayApp : ApplicationContext
         _calls.Changed += c => _link.Send(CallMessage(c));
         _calls.Toast += SendToast;
         _mixer.Changed += _ => { if (_calls.Current.Active) _link.Send(CallMessage(_calls.Current)); };
-        _context = new ContextBar(_windows, () => _calls.Current, RunContextAction, ClaudeInWindow, _vscode.RunCommand, () => _usage.Label,
-                                  () => _vscode.Current?.ClaudeInFront == true, NextMeeting, () => _devices.Mic.Muted,
-                                  () => _usage.SignedOut);
+        var apps = new AppServices(
+            Act: RunContextAction, Toast: SendToast,
+            Pick: (id, title, choices, current) =>
+                _link.Send(new { t = "pick", id, title, current, choices = choices.Select(c => new { id = c.Id, name = c.Name }) }),
+            Call: () => _calls.Current, NextMeeting: NextMeeting, MicMuted: () => _devices.Mic.Muted,
+            Claude: ClaudeInWindow, Usage: () => _usage.Label, ClaudeSignedOut: () => _usage.SignedOut,
+            VsCode: _vscode.RunCommand, ClaudeInCode: () => _vscode.Current?.ClaudeInFront == true);
+        _context = new ContextBar(_windows, RunContextAction, AppIntegrations.All(apps));
         _google.Changed += _ => _context.Refresh();
         _devices.MicChanged += _ => _context.Refresh();
         // The next meeting's key counts down ("· 12m").
@@ -233,9 +238,6 @@ sealed class TrayApp : ApplicationContext
         _usage.Changed += () => _link.Send(UsageMessage(_usage));
         _server.ClaudeUsage += _usage.Report;
         _context.Changed += _ => SendContext();
-        _context.Toast += SendToast;
-        _context.Pick += (id, title, choices, current) =>
-            _link.Send(new { t = "pick", id, title, current, choices = choices.Select(c => new { id = c.Id, name = c.Name }) });
         _windows.Polled += _context.OnPolled;
         _calls.Changed += _ => _context.Refresh();  // Teams' keys change during a meeting
         _google.Toast += SendToast;
