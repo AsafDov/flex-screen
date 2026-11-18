@@ -1153,6 +1153,22 @@ def figure_ink(d: Deck, f: bytes, n: dict) -> tuple[int, int]:
     return max(spots, key=lambda p: sum(d.pixel(f, *p)))
 
 
+def overlay_labels(d: Deck) -> list[dict]:
+    """The labels showing on LVGL's top layer (the overlays), not the page under them."""
+    d.settle()
+    mark, token = d.mark(), int(time.time() * 1000) % 1000000
+    d.send({'t': 'sim.dump', 'id': token})
+    reply = d.wait_for(lambda m: m.get('t') == 'sim.tree' and m.get('id') == token, since=mark)
+    out, hidden_depth = [], None
+    for n in reply['top']:
+        if hidden_depth is not None and n['d'] > hidden_depth:
+            continue
+        hidden_depth = n['d'] if n.get('hidden') else None
+        if hidden_depth is None and 'text' in n:
+            out.append(n)
+    return out
+
+
 def open_diagnostics(d: Deck) -> bool:
     clock = bar_clock(d)
     if clock:
@@ -1175,7 +1191,7 @@ def test_diagnostics(d: Deck) -> None:
     check('diagnostics: since when, by the clock', any(re.fullmatch(r'Since \d\d:\d\d', n.get('text', '')) for n in shown(d)))
     check('diagnostics: the frame rate', any(re.fullmatch(r'\d+ fps', n.get('text', '')) for n in shown(d)))
     peak = next((n['text'] for n in shown(d) if n.get('text', '').startswith('Up to ')), '')
-    check('diagnostics: the busiest second of the last minute', re.fullmatch(r'Up to [1-9]\d* fps in the last minute', peak) is not None, peak)
+    check('diagnostics: the busiest second of the last minute', re.fullmatch(r'Up to [1-9]\d* fps · last minute', peak) is not None, peak)
     check('diagnostics: how long a frame takes', any(re.fullmatch(r'Draw \d+ ms avg, \d+ ms worst', n.get('text', '')) for n in shown(d)))
     check('diagnostics: free internal RAM', on_screen(d, '146 KB', exact=True))
     check('diagnostics: its low point and largest block', on_screen(d, 'Internal RAM, lowest 146 KB', exact=True)
@@ -1200,6 +1216,8 @@ def test_diagnostics(d: Deck) -> None:
     figure = next((n for n in shown(d) if n.get('text') == '1'), None)
     check('diagnostics: errors stand out in amber', figure is not None and near(d.pixel(f, *figure_ink(d, f, figure)), AMBER, 40))
     check('diagnostics: the uptime moves on', next((n['text'] for n in shown(d) if re.fullmatch(r'\d+ s|\d+ min \d+ s', n.get('text', ''))), '') != uptime)
+    cut = [n['text'] for n in overlay_labels(d) if n.get('text', '').endswith('...')]
+    check('diagnostics: nothing cut short', not cut, str(cut))
     d.shot(os.path.join(OUT, 'diagnostics-errors.png'))
 
     drops = counter(d, 'Drops')
@@ -1226,69 +1244,105 @@ def near(a: tuple[int, int, int], b: int, slack: int = 24) -> bool:
 AMBER, RED, BLUE = 0xF5A623, 0xFF4D4D, 0x4C8DFF  # the base palette's amber, and the glow's own
 
 
-def glow(d: Deck) -> tuple[int, int, int] | None:
+def glow(d: Deck, settle: bool = True) -> tuple[int, int, int] | None:
     """The frame's colour if all four edges are lit in it, else None."""
-    f = d.frame()
+    f = d.frame(settle=settle)
     edges = [d.pixel(f, 400, 0), d.pixel(f, 400, 479), d.pixel(f, 0, 240), d.pixel(f, 799, 240)]
     inside = d.pixel(f, 400, 14), d.pixel(f, 14, 240)
     lit = all(edges[0] == e for e in edges) and edges[0] != inside[0]
     return edges[0] if lit and all(max(e) > 150 for e in edges) else None
 
 
+def blink(d: Deck, secs: float = 1.2) -> list[tuple[int, int, int]]:
+    """The lit frames seen while it blinks: screen grabs as fast as they come, mid-animation."""
+    end, seen = time.time() + secs, []
+    while time.time() < end:
+        c = glow(d, settle=False)
+        if c:
+            seen.append(c)
+    return seen
+
+
+def glowed(d: Deck, mark: int, what: str) -> bool:
+    return f'glow: {what}' in d.logs(mark)
+
+
 def test_glow(d: Deck) -> None:
     d.page(0)
     check('glow: none on a quiet day', glow(d) is None)
+
     mark = d.mark()
     d.state('call', fixtures.call('teams'))
+    lit = blink(d)
+    check('glow: blinks blue when a call starts', any(near(c, BLUE) for c in lit), str(lit[:3]))
+    check('glow: and says so in the log', glowed(d, mark, 'blue, a call'))
+    time.sleep(1.8)
+    check('glow: then fades away', glow(d) is None)
+    mark = d.mark()
+    call = fixtures.call('teams')
+    call['secs'] += 30
+    d.state('call', call)
     d.settle()
-    c = glow(d)
-    check('glow: blue in a call', c is not None and near(c, BLUE), str(c))
-    check('glow: and it says so in the log', 'glow: blue, in a call' in d.logs(mark))
-    d.shot(os.path.join(OUT, 'glow-call.png'))
-    d.state('build', {'state': 'failed', 'cmd': 'npm run build', 'ms': 61000, 'secs': 5, 'history': 'PPPPF'})
-    d.settle()
-    c = glow(d)
-    check('glow: red for a failed build, over the call', c is not None and near(c, RED), str(c))
-    d.state('claude', fixtures.sessions())
-    d.settle()
-    c = glow(d)
-    check('glow: amber while Claude needs you, over both', c is not None and near(c, AMBER), str(c))
-    d.shot(os.path.join(OUT, 'glow-claude.png'))
+    check('glow: not again while the call goes on', not [m for m in d.logs(mark) if m.startswith('glow:')])
 
     mark = d.mark()
-    d.tap(700, 6)  # the volume button's top edge, under the frame
-    check('glow: taps go through it', did(d, mark, 'vol.mute') is not None)
+    d.state('build', {'state': 'failed', 'cmd': 'npm run build', 'ms': 61000, 'secs': 5, 'history': 'PPPPF'})
+    lit = blink(d)
+    check('glow: blinks red when a build fails', any(near(c, RED) for c in lit), str(lit[:3]))
+    check('glow: its log', glowed(d, mark, 'red, the build failed'))
 
+    mark = d.mark()
+    d.state('claude', fixtures.sessions())
+    lit = blink(d, 1.0)
+    check('glow: blinks amber when Claude comes to need you', any(near(c, AMBER) for c in lit), str(lit[:3]))
+    check('glow: its log', glowed(d, mark, 'amber, Claude needs you'))
+    d.tap(700, 6)  # the volume button's top edge, under the frame while it fades
+    check('glow: taps go through it', did(d, mark, 'vol.mute') is not None)
+    d.shot(os.path.join(OUT, 'glow-claude.png'))
+    time.sleep(3)
+    check('glow: and it fades while Claude still waits', glow(d) is None)
+
+    # Over the idle clock: Claude busy, then needing you again.
+    d.state('claude', fixtures.day()['claude'])
     d.settings('base', clock_s=2, off_s=600)
+    mark = d.mark()
     d.state('pc', {'locked': False, 'idle': 2})
     try:
         d.wait_for(lambda m: m.get('t') == 'log' and m.get('msg') == 'idle: clock', since=mark, timeout=6)
     except TimeoutError:
         pass
-    c = glow(d)
-    check('glow: it shows on the idle clock', c is not None and near(c, AMBER), str(c))
-    d.shot(os.path.join(OUT, 'glow-clock.png'))
+    mark = d.mark()
+    d.state('claude', fixtures.sessions())
+    lit = blink(d)
+    check('glow: it blinks over the idle clock', any(near(c, AMBER) for c in lit), str(lit[:3]))
+    time.sleep(2)
+    d.shot(os.path.join(OUT, 'glow-clock-after.png'))
+    check('glow: and leaves the clock as it was', glow(d) is None)
     d.tap(400, 240)
     d.settings('base', clock_s=600, off_s=1800)
     d.state('pc', {'locked': False, 'idle': 1})
 
-    d.state('claude', fixtures.day()['claude'])
+    mark = d.mark()
+    d.state('build', {'state': 'running', 'cmd': 'npm run build', 'ms': 0, 'secs': 1, 'history': 'PPPPF'})
+    d.state('build', {'state': 'failed', 'cmd': 'npm run build', 'ms': 61000, 'secs': 11 * 60, 'history': 'PPPFF'})
+    d.settle()
+    check('glow: not for a build that failed a while ago', not glowed(d, mark, 'red, the build failed'))
+
     d.state('call', {'app': ''})
+    d.state('claude', fixtures.day()['claude'])
     d.settle()
-    c = glow(d)
-    check('glow: red again once Claude is busy and the call is over', c is not None and near(c, RED), str(c))
-    d.state('build', {'state': 'failed', 'cmd': 'npm run build', 'ms': 61000, 'secs': 11 * 60, 'history': 'PPPPF'})
-    d.settle()
-    check('glow: not for a build that failed a while ago', glow(d) is None)
-    d.state('call', fixtures.call('zoom'))
-    d.settle()
-    c = glow(d)
-    check('glow: blue again in the next call', c is not None and near(c, BLUE), str(c))
     d.offline()
-    check('glow: offline, nothing', glow(d) is None)
+    mark = d.mark()
+    d.state('call', fixtures.call('zoom'))  # coming back with a call that started meanwhile
+    d.online()
+    lit = blink(d)
+    check('glow: back online, it blinks for what started meanwhile', any(near(c, BLUE) for c in lit), str(lit[:3]))
+    time.sleep(2)
+    d.offline()
+    mark = d.mark()
     d.online()
     d.settle()
-    check('glow: back with the PC', glow(d) is not None)
+    check("glow: but not again for what's still the same", not [m for m in d.logs(mark) if m.startswith('glow:')])
 
 
 def test_progress(d: Deck) -> None:

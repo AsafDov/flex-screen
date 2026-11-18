@@ -180,9 +180,15 @@ void buildLink(lv_obj_t *parent, int width, int height) {
 void showFirmware() {
   setText(w.fw, pc::kFirmwareVersion);
   const char *reason = pc::resetReason();
-  setTextf(w.fw_detail, "Last restart: %s", reason);
-  // A crash or a power dip is what's worth noticing; a power-on, an update or a reset isn't.
-  const bool crashed = !strcmp(reason, "panic") || strstr(reason, "watchdog") || !strcmp(reason, "brownout");
+  // On this board a restart the firmware asks for (an update, a new palette) ends in a plain
+  // "watchdog" reset: the ROM stalls after the restart and ESP-IDF's 1 s RTC watchdog resets
+  // the chip (DESIGN.md, 0.24.3). That's the normal way back, not a hang.
+  if (!strcmp(reason, "watchdog")) setText(w.fw_detail, "Restarted itself (watchdog)");
+  else setTextf(w.fw_detail, "Last restart: %s", reason);
+  // A crash, a hang or a power dip is what's worth noticing. A hang shows as the task or
+  // interrupt watchdog, never as the plain one above.
+  const bool crashed = !strcmp(reason, "panic") || !strcmp(reason, "task watchdog") ||
+                       !strcmp(reason, "interrupt watchdog") || !strcmp(reason, "brownout");
   setTextColor(w.fw_detail, crashed ? kAmber : kSoftText);
 }
 
@@ -216,7 +222,7 @@ void showFrames() {
   // LVGL only draws what changed, so a still screen reads 0-1 fps: the busiest second says
   // what the deck manages while something moves.
   setTextf(w.fps, "%u fps", unsigned(last.frames));
-  setTextf(w.fps_detail, "Up to %u fps in the last minute", unsigned(peak));
+  setTextf(w.fps_detail, "Up to %u fps · last minute", unsigned(peak));
   if (frames) {
     setTextf(w.draw_detail, "Draw %u ms avg, %u ms worst", unsigned((draw / frames + 500) / 1000),
              unsigned((slowest + 500) / 1000));

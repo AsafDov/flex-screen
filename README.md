@@ -360,10 +360,11 @@ the first site that matches wins (yours before the built-in ones).
 ### The deck itself
 - Idle: a dim clock after 10 minutes without input on the deck or the PC, screen off
   after 30 (both adjustable). A locked PC shows the clock straight away.
-- Edge glow: a thin colored frame around the whole screen, there to be caught out of the
-  corner of your eye, over any page and the dim clock too. **Amber** while Claude needs you
-  (a session waiting, an approval or a question), **red** for a build that failed in the
-  last 10 minutes, **blue** during a call. When several hold, it's in that order.
+- Edge glow: a thin colored frame around the whole screen blinks twice and fades away
+  when something happens, there to be caught out of the corner of your eye, over any page
+  and the dim clock too. **Amber** when Claude comes to need you (a session waiting, an
+  approval or a question), **red** when a build fails, **blue** when a call starts. It
+  doesn't stay lit, and doesn't blink again for something that's still going on.
 - Diagnostics (hold the status bar's clock): the firmware version and why the deck last
   restarted, how long it's been up, free memory (internal RAM with its low point and
   largest free block, and PSRAM), the frame rate (now and the busiest second of the last

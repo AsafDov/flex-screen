@@ -372,10 +372,12 @@ class Deck:
         v = frame[2 * (y * W + x)] | frame[2 * (y * W + x) + 1] << 8
         return (v >> 11 & 31) * 255 // 31, (v >> 5 & 63) * 255 // 63, (v & 31) * 255 // 31
 
-    def frame(self, timeout: float = 10) -> bytes:
+    def frame(self, timeout: float = 10, settle: bool = True) -> bytes:
         """The screen as it is now: RGB565, little-endian, row by row (everything on it,
-        the system layer too, which tree() doesn't list)."""
-        self.settle()
+        the system layer too, which tree() doesn't list). Without `settle`, at once, even
+        mid-animation."""
+        if settle:
+            self.settle()
         with self.lock:
             self.shot_parts.clear()
             self.shot_count = 0
