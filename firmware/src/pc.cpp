@@ -46,6 +46,20 @@ bool heard = false;
 uint32_t last_rx_ms = 0;
 int seen_count = 0;  // state topics remembered (seen_state, below handle())
 volatile uint32_t rx_dropped = 0;  // bytes lost to a full receive buffer (USB task)
+bool line_cut = false;             // the line coming in ran past kMaxLine
+bool was_connected = false;
+LinkStats stats;
+
+// Notes the link's latest error, with when, for the diagnostics screen, and logs it.
+void linkError(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+void linkError(const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(stats.error, sizeof(stats.error), fmt, args);
+  va_end(args);
+  stats.error_ms = millis() | 1;  // 0 means none
+  log("%s", stats.error);
+}
 
 // An album-art image being reassembled from "img" parts.
 struct {
@@ -62,22 +76,6 @@ void send(const JsonDocument &doc) {
   if (!cdc) return;  // nobody has the port open
   serializeJson(doc, cdc);
   cdc.write('\n');
-}
-
-// Why the deck last restarted, so crashes show up in the companion's log.
-const char *resetReason() {
-  switch (esp_reset_reason()) {
-    case ESP_RST_POWERON: return "power-on";
-    case ESP_RST_EXT: return "reset pin";
-    case ESP_RST_SW: return "software";
-    case ESP_RST_PANIC: return "panic";
-    case ESP_RST_INT_WDT: return "interrupt watchdog";
-    case ESP_RST_TASK_WDT: return "task watchdog";
-    case ESP_RST_WDT: return "watchdog";
-    case ESP_RST_BROWNOUT: return "brownout";
-    case ESP_RST_USB: return "usb";
-    default: return "other";
-  }
 }
 
 // The screen as it is, for checking layouts from the PC: the frame buffer on show in
@@ -721,7 +719,8 @@ void handleIcon(const JsonDocument &doc) {
   size_t written = 0;
   if (mbedtls_base64_decode(pixels, size, &written, reinterpret_cast<const unsigned char *>(b64), strlen(b64)) != 0 ||
       written != size) {
-    log("icon %s: bad data", id);
+    stats.bad_parts++;
+    linkError("icon %s: bad data", id);
     heap_caps_free(pixels);
     return;
   }
@@ -771,7 +770,8 @@ void handleImage(const JsonDocument &doc) {
       mbedtls_base64_decode(incoming.pixels + off, incoming.size - off, &written,
                             reinterpret_cast<const unsigned char *>(b64), strlen(b64)) != 0 ||
       written != expected) {
-    log("img %s: bad part %d", id, part);
+    stats.bad_parts++;
+    linkError("img %s: bad part %d", id, part);
     return;
   }
   if (++incoming.received < incoming.parts) return;
@@ -1028,9 +1028,11 @@ bool sameAsLast(const char *topic, uint32_t hash) {
 void handleLine() {
   JsonDocument doc;
   if (deserializeJson(doc, rx) != DeserializationError::Ok) {
-    log("bad line (%u bytes)", unsigned(rx.length()));
+    stats.bad_lines++;
+    linkError("bad line (%u bytes)", unsigned(rx.length()));
     return;
   }
+  stats.lines++;
   heard = true;
   last_rx_ms = millis();
   if (!strcmp(doc["t"] | "", "state") && sameAsLast(doc["topic"] | "", lineHash(rx))) return;
@@ -1038,6 +1040,22 @@ void handleLine() {
 }
 
 }  // namespace
+
+// Why the deck last restarted, so crashes show up in the companion's log.
+const char *resetReason() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "power-on";
+    case ESP_RST_EXT: return "reset pin";
+    case ESP_RST_SW: return "software";
+    case ESP_RST_PANIC: return "panic";
+    case ESP_RST_INT_WDT: return "interrupt watchdog";
+    case ESP_RST_TASK_WDT: return "task watchdog";
+    case ESP_RST_WDT: return "watchdog";
+    case ESP_RST_BROWNOUT: return "brownout";
+    case ESP_RST_USB: return "usb";
+    default: return "other";
+  }
+}
 
 void begin() {
   keyboard.onEvent(ARDUINO_USB_HID_KEYBOARD_LED_EVENT, onKeyboardLeds);
@@ -1060,14 +1078,17 @@ void poll() {
   const bool open = cdc;  // the host raised DTR and RTS
   if (open && !port_open) {
     rx = "";
+    line_cut = false;
     heard = false;
     seen_count = 0;  // a new companion run: take every snapshot again
   }
   port_open = open;
 
   if (rx_dropped) {
-    log("receive buffer overflowed, %u bytes lost", unsigned(rx_dropped));
+    const uint32_t lost = rx_dropped;
     rx_dropped = 0;
+    stats.lost_bytes += lost;
+    linkError("receive buffer overflowed, %u bytes lost", unsigned(lost));
   }
 
   // An update whose sender went away (unplugged, quit) is given up, so the screen comes back
@@ -1085,14 +1106,36 @@ void poll() {
     for (size_t i = 0; i < n; i++) {
       const char c = char(chunk[i]);
       if (c == '\n') {
-        if (rx.length()) handleLine();
+        // A line cut at kMaxLine can't be whole JSON: it's dropped and counted, not parsed.
+        if (line_cut) {
+          stats.long_lines++;
+          linkError("line over %u bytes dropped", unsigned(kMaxLine));
+        } else if (rx.length()) {
+          handleLine();
+        }
         rx = "";
-      } else if (c != '\r' && rx.length() < kMaxLine) {
-        rx += c;
+        line_cut = false;
+      } else if (c != '\r') {
+        if (rx.length() < kMaxLine) rx += c;
+        else line_cut = true;
       }
     }
   }
+
+  // The link coming up and going down (quiet for kCompanionTimeoutMs, or the port let go).
+  const bool up = connected();
+  if (up != was_connected) {
+    was_connected = up;
+    if (up) {
+      stats.up_ms = millis() | 1;
+    } else {
+      stats.drops++;
+      stats.down_ms = millis() | 1;
+    }
+  }
 }
+
+const LinkStats &linkStats() { return stats; }
 
 bool connected() { return port_open && heard && millis() - last_rx_ms < kCompanionTimeoutMs; }
 

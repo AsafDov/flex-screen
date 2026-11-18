@@ -8,6 +8,8 @@
 #include "esp_heap_caps.h"
 #include "call.h"
 #include "cheat.h"
+#include "diag.h"
+#include "glow.h"
 #include "idle.h"
 #include "approval.h"
 #include "ask.h"
@@ -169,6 +171,12 @@ void buildStatusBar(lv_obj_t *parent) {
   bar.time = label(b, "--:--", &lv_font_montserrat_20, kText);
   bar.date = label(b, "", &lv_font_montserrat_16, kMuted);
   lv_obj_set_style_margin_right(bar.date, 4, 0);
+  // Holding the clock (or the date) opens the deck's diagnostics; a tap does nothing.
+  for (lv_obj_t *clock : {bar.time, bar.date}) {
+    lv_obj_set_clickable(clock, true);
+    lv_obj_set_ext_click_area(clock, 6);
+    lv_obj_add_event_cb(clock, [](lv_event_t *) { diag::open(); }, LV_EVENT_LONG_PRESSED, nullptr);
+  }
 
   // The pills take what's left and are cut off at its edge, never the buttons.
   b = bar.pills = box(b);
@@ -645,12 +653,14 @@ void begin() {
   cheat::build();
   launcher::build(lv_tabview_get_tab_bar(tv));  // its button ends the tab bar; its panel goes over the pages
   day::build();  // under the sessions board, the approval banner and Claude's questions
+  diag::build();  // the same: an approval or a question can come while it's open
   sessions::build();  // under the approval banner and Claude's questions, which can come while it's open
   approval::build();
   ask::build();
   buildToast();
   idle::build();
   buildFlashing();  // last: over the idle clock too
+  glow::build();  // on the system layer, over all of it
   pc::bootMark("ui.overlays");
   pc::bootValue("objects", countObjects(lv_screen_active()) + countObjects(lv_layer_top()) + countObjects(lv_layer_sys()));
 
@@ -695,7 +705,9 @@ void update() {
   sessions::update();
   approval::update();
   ask::update();
+  diag::update();
   idle::update();
+  glow::update();
   updateFlashing();
   if (model::bench_requests != bench_seen) {
     bench_seen = model::bench_requests;

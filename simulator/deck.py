@@ -133,8 +133,13 @@ class Deck:
                 self.process.wait(5)
             except subprocess.TimeoutExpired:
                 self.process.kill()
-        # A palette change restarts the simulator as a new process: end that one too.
-        subprocess.run(['taskkill', '/IM', 'flex-screen-sim.exe', '/F'], capture_output=True)
+        # A palette change restarts the simulator as a new process: end that one too. Only
+        # those on this port (a restart keeps its command line): killing every simulator by
+        # name also ended the runs of other sessions working on the deck at the same time.
+        script = ("Get-CimInstance Win32_Process -Filter \"Name='flex-screen-sim.exe'\" | "
+                  f"Where-Object {{ $_.CommandLine -match '--port {self.port}( |$)' }} | "
+                  "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }")
+        subprocess.run(['powershell', '-NoProfile', '-Command', script], capture_output=True)
 
     def __enter__(self) -> 'Deck':
         return self
@@ -179,6 +184,11 @@ class Deck:
             self.sock.sendall(data)
 
     send_lock = threading.Lock()  # the keep-alive thread sends too
+
+    def send_raw(self, data: bytes) -> None:
+        """Bytes as they are, newline and all: for lines that aren't JSON, or are too long."""
+        with self.send_lock:
+            self.sock.sendall(data)
 
     def sync(self) -> dict:
         """Says what the companion says on connecting; returns the deck's hello."""
@@ -355,6 +365,16 @@ class Deck:
 
     def shot(self, path: str, timeout: float = 10) -> None:
         """Saves the screen as it is now as a PNG."""
+        write_png(path, self.frame(timeout))
+
+    def pixel(self, frame: bytes, x: int, y: int) -> tuple[int, int, int]:
+        """The colour at (x, y) of a frame(), as 8-bit RGB."""
+        v = frame[2 * (y * W + x)] | frame[2 * (y * W + x) + 1] << 8
+        return (v >> 11 & 31) * 255 // 31, (v >> 5 & 63) * 255 // 63, (v & 31) * 255 // 31
+
+    def frame(self, timeout: float = 10) -> bytes:
+        """The screen as it is now: RGB565, little-endian, row by row (everything on it,
+        the system layer too, which tree() doesn't list)."""
         self.settle()
         with self.lock:
             self.shot_parts.clear()
@@ -367,5 +387,4 @@ class Deck:
                 if left <= 0:
                     raise TimeoutError(f'shot: {len(self.shot_parts)} of {self.shot_count} parts')
                 self.lock.wait(left)
-            data = b''.join(self.shot_parts[i] for i in range(self.shot_count))
-        write_png(path, data)
+            return b''.join(self.shot_parts[i] for i in range(self.shot_count))

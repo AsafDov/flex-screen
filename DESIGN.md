@@ -86,6 +86,8 @@ renders under 12px.
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
 | 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (its integration's, `companion/Integrations/<App>/`) (long press) and kept per app; the profile's `contextBar` adds actions. In a browser, a site's own keys (`sites.json` and the profile's `sites`), told by the tab's address (browser extension), an installed web app's name, or the title. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
 | 18 | Shortcuts launcher | Every page (tab bar) | Companion | Up to 12 tiles from the profile: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
+| 20 | Edge glow | Every page, the idle clock | Firmware (state from the companion) | Four 10 px strips on LVGL's system layer, solid at the edge and fading inward: amber for a Claude session in `input`, an approval or a question; red for a build `failed` under 10 minutes ago; blue while `call` has an app |
+| 21 | Diagnostics | Overlay (hold the clock) | Firmware only | Firmware version and reset reason, uptime, internal RAM and PSRAM (`heap_caps_*`), frames per second and draw time (LVGL's refresh events), the link's counters and last error (`pc::linkStats()`) |
 
 Extras on the canvas: **Lock PC** (`LockWorkStation`) and the **Headset** quick switch are
 easy. **Focus mode** and the **Claude usage meter** have no clean data source yet. They're
@@ -1533,6 +1535,49 @@ Gotchas found after phase 6:
     give is sent without one, so it shows its glyph. And `pc::requestIcon()` waits twice as
     long for each unanswered ask of the same icon (3 s, 6 s… a minute), starting over when
     the icon comes or a companion says hello.
+- Diagnostics and the edge glow, firmware 0.25.0 (2026-11-18, two ideas from the list:
+  diagnostics "worth having before the wireless link", and the glow), on the branch
+  `deck-diagnostics-and-glow`:
+  - Diagnostics are an overlay like the session board, not a seventh tab. Holding the
+    status bar's clock (or the date) opens them; a tap does nothing, so the clock can't open
+    them by accident. They need nothing from the PC and stay open offline. Three cards
+    (firmware, uptime, frame rate) over two (memory, the link). Everything counts from the
+    deck's start; a restart is the reset.
+  - Frames come from LVGL's display events, not display.cpp (which the board and the
+    simulator each have): a refresh counts as a frame only when it rendered (LVGL's refresh
+    timer runs every few ms and mostly finds nothing to draw), and its time leaves out the
+    wait for vsync, as the benchmark does. LVGL only draws what changes, so a still screen
+    reads 0-1 fps; the busiest second of the last minute says what it manages while
+    something moves. Uptime is kept in 64 bits from `millis()`, which runs over at 49 days.
+  - The link's counters (`pc::linkStats()`): lines taken in; lines that didn't parse; lines
+    past the 8 KB the deck takes (dropped and counted now, not parsed: a cut line can't be
+    whole JSON); bytes lost to a full receive buffer (before this only logged); album art
+    and icon parts that didn't decode; and drops, each time `pc::connected()` goes from
+    true to false. The last error is kept with when, and logged as before.
+  - The glow is four strips on LVGL's system layer (over the idle clock, the firmware
+    update screen and anything `lv_obj_move_foreground` puts on the top layer). Strips, not
+    one bordered object: a change redraws 10 px along the edges instead of the whole screen
+    (64-177 ms). Each is 4 px solid and 6 px fading in (a gradient from the color's
+    opacity to none). They're boxes, which take no taps, so a tap at the edge still
+    reaches what's under it. Red and blue are fixed: Ember's accent is orange and would
+    pass for Claude's amber. Red lasts 10 minutes from when the build failed (the build
+    topic's `secs`), since a failed build stays the latest result until the next one;
+    nothing shows while the PC is offline, as what it last said may no longer hold. The
+    glow logs its changes ("glow: amber, Claude needs you").
+  - The simulator's `deck.py` ended every simulator on the PC by name when it closed
+    (`taskkill /IM`), which also ended the runs of another session working on the deck at
+    the same time (both died with exit code 1, no crash). It now ends only those on its
+    port. It can also read the screen's pixels (`frame()`, `pixel()`), which the glow needs
+    since `tree()` doesn't list the system layer, and send raw bytes (`send_raw()`).
+  - Checked: the simulator, 334 checks, rebased on 0.24.2 (new: the clock opens them on a hold and not on a
+    tap; version, reset reason, uptime moving on, since when, frame rate, the busiest
+    second and draw time, memory; a garbled line, a line over 8 KB and a bad image part
+    each counted, in amber, with the last error; a drop counted offline, open offline,
+    closed by X and by a tap beside; the glow blue in a call, red for a fresh failed build
+    over it, amber for Claude over both, on all four edges, on the idle clock, a tap
+    through it at the edge, none for a build failed 11 minutes ago, none offline, back
+    with the PC; the fade checked pixel by pixel); the firmware builds for the ESP32 (RAM
+    29.4%, flash 20.6%). Not checked: on the deck.
 
 ## Decisions
 

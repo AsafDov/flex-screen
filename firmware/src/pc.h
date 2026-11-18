@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.24.3";
+constexpr const char *kFirmwareVersion = "0.25.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -104,5 +104,23 @@ void log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void bootMark(const char *what);
 // A figure from the start for the hello (an object count, how long something took).
 void bootValue(const char *what, uint32_t value);
+
+// What the link has been through since the deck started, for the diagnostics screen.
+struct LinkStats {
+  uint32_t lines = 0;       // lines taken in
+  uint32_t bad_lines = 0;   // lines that weren't JSON (garbled, or bytes missing)
+  uint32_t long_lines = 0;  // lines past the 8 KB the deck takes, dropped
+  uint32_t lost_bytes = 0;  // bytes a full receive buffer had no room for
+  uint32_t bad_parts = 0;   // album art and icon parts that didn't decode
+  uint32_t drops = 0;       // times the companion went quiet or let go of the port
+  uint32_t up_ms = 0;       // millis() when the link last came up; 0 if it never has
+  uint32_t down_ms = 0;     // millis() when it last went down; 0 if it hasn't
+  uint32_t error_ms = 0;    // millis() at the last error; 0 if there's been none
+  char error[64] = "";      // what it was: "bad line (812 bytes)"
+};
+const LinkStats &linkStats();
+
+// Why the deck last restarted: "power-on", "usb", "panic", "task watchdog", …
+const char *resetReason();
 
 }  // namespace pc

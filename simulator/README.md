@@ -64,7 +64,10 @@ they need nothing beyond the standard library.
 
 - `deck.py`: the driver. `Deck.launch()` starts the simulator headless; then `sync()`,
   `load(topics)`, `tap(x, y)`, `hold`, `drag`, `page(i)`, `shot(path)`, `tree()`,
-  `took('media.toggle', since=mark)`, `offline()`/`online()`.
+  `took('media.toggle', since=mark)`, `offline()`/`online()`; `frame()` and `pixel(frame,
+  x, y)` for colors (the edge glow is on LVGL's system layer, which `tree()` doesn't list);
+  `send_raw(bytes)` for lines that aren't JSON. Closing ends only the simulator on its own
+  port, so two sessions can each run one (on different `FLEX_SIM_PORT`s).
 - `fixtures.py`: made-up state: `day()` (a normal morning), `stress()` (long texts,
   Hebrew, full lists), `empty()` (first run), `call(app)`.
 - `test_deck.py`: every feature, tapped, held and dragged, checked against what the deck

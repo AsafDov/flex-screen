@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import re
 import sys
 import time
 import traceback
@@ -1124,6 +1125,172 @@ def test_sessions(d: Deck) -> None:
     check('sessions: a tap beside it closes it', not on_screen(d, 'Claude sessions', exact=True))
 
 
+def firmware_version() -> str:
+    with open(os.path.join(HERE, '..', 'firmware', 'src', 'pc.h'), encoding='utf-8') as f:
+        return re.search(r'kFirmwareVersion = "([^"]+)"', f.read()).group(1)
+
+
+def bar_clock(d: Deck) -> dict | None:
+    """The status bar's time, "HH:MM", at its left end."""
+    return next((n for n in shown(d) if n['y'] < kBarH and n['x'] < 60 and re.fullmatch(r'\d\d:\d\d', n.get('text', ''))), None)
+
+
+kBarH = 44
+
+
+def counter(d: Deck, name: str) -> str:
+    """A diagnostics counter's figure: the label just before its name, in its cell."""
+    nodes = shown(d)
+    for i, n in enumerate(nodes):
+        if n.get('text') == name and i > 0:
+            return nodes[i - 1].get('text', '')
+    return ''
+
+
+def figure_ink(d: Deck, f: bytes, n: dict) -> tuple[int, int]:
+    """Where a label's text is brightest: its colour, without the anti-aliased edges."""
+    spots = [(x, y) for y in range(n['y'], n['y'] + n['h']) for x in range(n['x'], n['x'] + n['w'])]
+    return max(spots, key=lambda p: sum(d.pixel(f, *p)))
+
+
+def open_diagnostics(d: Deck) -> bool:
+    clock = bar_clock(d)
+    if clock:
+        tap_node(d, clock, hold=True)
+    return on_screen(d, 'Deck diagnostics', exact=True)
+
+
+def test_diagnostics(d: Deck) -> None:
+    d.page(0)
+    clock = bar_clock(d)
+    check('diagnostics: the bar shows the clock', clock is not None)
+    if clock:
+        tap_node(d, clock)
+    check('diagnostics: a tap on the clock does nothing', not on_screen(d, 'Deck diagnostics', exact=True))
+    check('diagnostics: holding the clock opens them', open_diagnostics(d))
+    check('diagnostics: the firmware version', on_screen(d, firmware_version(), exact=True), firmware_version())
+    check('diagnostics: why it last restarted', on_screen(d, 'Last restart: power-on', exact=True))
+    uptime = next((n['text'] for n in shown(d) if re.fullmatch(r'\d+ s|\d+ min \d+ s', n.get('text', ''))), '')
+    check('diagnostics: how long it has been up', uptime != '')
+    check('diagnostics: since when, by the clock', any(re.fullmatch(r'Since \d\d:\d\d', n.get('text', '')) for n in shown(d)))
+    check('diagnostics: the frame rate', any(re.fullmatch(r'\d+ fps', n.get('text', '')) for n in shown(d)))
+    peak = next((n['text'] for n in shown(d) if n.get('text', '').startswith('Up to ')), '')
+    check('diagnostics: the busiest second of the last minute', re.fullmatch(r'Up to [1-9]\d* fps in the last minute', peak) is not None, peak)
+    check('diagnostics: how long a frame takes', any(re.fullmatch(r'Draw \d+ ms avg, \d+ ms worst', n.get('text', '')) for n in shown(d)))
+    check('diagnostics: free internal RAM', on_screen(d, '146 KB', exact=True))
+    check('diagnostics: its low point and largest block', on_screen(d, 'Internal RAM, lowest 146 KB', exact=True)
+          and on_screen(d, 'Largest free block 87 KB', exact=True))
+    check('diagnostics: free PSRAM', on_screen(d, 'PSRAM 6.2 MB, lowest 6.2 MB', exact=True))
+    check('diagnostics: the link is up', on_screen(d, 'Connected for '))
+    lines = counter(d, 'Lines')
+    check('diagnostics: lines taken in', lines.isdigit() and int(lines) > 10 or lines.endswith('k'), lines)
+    check('diagnostics: no errors yet', all(counter(d, n) == '0' for n in ('Bad lines', 'Cut lines', 'Bytes lost', 'Bad parts'))
+          and on_screen(d, 'No errors since the deck started.', exact=True))
+    d.shot(os.path.join(OUT, 'diagnostics.png'))
+
+    d.send_raw(b'{"t":"state",\n')  # garbled
+    d.send_raw(b'{"t":"ping","pad":"' + b'x' * 9000 + b'"}\n')  # past the 8 KB a line may take
+    d.send({'t': 'img', 'id': 'bad-art', 'part': 0, 'parts': 2, 'w': 10, 'h': 10, 'fmt': 'rgb565', 'off': 0, 'b64': 'AAAA'})
+    time.sleep(1.2)  # the figures move once a second
+    check('diagnostics: a garbled line counts', counter(d, 'Bad lines') == '1', counter(d, 'Bad lines'))
+    check('diagnostics: a line too long counts', counter(d, 'Cut lines') == '1', counter(d, 'Cut lines'))
+    check('diagnostics: a bad image part counts', counter(d, 'Bad parts') == '1', counter(d, 'Bad parts'))
+    check('diagnostics: the last error, and when', on_screen(d, 'Last error, just now: img bad-art: bad part 0', exact=True))
+    f = d.frame()
+    figure = next((n for n in shown(d) if n.get('text') == '1'), None)
+    check('diagnostics: errors stand out in amber', figure is not None and near(d.pixel(f, *figure_ink(d, f, figure)), AMBER, 40))
+    check('diagnostics: the uptime moves on', next((n['text'] for n in shown(d) if re.fullmatch(r'\d+ s|\d+ min \d+ s', n.get('text', ''))), '') != uptime)
+    d.shot(os.path.join(OUT, 'diagnostics-errors.png'))
+
+    drops = counter(d, 'Drops')
+    d.offline()
+    check('diagnostics: offline, it stays open', on_screen(d, 'Deck diagnostics', exact=True))
+    check('diagnostics: and says for how long', on_screen(d, 'Offline for '))
+    check('diagnostics: a drop counts', drops.isdigit() and counter(d, 'Drops') == str(int(drops) + 1), f'{drops} -> {counter(d, "Drops")}')
+    tap(d, CLOSE, exact=True)
+    check('diagnostics: its X closes them', not on_screen(d, 'Deck diagnostics', exact=True))
+    check('diagnostics: they open offline too', open_diagnostics(d))
+    d.online()
+    time.sleep(1.2)
+    check('diagnostics: back online', on_screen(d, 'Connected for '))
+    mark = d.mark()
+    d.tap(400, 20)  # beside the panel: over the status bar
+    check('diagnostics: a tap beside them closes them', not on_screen(d, 'Deck diagnostics', exact=True))
+    check('diagnostics: and goes no further', not d.acts(mark))
+
+
+def near(a: tuple[int, int, int], b: int, slack: int = 24) -> bool:
+    return all(abs(a[i] - (b >> (16 - 8 * i) & 255)) <= slack for i in range(3))
+
+
+AMBER, RED, BLUE = 0xF5A623, 0xFF4D4D, 0x4C8DFF  # the base palette's amber, and the glow's own
+
+
+def glow(d: Deck) -> tuple[int, int, int] | None:
+    """The frame's colour if all four edges are lit in it, else None."""
+    f = d.frame()
+    edges = [d.pixel(f, 400, 0), d.pixel(f, 400, 479), d.pixel(f, 0, 240), d.pixel(f, 799, 240)]
+    inside = d.pixel(f, 400, 14), d.pixel(f, 14, 240)
+    lit = all(edges[0] == e for e in edges) and edges[0] != inside[0]
+    return edges[0] if lit and all(max(e) > 150 for e in edges) else None
+
+
+def test_glow(d: Deck) -> None:
+    d.page(0)
+    check('glow: none on a quiet day', glow(d) is None)
+    mark = d.mark()
+    d.state('call', fixtures.call('teams'))
+    d.settle()
+    c = glow(d)
+    check('glow: blue in a call', c is not None and near(c, BLUE), str(c))
+    check('glow: and it says so in the log', 'glow: blue, in a call' in d.logs(mark))
+    d.shot(os.path.join(OUT, 'glow-call.png'))
+    d.state('build', {'state': 'failed', 'cmd': 'npm run build', 'ms': 61000, 'secs': 5, 'history': 'PPPPF'})
+    d.settle()
+    c = glow(d)
+    check('glow: red for a failed build, over the call', c is not None and near(c, RED), str(c))
+    d.state('claude', fixtures.sessions())
+    d.settle()
+    c = glow(d)
+    check('glow: amber while Claude needs you, over both', c is not None and near(c, AMBER), str(c))
+    d.shot(os.path.join(OUT, 'glow-claude.png'))
+
+    mark = d.mark()
+    d.tap(700, 6)  # the volume button's top edge, under the frame
+    check('glow: taps go through it', did(d, mark, 'vol.mute') is not None)
+
+    d.settings('base', clock_s=2, off_s=600)
+    d.state('pc', {'locked': False, 'idle': 2})
+    try:
+        d.wait_for(lambda m: m.get('t') == 'log' and m.get('msg') == 'idle: clock', since=mark, timeout=6)
+    except TimeoutError:
+        pass
+    c = glow(d)
+    check('glow: it shows on the idle clock', c is not None and near(c, AMBER), str(c))
+    d.shot(os.path.join(OUT, 'glow-clock.png'))
+    d.tap(400, 240)
+    d.settings('base', clock_s=600, off_s=1800)
+    d.state('pc', {'locked': False, 'idle': 1})
+
+    d.state('claude', fixtures.day()['claude'])
+    d.state('call', {'app': ''})
+    d.settle()
+    c = glow(d)
+    check('glow: red again once Claude is busy and the call is over', c is not None and near(c, RED), str(c))
+    d.state('build', {'state': 'failed', 'cmd': 'npm run build', 'ms': 61000, 'secs': 11 * 60, 'history': 'PPPPF'})
+    d.settle()
+    check('glow: not for a build that failed a while ago', glow(d) is None)
+    d.state('call', fixtures.call('zoom'))
+    d.settle()
+    c = glow(d)
+    check('glow: blue again in the next call', c is not None and near(c, BLUE), str(c))
+    d.offline()
+    check('glow: offline, nothing', glow(d) is None)
+    d.online()
+    d.settle()
+    check('glow: back with the PC', glow(d) is not None)
+
+
 def test_progress(d: Deck) -> None:
     d.page(2)
     d.state('claude', {'sessions': [{'id': 's1', 'project': 'flex-screen', 'state': 'working', 'detail': 'Edit: icons.cpp', 'secs': 40,
@@ -1256,7 +1423,7 @@ def main() -> int:
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
         for test in (test_today, test_icon_asks, test_day, test_six_pages, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
-                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_idle, test_offline, test_firmware_update):
+                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_diagnostics, test_glow, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)

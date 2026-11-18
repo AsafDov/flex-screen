@@ -38,7 +38,7 @@ firmware or release.
 ## Features
 
 ### Status bar (on every page)
-- Clock and date.
+- Clock and date. Hold the clock for the deck's diagnostics.
 - Next meeting with a countdown, amber from five minutes out.
 - Claude Code status (working, needs you, done); tap it for the session board.
 - Last build result.
@@ -360,6 +360,17 @@ the first site that matches wins (yours before the built-in ones).
 ### The deck itself
 - Idle: a dim clock after 10 minutes without input on the deck or the PC, screen off
   after 30 (both adjustable). A locked PC shows the clock straight away.
+- Edge glow: a thin colored frame around the whole screen, there to be caught out of the
+  corner of your eye, over any page and the dim clock too. **Amber** while Claude needs you
+  (a session waiting, an approval or a question), **red** for a build that failed in the
+  last 10 minutes, **blue** during a call. When several hold, it's in that order.
+- Diagnostics (hold the status bar's clock): the firmware version and why the deck last
+  restarted, how long it's been up, free memory (internal RAM with its low point and
+  largest free block, and PSRAM), the frame rate (now and the busiest second of the last
+  minute, with how long a frame takes to draw), and the link to the PC: how long it's been
+  up or down, lines taken in, and its errors: garbled lines, lines too long, bytes lost to
+  a full buffer, bad image parts and drops, with the last error and when. Counts run from
+  the deck's start. It works offline too.
 - Four color themes, Base, Vibrant, Ember (warm, orange) and Violet, from the tray menu.
 - One deck, several PCs: it shows whichever PC it's plugged into. The PCs can share a
   profile (a synced folder), while each keeps its own sign-ins, vault and clipboard.

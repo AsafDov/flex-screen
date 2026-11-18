@@ -20,3 +20,4 @@ static inline void heap_caps_free(void *p) { free(p); }
 // The deck's figures, roughly, so the hello looks like the board's.
 static inline size_t heap_caps_get_free_size(uint32_t caps) { return (caps & MALLOC_CAP_SPIRAM) ? 6500000 : 150000; }
 static inline size_t heap_caps_get_minimum_free_size(uint32_t caps) { return heap_caps_get_free_size(caps); }
+static inline size_t heap_caps_get_largest_free_block(uint32_t caps) { return (caps & MALLOC_CAP_SPIRAM) ? 4000000 : 90000; }
