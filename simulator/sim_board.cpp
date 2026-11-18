@@ -11,6 +11,7 @@ bool lit = false;
 
 bool begin() { return true; }
 esp_lcd_panel_handle_t panel() { return nullptr; }
+bool startPanel() { return true; }
 bool recreatePanel() { return true; }
 void backlight(bool on) {
   lit = on;

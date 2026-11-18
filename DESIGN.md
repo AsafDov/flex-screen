@@ -1505,6 +1505,34 @@ Gotchas found after phase 6:
     after the page had been drawn without it (two full redraws, ~250 ms each, plus the
     layout). Now each page but the Numpad keeps the bar's room at its own bottom while the
     bar has keys, so the Numpad only hides and shows the bar.
+  - Checked on the deck: two updates over the link, the second received by 0.24.2 (the
+    bar still, the dark install, the picture clean after), and one from the companion's own
+    update path started through /test (`fw.update`), watched by the user: all still.
+- A three-times-faster start, and no endless asking for an icon, firmware 0.24.3
+  (2026-11-18):
+  - A restart looked like a 10 s hang ending in a watchdog reset. It isn't one: the USB port
+    is back within 2 s (ESP-IDF's `esp_restart_noos` arms the RTC watchdog for 1 s, the
+    ROM stalls on this board, and that watchdog resets it, hence `reset: watchdog`). The
+    time went into setup(): the deck answers `sync` only from the loop, ~8.9 s after the
+    start, so the companion's first handshake went unanswered and its retry 5 s later was
+    answered 3 s after that, the same after a power-on. The hello now carries `boot`, each
+    part's end in ms: the UI took 7.6 s for 1,248 objects (~5 ms each), the overlays (call
+    panel, launcher, session board) more than whole pages, and the first `update()` 1.5 s.
+  - The cause was the panel running during setup: its bounce-buffer interrupt copies
+    ~30 MB/s out of PSRAM on the loop's core, and that traffic shares the MSPI bus with the
+    flash the code runs from. `board::begin()` now creates the panel without starting it
+    (`esp_lcd_panel_init` starts the transfer), and main starts it once the UI is built,
+    before the first frame (the backlight is off until then anyway). The UI now builds in
+    2.3 s, the loop starts at 3.7 s instead of 8.9 s, and the companion's first handshake is
+    answered (0.4 s after it connected). The same load slows everything while the deck runs:
+    the next lever for redraw speed, if one is needed.
+  - The Today page asked every 3 s for a Recent tile's icon the companion didn't have: a
+    window closed before the companion restarted (the window list only knows open windows'
+    icons, and the tiles are saved). The saved tiles now keep their icons' pixels
+    (`iconPixels`, put back into the window list at start); a tile whose icon this run can't
+    give is sent without one, so it shows its glyph. And `pc::requestIcon()` waits twice as
+    long for each unanswered ask of the same icon (3 s, 6 s… a minute), starting over when
+    the icon comes or a companion says hello.
 
 ## Decisions
 

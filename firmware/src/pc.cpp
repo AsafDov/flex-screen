@@ -102,10 +102,36 @@ void sendShot() {
   }
 }
 
+struct BootMark {
+  const char *what;
+  uint32_t ms;
+};
+constexpr int kBootMarks = 16;
+BootMark boot_marks[kBootMarks];
+int boot_count = 0;
+
+// Icons asked for that haven't come: each ask for the same one waits twice as long as the
+// last (3 s, 6 s… a minute), so one the companion can't give (a window closed before it
+// restarted) isn't asked for every few seconds forever. Its arrival, or a companion's new
+// hello, starts it over.
+struct IconAsk {
+  char id[24];
+  uint8_t count;
+  uint32_t ms;
+};
+IconAsk icon_asks[16];
+
+void forgetIconAsk(const char *id) {
+  for (IconAsk &a : icon_asks) {
+    if (a.id[0] && !strcmp(a.id, id)) a.id[0] = '\0';
+  }
+}
+
 // Sent only in reply to "sync". Saying hello when DTR rises raced the companion's
 // handshake, which toggles DTR/RTS faster than the loop samples them.
 void sendHello() {
   seen_count = 0;  // the companion sends everything after this: take it all
+  memset(icon_asks, 0, sizeof(icon_asks));  // and may have icons the last one didn't
   JsonDocument doc;
   doc["t"] = "hello";
   doc["fw"] = kFirmwareVersion;
@@ -120,6 +146,10 @@ void sendHello() {
     doc["touch"]["low_power_s"] = touch.low_power;
     doc["touch"]["refresh"] = touch.refresh;
   }
+  // How long each part of the start took (ms since the chip started): the deck only
+  // answers once setup() is done.
+  JsonObject boot = doc["boot"].to<JsonObject>();
+  for (int i = 0; i < boot_count; i++) boot[boot_marks[i].what] = boot_marks[i].ms;
   send(doc);
 }
 
@@ -696,6 +726,7 @@ void handleIcon(const JsonDocument &doc) {
     return;
   }
   icons::put(id, pixels, w, h);
+  forgetIconAsk(id);
 }
 
 // One part of an RGB565 image. Parts carry their byte offset, so order doesn't matter;
@@ -1189,7 +1220,30 @@ void callVolume(int level) {
 }
 void focusWindow(const char *id) { act("win.focus", "id", id); }
 void closeWindow(const char *id) { act("win.close", "id", id); }
-void requestIcon(const char *id) { act("icon.need", "id", id); }
+void requestIcon(const char *id) {
+  if (!id || !id[0]) return;
+  const uint32_t now = millis();
+  IconAsk *ask = nullptr;
+  IconAsk *oldest = &icon_asks[0];
+  for (IconAsk &a : icon_asks) {
+    if (a.id[0] && !strcmp(a.id, id)) {
+      ask = &a;
+      break;
+    }
+    if (!a.id[0] || (oldest->id[0] && a.ms < oldest->ms)) oldest = &a;
+  }
+  if (ask) {
+    const uint32_t wait = ask->count >= 6 ? 60000 : 3000u << (ask->count - 1);
+    if (now - ask->ms < wait) return;
+  } else {
+    ask = oldest;
+    snprintf(ask->id, sizeof(ask->id), "%s", id);
+    ask->count = 0;
+  }
+  if (ask->count < 255) ask->count++;
+  ask->ms = now;
+  act("icon.need", "id", id);
+}
 
 void showDesktop() {
   keyboard.press(KEY_LEFT_GUI);
@@ -1287,6 +1341,14 @@ void openTaskLink(const char *src, const char *list, const char *id) {
   doc["list"] = list;
   doc["id"] = id;
   send(doc);
+}
+
+void bootMark(const char *what) {
+  if (boot_count < kBootMarks) boot_marks[boot_count++] = {what, millis()};
+}
+
+void bootValue(const char *what, uint32_t value) {
+  if (boot_count < kBootMarks) boot_marks[boot_count++] = {what, value};
 }
 
 void log(const char *fmt, ...) {

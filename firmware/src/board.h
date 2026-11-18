@@ -11,8 +11,14 @@ constexpr int kWidth = 800;
 constexpr int kHeight = 480;
 
 // Brings up I2C, the expander, the panel (two frame buffers in PSRAM) and touch.
-// Leaves the backlight off; turn it on once the first frame is drawn.
+// Leaves the backlight off and the panel not yet sending frames: see startPanel().
 bool begin();
+
+// Starts sending the frame buffers to the panel. Until then the panel takes no memory
+// bandwidth: feeding it copies ~30 MB/s out of PSRAM in an interrupt on the loop's core,
+// and building the UI took ~6 s with it running. Call once the UI is built, then draw the
+// first frame and turn the backlight on.
+bool startPanel();
 
 esp_lcd_panel_handle_t panel();
 // Deletes the panel and creates it again, with new (black) frame buffers: the RGB driver's

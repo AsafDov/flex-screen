@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.24.2";
+constexpr const char *kFirmwareVersion = "0.24.3";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -98,5 +98,11 @@ void typeText(const char *text);
 
 // printf-style log line, sent to the companion and the UART port.
 void log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
+// Notes that a part of the start is done (`what` is a string literal): the hello says how
+// long each took.
+void bootMark(const char *what);
+// A figure from the start for the hello (an object count, how long something took).
+void bootValue(const char *what, uint32_t value);
 
 }  // namespace pc

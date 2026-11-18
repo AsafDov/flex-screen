@@ -35,7 +35,21 @@ sealed class RecentActions
     static readonly string FilePath = Path.Combine(AppPaths.Data, "recent-actions.bin");
 
     readonly object _gate = new();
-    readonly List<RecentAction> _list = Load();
+    readonly List<RecentAction> _list;
+    // The tiles' icons by id, saved with the list: after a restart the window list only knows
+    // the icons of windows open now, and the deck asked for a closed window's icon forever.
+    readonly Dictionary<string, byte[]> _icons;
+
+    public RecentActions() => (_list, _icons) = Load();
+
+    /// <summary>The icons of the tiles listed, for the window list to hand out.</summary>
+    public IReadOnlyList<WindowIcon> Icons
+    {
+        get
+        {
+            lock (_gate) return _icons.Select(kv => new WindowIcon(kv.Key, kv.Value)).ToList();
+        }
+    }
 
     public IReadOnlyList<RecentAction> Current
     {
@@ -52,17 +66,20 @@ sealed class RecentActions
     /// Puts an action first. One already listed (by key, or one <paramref name="replaces"/>
     /// picks, such as a closed window of the same app) moves there rather than appearing twice.
     /// </summary>
-    public void Note(RecentAction action, Func<RecentAction, bool>? replaces = null)
+    public void Note(RecentAction action, Func<RecentAction, bool>? replaces = null, WindowIcon? icon = null)
     {
         lock (_gate)
         {
+            var newIcon = icon != null && icon.Id == action.Icon && !_icons.ContainsKey(icon.Id);
+            if (icon != null && icon.Id == action.Icon) _icons[icon.Id] = icon.Pixels;
             var i = _list.FindIndex(a => a.Key == action.Key);
             if (i < 0 && replaces != null) i = _list.FindIndex(a => replaces(a));
-            if (i == 0 && _list[0].Key == action.Key && _list[0].ShowsSame(action)) return;
+            if (i == 0 && _list[0].Key == action.Key && _list[0].ShowsSame(action) && !newIcon) return;
             if (i >= 0) _list.RemoveAt(i);
             _list.Insert(0, action);
             if (_list.Count > Max) _list.RemoveRange(Max, _list.Count - Max);
-            Save(_list);
+            foreach (var id in _icons.Keys.Where(id => !_list.Any(a => a.Icon == id)).ToList()) _icons.Remove(id);
+            Save(_list, _icons);
         }
         Changed?.Invoke();
     }
@@ -72,36 +89,40 @@ sealed class RecentActions
         lock (_gate) return _list.FirstOrDefault(a => a.Id == id);
     }
 
-    static List<RecentAction> Load()
+    static (List<RecentAction>, Dictionary<string, byte[]>) Load()
     {
+        var icons = new Dictionary<string, byte[]>();
         try
         {
-            if (!File.Exists(FilePath)) return [];
+            if (!File.Exists(FilePath)) return ([], icons);
             var json = JsonNode.Parse(Encoding.UTF8.GetString(ProtectedBytes.Unprotect(File.ReadAllBytes(FilePath))));
-            return (json as JsonArray ?? [])
-                .Select(n => n is JsonObject o && o["act"] is JsonObject act
-                    ? new RecentAction((string?)o["key"] ?? "", (string?)o["kind"] ?? "", (string?)o["name"] ?? "",
-                                       (string?)o["title"] ?? "", (string?)o["icon"] ?? "", (JsonObject)act.DeepClone())
-                    : null)
-                .OfType<RecentAction>()
-                .Where(a => a.Key.Length > 0)
-                .Take(Max)
-                .ToList();
+            var list = new List<RecentAction>();
+            foreach (var o in (json as JsonArray ?? []).OfType<JsonObject>())
+            {
+                if (o["act"] is not JsonObject act || ((string?)o["key"] ?? "").Length == 0 || list.Count == Max) continue;
+                var a = new RecentAction((string?)o["key"] ?? "", (string?)o["kind"] ?? "", (string?)o["name"] ?? "",
+                                         (string?)o["title"] ?? "", (string?)o["icon"] ?? "", (JsonObject)act.DeepClone());
+                list.Add(a);
+                // Saved by earlier versions without it: such a tile shows its glyph until the window is back.
+                if (a.Icon.Length > 0 && (string?)o["iconPixels"] is { Length: > 0 } pixels) icons[a.Icon] = Convert.FromBase64String(pixels);
+            }
+            return (list, icons);
         }
-        catch (Exception e) when (e is IOException or CryptographicException or JsonException)
+        catch (Exception e) when (e is IOException or CryptographicException or JsonException or FormatException)
         {
             Log.Write($"recent: can't read the saved list: {e.Message}");
-            return [];
+            return ([], new Dictionary<string, byte[]>());
         }
     }
 
-    static void Save(List<RecentAction> list)
+    static void Save(List<RecentAction> list, Dictionary<string, byte[]> icons)
     {
         try
         {
             var json = new JsonArray(list.Select(a => (JsonNode)new JsonObject
             {
                 ["key"] = a.Key, ["kind"] = a.Kind, ["name"] = a.Name, ["title"] = a.Title, ["icon"] = a.Icon,
+                ["iconPixels"] = icons.TryGetValue(a.Icon, out var pixels) ? Convert.ToBase64String(pixels) : null,
                 ["act"] = a.Act.DeepClone(),
             }).ToArray());
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);

@@ -306,6 +306,7 @@ sealed class TrayApp : ApplicationContext
         _devices.Start();
         _mixer.Start();
         _ = StartMediaAsync();
+        foreach (var icon in _recent.Icons) _windows.AddIcon(icon);  // the Recent tiles' icons, closed windows' too
         _windows.Start();
         _keyboard.Start();
         _clipboard.Start();
@@ -1094,7 +1095,8 @@ sealed class TrayApp : ApplicationContext
                 // A closed window of the same app gives up its tile (its app was restarted, say).
                 _recent.Note(new RecentAction($"win:{hwnd}", "window", window.App, window.Title, window.Icon, Run("win.focus", ("id", id), ("exe", exe))),
                              replaces: r => r.Kind == "window" && (string?)r.Act["exe"] == exe && exe.Length > 0 &&
-                                            !(long.TryParse((string?)r.Act["id"], out var old) && WindowSource.Exists(old)));
+                                            !(long.TryParse((string?)r.Act["id"], out var old) && WindowSource.Exists(old)),
+                             icon: _windows.FindIcon(window.Icon));  // kept with the tile, for after a restart
                 break;
             case "obs.today":
                 _recent.Note(new RecentAction("obs:today", "note", "Obsidian", "Today's note", "", Run("obs.today")));
@@ -1185,7 +1187,10 @@ sealed class TrayApp : ApplicationContext
             // A window that's still open shows its title and icon as they are now.
             if (r.Kind == "window" && long.TryParse((string?)r.Act["id"], out var hwnd) && open.FirstOrDefault(w => w.Id == hwnd) is { } live)
                 return new { id = r.Id, kind = r.Kind, name = live.App, title = OneLine(live.Title, 120), icon = live.Icon };
-            return new { id = r.Id, kind = r.Kind, name = r.Name, title = OneLine(r.Title, 120), icon = r.Icon };
+            // An icon this run can't hand out (a tile saved before tiles kept theirs) isn't
+            // named: the deck shows the tile's glyph instead of asking for it again and again.
+            var icon = r.Icon.Length > 0 && _windows.FindIcon(r.Icon) != null ? r.Icon : "";
+            return new { id = r.Id, kind = r.Kind, name = r.Name, title = OneLine(r.Title, 120), icon };
         }).ToList();
         lock (_actionsGate)
         {

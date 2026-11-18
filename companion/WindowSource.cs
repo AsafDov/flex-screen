@@ -83,8 +83,14 @@ sealed class WindowSource
     public WindowIcon AddIcon(Bitmap image)
     {
         var icon = Encode(image);
-        lock (_gate) _icons[icon.Id] = icon;
+        AddIcon(icon);
         return icon;
+    }
+
+    /// <summary>An icon already encoded (a Recent tile's, saved from an earlier run), kept the same way.</summary>
+    public void AddIcon(WindowIcon icon)
+    {
+        lock (_gate) _icons[icon.Id] = icon;
     }
 
     /// <summary>

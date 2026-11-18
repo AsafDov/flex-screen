@@ -24,17 +24,29 @@ bool screen_ok = false;
 void setup() {
   Serial.begin(115200);  // UART port: logs only
   pc::begin();           // USB first, so the link and media keys work even if the panel doesn't
+  pc::bootMark("usb");
 
   screen_ok = board::begin();
+  pc::bootMark("board");
   if (!screen_ok) return;
   display::begin();
+  pc::bootMark("display");
   ui::begin();
+  pc::bootMark("ui");
+  board::startPanel();
+  pc::bootMark("panel");
   lv_refr_now(nullptr);  // first frame before the backlight comes on
+  pc::bootMark("frame");
   board::backlight(true);
   Serial.println("flex-screen deck ready");
 }
 
 void loop() {
+  static bool first = true;
+  if (first) {
+    first = false;
+    pc::bootMark("loop");  // from here the deck answers the companion
+  }
   pc::poll();
   if (!screen_ok) {
     delay(5);

@@ -105,7 +105,8 @@ bool beginExpander() {
          expWrite(kExpIo, exp_out);
 }
 
-bool createPanel() {
+// `start`: also start sending frames (begin() leaves that to startPanel()).
+bool createPanel(bool start) {
   esp_lcd_rgb_panel_config_t cfg = {};
   cfg.clk_src = LCD_CLK_SRC_DEFAULT;
   cfg.timings.pclk_hz = 16 * 1000 * 1000;
@@ -139,7 +140,7 @@ bool createPanel() {
   // redraws were 25% faster, but its bounce-buffer refills then raced LVGL for PSRAM
   // and lost: the picture flickered. On the same core it interrupts LVGL and always wins.
   return esp_lcd_new_rgb_panel(&cfg, &panel_handle) == ESP_OK && esp_lcd_panel_reset(panel_handle) == ESP_OK &&
-         esp_lcd_panel_init(panel_handle) == ESP_OK;
+         (!start || esp_lcd_panel_init(panel_handle) == ESP_OK);
 }
 
 bool beginPanel() {
@@ -147,7 +148,7 @@ bool beginPanel() {
   delay(10);
   expSet(kLcdReset, true);
   delay(100);
-  return createPanel();
+  return createPanel(false);
 }
 
 bool beginTouch() {
@@ -195,10 +196,12 @@ bool begin() {
 
 esp_lcd_panel_handle_t panel() { return panel_handle; }
 
+bool startPanel() { return panel_handle && esp_lcd_panel_init(panel_handle) == ESP_OK; }
+
 bool recreatePanel() {
   if (panel_handle) esp_lcd_panel_del(panel_handle);
   panel_handle = nullptr;
-  return createPanel();
+  return createPanel(true);
 }
 
 void backlight(bool on) { expSet(kBacklight, on); }

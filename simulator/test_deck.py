@@ -187,6 +187,17 @@ def test_six_pages(d: Deck) -> None:
     check('pages: no Panels tab', panels is None)
 
 
+def test_icon_asks(d: Deck) -> None:
+    # A Recent tile whose icon never comes (its window closed before the companion
+    # restarted): asked for again after 3 s, then 6 s and so on, not every 3 s.
+    d.page(0)
+    mark = d.mark()
+    d.state('actions', {'list': [{'id': 'z1', 'kind': 'window', 'name': 'Zoom', 'title': 'Zoom Meeting', 'icon': 'feedfacecafe'}]})
+    time.sleep(10.5)
+    asks = [m for m in d.acts(mark) if m.get('a') == 'icon.need' and m.get('id') == 'feedfacecafe']
+    check('icons: one that never comes is asked for less and less often (3 in 10 s, at 0, 3 and 9)', len(asks) == 3, str(len(asks)))
+
+
 def test_today(d: Deck) -> None:
     d.page(0)
     expect_act(d, 'today: Join opens the next meeting', 'Join', 'cal.join', id='e1')
@@ -1244,7 +1255,7 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_day, test_six_pages, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
+        for test in (test_today, test_icon_asks, test_day, test_six_pages, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
                      test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day

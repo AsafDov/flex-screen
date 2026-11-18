@@ -597,6 +597,13 @@ void bench() {
 
 }  // namespace
 
+// For the hello: how many LVGL objects the deck holds.
+static uint32_t countObjects(lv_obj_t *o) {
+  uint32_t n = 1;
+  for (uint32_t i = 0; i < lv_obj_get_child_count(o); i++) n += countObjects(lv_obj_get_child(o, i));
+  return n;
+}
+
 void begin() {
   Preferences prefs;
   prefs.begin("deck", true);
@@ -631,6 +638,7 @@ void begin() {
   windows::build(lv_tabview_add_tab(tv, LV_SYMBOL_LIST "  Windows"));
   capture::build(lv_tabview_add_tab(tv, LV_SYMBOL_COPY "  Capture"));
   numpad::build(lv_tabview_add_tab(tv, LV_SYMBOL_KEYBOARD "  Numpad"));
+  pc::bootMark("ui.pages");
   styleTabs(tv);
   ctxbar::build(scr, content);  // over the pages' bottom, above the tab bar
   call::build();
@@ -643,6 +651,8 @@ void begin() {
   buildToast();
   idle::build();
   buildFlashing();  // last: over the idle clock too
+  pc::bootMark("ui.overlays");
+  pc::bootValue("objects", countObjects(lv_screen_active()) + countObjects(lv_layer_top()) + countObjects(lv_layer_sys()));
 
   update();
 }
