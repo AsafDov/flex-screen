@@ -99,7 +99,7 @@ def upload(path):
                 print(f"ota: {percent}%", flush=True)
 
         send(port, {"t": "ota_end"})
-        msg = wait_for(port, {"ota_done", "ota_error"}, 20)
+        msg = wait_for(port, {"ota_done", "ota_error"}, 60)  # from 0.24.2 the deck writes the image to flash only now
         if msg["t"] == "ota_error":
             sys.exit(f"ota: the deck rejected the image: {msg.get('msg')}")
         print(f"ota: done in {time.time() - started:.1f} s, the deck is restarting")

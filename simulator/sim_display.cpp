@@ -40,6 +40,10 @@ uint32_t vsyncWaitUs() { return 0; }
 uint32_t lastTouchMs() { return last_touch_ms; }
 const void *frontBuffer() { return front; }
 
+// No RGB panel driver here to come out of step.
+void resyncSoon() {}
+void resyncIfNeeded() {}
+
 void begin() {
   lv_init();
   lv_tick_set_cb(tick);

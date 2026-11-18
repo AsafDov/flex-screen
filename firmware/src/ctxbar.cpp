@@ -14,7 +14,7 @@ namespace ui::ctxbar {
 namespace {
 
 constexpr int kH = 46;
-constexpr int kSlot = kH + 8;  // the pages' bottom padding: the bar and the gap above it
+constexpr int kSlot = kH + 8;  // the room at the pages' bottom: the bar and the gap above it
 constexpr int kX = 10, kW = 800 - 2 * kX;
 constexpr int kY = 480 - kBarH - 6 - kH;  // 6 px above the tab bar
 constexpr int kPadL = 10, kPadR = 5;
@@ -55,7 +55,10 @@ struct {
   KeyView items[model::Context::kBankMax];
 } m;
 
-bool shown = true;  // as built; the first update() settles it
+bool shown = false;  // as built: hidden
+bool room = false;   // the pages but the Numpad keep the bar's room at their bottom
+constexpr int kPages = kNumpadPage + 1;
+int32_t page_pad[kPages] = {};  // each page's own bottom padding, as it built itself
 uint32_t context_seen = UINT32_MAX, icons_seen = UINT32_MAX, asked_ms = 0;
 int menu_slot = -1;  // the key the menu changes (the key count: a new one); -1 while it's closed
 String menu_key;     // the app whose bar it changes
@@ -403,6 +406,9 @@ void fill() {
 
 void build(lv_obj_t *screen, lv_obj_t *pages) {
   w.pages = pages;
+  for (int i = 0; i < kPages && i < int(lv_obj_get_child_count(pages)); i++) {
+    page_pad[i] = lv_obj_get_style_pad_bottom(lv_obj_get_child(pages, i), LV_PART_MAIN);
+  }
   w.bar = card(screen, kSurface, kBorder);
   lv_obj_add_flag(w.bar, LV_OBJ_FLAG_IGNORE_LAYOUT);  // the screen's column holds the status bar and the pages
   lv_obj_set_pos(w.bar, kX, kY);
@@ -471,13 +477,23 @@ void build(lv_obj_t *screen, lv_obj_t *pages) {
 }
 
 void update() {
-  const bool want = pc::connected() && (model::context.count > 0 || model::context.bank_count > 0) &&
-                    currentPage() != kNumpadPage;
+  // The pages make room for the bar while it has keys, each but the Numpad, whose keys
+  // are where the bar goes, and they keep it whichever page is on show: going to and from
+  // the Numpad then only hides or shows the bar. Making room laid out all six pages again,
+  // a frame after the page had been drawn without it, which took the bar almost a second
+  // to come back.
+  const bool keys = pc::connected() && (model::context.count > 0 || model::context.bank_count > 0);
+  if (keys != room) {
+    room = keys;
+    for (int i = 0; i < kPages && i < int(lv_obj_get_child_count(w.pages)); i++) {
+      const bool slot = keys && i != kNumpadPage;
+      lv_obj_set_style_pad_bottom(lv_obj_get_child(w.pages, i), page_pad[i] + (slot ? kSlot : 0), 0);
+    }
+  }
+  const bool want = keys && currentPage() != kNumpadPage;
   if (want != shown) {
     shown = want;
-    lv_obj_set_hidden(w.bar, !want);
-    lv_obj_set_style_pad_bottom(w.pages, want ? kSlot : 0, 0);  // the pages make room, or take it back
-    if (want) context_seen = UINT32_MAX;
+    lv_obj_set_hidden(w.bar, !want);  // filled below if anything changed while it was hidden
   }
   if (model::picker.version != picker_seen) {  // a key's list came from the companion
     picker_seen = model::picker.version;

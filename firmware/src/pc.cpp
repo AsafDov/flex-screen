@@ -766,7 +766,10 @@ bool firmware_kept = false;
 void keepFirmware(const char *why) {
   if (firmware_kept) return;
   firmware_kept = true;
-  if (board::keepFirmware()) log("firmware %s kept: %s", kFirmwareVersion, why);
+  if (board::keepFirmware()) {
+    log("firmware %s kept: %s", kFirmwareVersion, why);
+    display::resyncSoon();  // that wrote flash while the panel ran
+  }
 }
 
 void otaReply(const char *type, const char *key = nullptr, uint32_t value = 0) {
@@ -780,21 +783,72 @@ void otaReply(const char *type, const char *key = nullptr, uint32_t value = 0) {
 uint32_t ota_last_ms = 0;
 constexpr uint32_t kOtaGiveUpMs = 20000;
 
-void showUpdate(bool active, bool restarting = false) {
+void showUpdate(bool active, bool restarting = false, bool installing = false) {
   model::FirmwareUpdate &u = model::firmware_update;
   u.active = active;
   u.restarting = restarting;
+  u.installing = installing;
   u.version++;
+}
+
+// The image as it comes, in PSRAM, written to flash only once it's all in: writing flash
+// holds off the panel's refills, so writing each part as it came made the progress screen
+// jump about for the whole update (and left the panel out of step: display::resyncSoon()).
+// Null when there was no room: each part then goes to flash as it comes, as before.
+uint8_t *ota_image = nullptr;
+size_t ota_size = 0;
+size_t ota_received = 0;
+bool ota_wrote = false;       // flash written for this update
+uint32_t ota_install_at = 0;  // all in: when to write it (millis), once the screen says so; 0: not yet
+constexpr uint32_t kInstallShowMs = 400;
+
+void otaFree() {
+  heap_caps_free(ota_image);
+  ota_image = nullptr;
+  ota_install_at = 0;
 }
 
 void otaFail(const char *why) {
   Update.abort();
+  otaFree();
   showUpdate(false);
+  if (ota_wrote) display::resyncSoon();
+  ota_wrote = false;
   JsonDocument doc;
   doc["t"] = "ota_error";
   doc["msg"] = why;
   send(doc);
   Serial.printf("ota: %s\n", why);
+}
+
+// The image is in flash: Update.end() checks it and makes it the next to start.
+void otaFinish() {
+  if (!Update.end()) return otaFail(Update.errorString());  // verifies, sets the boot slot
+  showUpdate(true, true);
+  otaReply("ota_done");
+  cdc.flush();
+  delay(300);
+  ESP.restart();
+}
+
+// Writes the image that came into PSRAM, with the screen dark: the progress screen said so
+// a moment ago, and the deck restarts into the new firmware straight after.
+void otaInstall() {
+  const bool lit = board::backlightOn();
+  board::backlight(false);
+  ota_wrote = true;
+  constexpr size_t kPiece = 4096;
+  for (size_t at = 0; at < ota_size; at += kPiece) {
+    const size_t n = ota_size - at < kPiece ? ota_size - at : kPiece;
+    if (Update.write(ota_image + at, n) != n) {
+      if (lit) board::backlight(true);
+      return otaFail(Update.errorString());
+    }
+    if ((at / kPiece) % 16 == 15) delay(1);  // the USB and idle tasks get a turn
+  }
+  otaFree();
+  otaFinish();
+  if (lit) board::backlight(true);  // only when it failed: otherwise the deck is restarting
 }
 
 // Firmware updates over this link (scripts/ota_upload.py), written into the spare app
@@ -804,13 +858,17 @@ void otaFail(const char *why) {
 void handleOta(const char *t, const JsonDocument &doc) {
   // Bytes received so far. Update.progress() can't stand in for it: it only moves when a
   // whole 4 KB flash sector has been written.
-  static size_t received = 0;
+  size_t &received = ota_received;
   ota_last_ms = millis();
   if (!strcmp(t, "ota")) {
     const size_t size = doc["size"] | 0;
     if (Update.isRunning()) Update.abort();
+    otaFree();
     received = 0;
+    ota_wrote = false;
     if (size == 0 || !Update.begin(size, U_FLASH)) return otaFail(Update.errorString());
+    ota_size = size;
+    ota_image = static_cast<uint8_t *>(heap_caps_malloc(size, MALLOC_CAP_SPIRAM));
     // The companion (0.21.0 on) sends the image's MD5: Update.end() then checks every byte
     // that came against it, on top of the image's own checksum and SHA-256.
     const char *md5 = doc["md5"] | "";
@@ -832,18 +890,27 @@ void handleOta(const char *t, const JsonDocument &doc) {
                               strlen(b64)) != 0) {
       return otaFail("bad base64");
     }
-    if (Update.write(chunk, n) != n) return otaFail(Update.errorString());
+    // An app image starts with 0xE9 (Update.write() says so too, but the parts only reach
+    // it at the end now).
+    if (received == 0 && n && chunk[0] != 0xE9) return otaFail("not a firmware image");
+    if (received + n > ota_size) return otaFail("more than the size given");
+    if (ota_image) {
+      memcpy(ota_image + received, chunk, n);
+    } else {
+      ota_wrote = true;
+      if (Update.write(chunk, n) != n) return otaFail(Update.errorString());
+    }
     received += n;
     model::firmware_update.done = received;
     model::firmware_update.version++;
     otaReply("ota_ack", "off", received);
   } else if (!strcmp(t, "ota_end")) {
-    if (!Update.end()) return otaFail(Update.errorString());  // verifies, sets the boot slot
-    showUpdate(true, true);
-    otaReply("ota_done");
-    cdc.flush();
-    delay(300);
-    ESP.restart();
+    if (!Update.isRunning()) return otaFail("no update in progress");
+    if (received != ota_size) return otaFail("the image ended early");
+    if (!ota_image) return otaFinish();
+    showUpdate(true, false, true);  // "Installing", then the screen goes dark
+    ota_install_at = millis() + kInstallShowMs;
+    if (!ota_install_at) ota_install_at = 1;
   }
 }
 
@@ -974,7 +1041,11 @@ void poll() {
 
   // An update whose sender went away (unplugged, quit) is given up, so the screen comes back
   // and the old firmware carries on.
-  if (Update.isRunning() && millis() - ota_last_ms > kOtaGiveUpMs) otaFail("the update stopped coming");
+  if (ota_install_at && int32_t(millis() - ota_install_at) >= 0) {
+    ota_install_at = 0;
+    otaInstall();
+  }
+  if (Update.isRunning() && !ota_install_at && millis() - ota_last_ms > kOtaGiveUpMs) otaFail("the update stopped coming");
   if (!firmware_kept && millis() > kKeepAnywayMs) keepFirmware("up for 10 minutes");
 
   uint8_t chunk[512];

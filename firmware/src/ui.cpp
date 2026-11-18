@@ -287,10 +287,11 @@ void updateFlashing() {
     return;
   }
   const int percent = u.total ? int(uint64_t(u.done) * 100 / u.total) : 0;
-  if (percent == flashing_percent && !u.restarting) return;  // the text only moves a percent at a time
+  if (percent == flashing_percent && !u.restarting && !u.installing) return;  // the text only moves a percent at a time
   flashing_percent = percent;
-  lv_bar_set_value(flashing.bar, u.restarting ? 100 : percent, LV_ANIM_OFF);
+  lv_bar_set_value(flashing.bar, u.restarting || u.installing ? 100 : percent, LV_ANIM_OFF);
   if (u.restarting) setText(flashing.detail, "Done. Restarting…");
+  else if (u.installing) setText(flashing.detail, "Installing · the screen goes dark for a few seconds");
   else if (u.to.length()) setTextf(flashing.detail, "Firmware %s  ·  %d%%", u.to.c_str(), percent);
   else setTextf(flashing.detail, "New firmware  ·  %d%%", percent);
 }

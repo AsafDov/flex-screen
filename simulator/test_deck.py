@@ -1223,9 +1223,13 @@ def test_firmware_update(d: Deck) -> None:
     ota_start(d, image)
     ota_send(d, image)
     mark = d.mark()
+    sent = time.time()
     d.send({'t': 'ota_end'})
     done = d.wait_for(lambda m: m.get('t') in ('ota_done', 'ota_error'), since=mark)
     check('firmware: a whole image is taken', done.get('t') == 'ota_done', str(done))
+    # It says "Installing" for 0.4 s before it writes (too short to read the screen here: the
+    # restart comes first).
+    check('firmware: and says it installs before it writes', time.time() - sent >= 0.35, f'{time.time() - sent:.2f} s')
     d.restarted = True
     d.reconnect()
     hello = d.sync()

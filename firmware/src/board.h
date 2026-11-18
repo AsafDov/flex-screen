@@ -15,7 +15,11 @@ constexpr int kHeight = 480;
 bool begin();
 
 esp_lcd_panel_handle_t panel();
+// Deletes the panel and creates it again, with new (black) frame buffers: the RGB driver's
+// state from scratch. See display::resyncSoon() for why. False if it couldn't.
+bool recreatePanel();
 void backlight(bool on);
+bool backlightOn();
 
 // Polls the touch controller. Returns true while a finger is down; x/y keep the last
 // position so a release still reports where it happened.

@@ -372,8 +372,9 @@ the first site that matches wins (yours before the built-in ones).
   was last updated on another PC, say), the tray icon says so and the deck shows
   "Firmware 0.21.0 is ready · tap to update". Tap it, or pick **Update the deck's
   firmware** in the tray menu. It goes over the same USB cable in about half a minute,
-  with the progress on the deck. No PlatformIO needed, so any PC with the companion can
-  do it.
+  with the progress on the deck; once it's all in, the screen goes dark for a few seconds
+  while the deck writes it, and comes back on the new firmware. No PlatformIO needed, so
+  any PC with the companion can do it.
 - Nothing changes on the deck until the whole image has arrived and checked out (its MD5,
   checksum and SHA-256); an update that stops on the way (unplugged, the PC asleep) leaves
   the deck on the firmware it had. A new firmware also stays on trial until it has heard

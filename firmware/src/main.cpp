@@ -40,6 +40,7 @@ void loop() {
     delay(5);
     return;
   }
+  display::resyncIfNeeded();
   ui::update();
   const uint32_t idle = lv_timer_handler();
   delay(idle < 5 ? idle : 5);

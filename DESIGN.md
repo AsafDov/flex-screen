@@ -1473,6 +1473,38 @@ Gotchas found after phase 6:
     message with `pages`, as a 0.24.0 companion sends it, leaves the six tabs in their order,
     no Panels tab and no restart); the harness's browser and calendar checks again; the
     companion and the deck firmware build (for the ESP32 too). Not checked: on the deck.
+- A torn screen after an update, a steadier update screen, and a quicker context bar,
+  firmware 0.24.2 (2026-11-18, found on the deck):
+  - After updating to 0.24.1 from the tray, the picture was torn and shifted past the
+    screen's edges until a replug; during the update it jumped about. Not memory speed (the
+    bench gave the same 15 MB/s fill, 8 MB/s copy before and after a power-on), not a
+    restart as such (two palette restarts came back clean). The cause is in ESP-IDF 5.5's
+    RGB driver: Arduino builds it with `CONFIG_LCD_RGB_RESTART_IN_VSYNC`, so it restarts
+    the transfer every frame, and in that branch it never resets `bb_eof_count`, whose
+    parity says which of the two bounce buffers the DMA's EOF interrupt refills. Writing
+    flash holds off its interrupts (they aren't IRAM-safe, and PSRAM can't be read then
+    anyway); EOFs that pile up meanwhile come as one, an odd number lost flips the parity,
+    and from then on the ISR refills the buffer being sent: torn bands for good. The deck
+    writes flash while the panel runs only in an update and when the new firmware is kept
+    (`esp_ota_mark_app_valid_cancel_rollback`, once the companion answers), which is why it
+    showed after the update and a power-on cleared it.
+  - Keeping it: `display::resyncSoon()` after that write; the loop then deletes and creates
+    the panel (the driver's state from scratch: there's no call that resets the count), sets
+    LVGL's buffers to the new frame buffers and redraws everything with the backlight off,
+    a blink of about a third of a second, once after an update.
+  - The update keeps the image in PSRAM as it comes (it's 1.3 MB; there's 6 MB free) and
+    writes it to flash only after `ota_end`, with the screen dark, then restarts: the
+    progress screen holds still while the bar fills ("Installing · the screen goes dark for
+    a few seconds" for 0.4 s first). Without the room it writes each part as it comes, as
+    before. The first byte is checked as the parts come (0xE9), as `Update.write()` did. The
+    companion waits 30 s for `ota_done`; ota_upload.py now 60. A deck shows the steady
+    screen from the update after the one that brings 0.24.2, since the firmware already
+    running receives it.
+  - The context bar took almost a second to come back after the Numpad: showing it changed
+    the bottom padding of the tab view's content, which laid out all six pages again, a frame
+    after the page had been drawn without it (two full redraws, ~250 ms each, plus the
+    layout). Now each page but the Numpad keeps the bar's room at its own bottom while the
+    bar has keys, so the Numpad only hides and shows the bar.
 
 ## Decisions
 

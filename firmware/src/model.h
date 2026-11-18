@@ -292,6 +292,7 @@ struct Toast {
 // is written, so the deck shows how far it is, over everything, until it restarts.
 struct FirmwareUpdate {
   bool active = false;      // from "ota" until the restart, or until it gives up
+  bool installing = false;  // all in: being written to flash, with the screen dark
   bool restarting = false;  // the image is in and checked
   String to;                // the version coming, when the companion says ("0.21.0")
   uint32_t done = 0, total = 0;  // bytes

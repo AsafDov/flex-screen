@@ -30,8 +30,9 @@ Updates
   The deck's firmware: this kit carries it. When the deck runs older firmware (it was
   last updated on another PC, say), the tray icon says so and the deck shows "Firmware
   0.21.0 is ready - tap to update". Tap it, or tray icon > "Update the deck's firmware".
-  It goes over the same USB cable in about half a minute, with the progress on the deck;
-  keep it plugged in meanwhile. If the update stops on the way, nothing changes on the
+  It goes over the same USB cable in about half a minute, with the progress on the deck,
+  then the screen goes dark for a few seconds while the deck writes it; keep it plugged in
+  meanwhile. If the update stops on the way, nothing changes on the
   deck. If the new firmware can't start, unplug the deck and plug it back in: it goes back
   to the firmware it had.
   The companion: it looks for a newer flex-screen release on GitHub a minute after it

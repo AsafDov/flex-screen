@@ -176,6 +176,7 @@ int main(int argc, char **argv) {
       DispatchMessageW(&msg);
     }
     pc::poll();
+    display::resyncIfNeeded();
     ui::update();
     const uint32_t idle = lv_timer_handler();
     // A new frame, or the backlight going on or off (the idle screen), repaints the window.

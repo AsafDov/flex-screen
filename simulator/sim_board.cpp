@@ -5,9 +5,18 @@
 
 namespace board {
 
+namespace {
+bool lit = false;
+}
+
 bool begin() { return true; }
 esp_lcd_panel_handle_t panel() { return nullptr; }
-void backlight(bool on) { sim::setBacklight(on); }
+bool recreatePanel() { return true; }
+void backlight(bool on) {
+  lit = on;
+  sim::setBacklight(on);
+}
+bool backlightOn() { return lit; }
 bool readTouch(int16_t &x, int16_t &y) { return sim::touch(x, y); }
 TouchInfo touchInfo() { return {}; }
 bool keepFirmware() { return false; }  // no app slots here: nothing is ever on trial

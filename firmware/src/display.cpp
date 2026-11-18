@@ -13,8 +13,10 @@ namespace display {
 namespace {
 
 SemaphoreHandle_t vsync;
+lv_display_t *disp = nullptr;
 const void *front = nullptr;
 uint32_t vsync_wait_us = 0;  // total spent waiting for vsync, for the benchmark
+volatile bool resync_wanted = false;
 
 bool IRAM_ATTR onVsync(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t *, void *) {
   BaseType_t woken = pdFALSE;
@@ -56,7 +58,33 @@ uint32_t tick() { return millis(); }
 
 void onRefresh(lv_event_t *e) { lv_heap_set_rendering(lv_event_get_code(e) == LV_EVENT_REFR_START); }
 
+// The panel's vsync callback and its two frame buffers, as LVGL's draw buffers.
+void attachPanel() {
+  esp_lcd_rgb_panel_event_callbacks_t cbs = {};
+  cbs.on_vsync = onVsync;
+  esp_lcd_rgb_panel_register_event_callbacks(board::panel(), &cbs, nullptr);
+  void *fb0 = nullptr;
+  void *fb1 = nullptr;
+  esp_lcd_rgb_panel_get_frame_buffer(board::panel(), 2, &fb0, &fb1);
+  lv_display_set_buffers(disp, fb0, fb1, board::kWidth * board::kHeight * 2, LV_DISPLAY_RENDER_MODE_DIRECT);
+  front = nullptr;
+}
+
 }  // namespace
+
+void resyncSoon() { resync_wanted = true; }
+
+void resyncIfNeeded() {
+  if (!resync_wanted || !disp) return;
+  resync_wanted = false;
+  const bool lit = board::backlightOn();
+  if (lit) board::backlight(false);  // the new frame buffers start black
+  if (!board::recreatePanel()) return;  // nothing to show on: as after a failed start
+  attachPanel();
+  lv_obj_invalidate(lv_display_get_screen_active(disp));  // with the layers over it
+  lv_refr_now(disp);
+  if (lit) board::backlight(true);
+}
 
 uint32_t vsyncWaitUs() { return vsync_wait_us; }
 uint32_t lastTouchMs() { return last_touch_ms; }
@@ -67,18 +95,9 @@ void begin() {
   lv_tick_set_cb(tick);
 
   vsync = xSemaphoreCreateBinary();
-  esp_lcd_rgb_panel_event_callbacks_t cbs = {};
-  cbs.on_vsync = onVsync;
-  esp_lcd_rgb_panel_register_event_callbacks(board::panel(), &cbs, nullptr);
-
-  void *fb0 = nullptr;
-  void *fb1 = nullptr;
-  esp_lcd_rgb_panel_get_frame_buffer(board::panel(), 2, &fb0, &fb1);
-
-  lv_display_t *disp = lv_display_create(board::kWidth, board::kHeight);
+  disp = lv_display_create(board::kWidth, board::kHeight);
   lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
-  lv_display_set_buffers(disp, fb0, fb1, board::kWidth * board::kHeight * 2,
-                         LV_DISPLAY_RENDER_MODE_DIRECT);
+  attachPanel();
   lv_display_set_flush_cb(disp, flush);
   lv_display_add_event_cb(disp, onRefresh, LV_EVENT_REFR_START, nullptr);
   lv_display_add_event_cb(disp, onRefresh, LV_EVENT_REFR_READY, nullptr);
