@@ -11,7 +11,7 @@
 namespace ui::approval {
 namespace {
 
-constexpr int kX = 10, kY = kBarH + 6, kW = 800 - 2 * kX, kH = 70;
+constexpr int kX = kColX, kY = kColY, kW = kColW, kH = 70;  // over the pages, right of the rail
 constexpr int kButtonH = 46;
 
 struct {

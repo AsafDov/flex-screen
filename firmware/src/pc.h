@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.25.1";
+constexpr const char *kFirmwareVersion = "0.26.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop

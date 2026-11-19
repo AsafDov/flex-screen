@@ -12,8 +12,8 @@
 namespace ui::ask {
 namespace {
 
-constexpr int kX = 10, kW = 800 - 2 * kX;
-constexpr int kTop = kBarH + 6;
+constexpr int kX = kColX, kW = kColW;  // over the pages, right of the rail
+constexpr int kTop = kColY;
 constexpr int kButtonH = 46, kButtonNoteH = 58;
 constexpr int kMax = model::Question::kMax;
 

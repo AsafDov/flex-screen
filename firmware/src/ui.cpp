@@ -46,8 +46,16 @@ struct {
   lv_obj_t *layer, *layer_text;
   lv_obj_t *pc;
   lv_obj_t *meeting, *meeting_text;
-  lv_obj_t *pills;  // everything between the date and the volume button
+  lv_obj_t *pills;  // everything left of the volume button
 } bar;
+
+// The rail down the left: the clock, a button per page, the shortcuts' button.
+constexpr int kPages = kNumpadPage + 1;
+struct {
+  lv_obj_t *root;
+  lv_obj_t *tabs[kPages], *icons[kPages], *names[kPages];
+  int shown = -1;  // the page it shows as current
+} rail;
 
 // The bar's pills share its width with the volume and mic buttons, which must stay on
 // screen: in the simulator a long meeting, Claude needing approval, a failed build and the
@@ -70,6 +78,8 @@ int flashing_percent = -1;
 lv_obj_t *tabview;
 constexpr uint32_t kDevTab = kDevPage;
 constexpr uint32_t kToastMs = 4000;
+// A toast sits over the bottom of the pages, centered on them, just above the context bar.
+constexpr int kToastX = kRailW / 2, kToastY = -(480 - kRailH);
 
 constexpr uint32_t kPreviewHoldMs = 800;
 // A second tap this soon on a toggle is a bounce, not a change of mind: two quick
@@ -159,31 +169,25 @@ lv_obj_t *barButton(lv_obj_t *parent, lv_event_cb_t cb) {
   return b;
 }
 
+// The status line: along the top, right of the rail (which has the clock).
 void buildStatusBar(lv_obj_t *parent) {
   lv_obj_t *b = box(parent);
-  lv_obj_set_size(b, LV_PCT(100), kBarH);
-  lv_obj_set_style_pad_hor(b, 12, 0);
+  lv_obj_set_pos(b, kRailW, 0);
+  lv_obj_set_size(b, 800 - kRailW, kStatusH);
+  lv_obj_set_style_pad_hor(b, 6, 0);  // at 10/8 the layer pill no longer fit beside a meeting, Claude and a build
   lv_obj_set_style_border_side(b, LV_BORDER_SIDE_BOTTOM, 0);
   lv_obj_set_style_border_color(b, hex(0x22272E), 0);
   lv_obj_set_style_border_width(b, 1, 0);
-  flexRow(b, 8);
-
-  bar.time = label(b, "--:--", &lv_font_montserrat_20, kText);
-  bar.date = label(b, "", &lv_font_montserrat_16, kMuted);
-  lv_obj_set_style_margin_right(bar.date, 4, 0);
-  // Holding the clock (or the date) opens the deck's diagnostics; a tap does nothing.
-  for (lv_obj_t *clock : {bar.time, bar.date}) {
-    lv_obj_set_clickable(clock, true);
-    lv_obj_set_ext_click_area(clock, 6);
-    lv_obj_add_event_cb(clock, [](lv_event_t *) { diag::open(); }, LV_EVENT_LONG_PRESSED, nullptr);
-  }
+  flexRow(b, 6);
 
   // The pills take what's left and are cut off at its edge, never the buttons.
   b = bar.pills = box(b);
   lv_obj_set_size(b, 1, LV_SIZE_CONTENT);
   lv_obj_set_flex_grow(b, 1);
   lv_obj_set_scrollable(b, false);
-  flexRow(b, 6);  // at 8 the layer pill missed by 5 px beside a meeting, Claude and a build
+  // Beside the rail, with gaps of 8 and 6 here and beside the buttons, the layer pill missed
+  // by a pixel beside a meeting, Claude and a build.
+  flexRow(b, 5);
 
   lv_obj_t *pc = bar.pc = pill(b);
   bar.pc_dot = box(pc);
@@ -252,7 +256,7 @@ void buildToast() {
   lv_obj_set_style_shadow_color(toast.root, hex(0x000000), 0);
   lv_obj_set_style_shadow_opa(toast.root, LV_OPA_50, 0);
   flexRow(toast.root, 10);
-  lv_obj_align(toast.root, LV_ALIGN_BOTTOM_MID, 0, -(kBarH + kGap));
+  lv_obj_align(toast.root, LV_ALIGN_BOTTOM_MID, kToastX, kToastY);
   lv_obj_set_clickable(toast.root, true);
   lv_obj_add_event_cb(toast.root, onToast, LV_EVENT_CLICKED, nullptr);
   toast.icon = label(toast.root, "", &lv_font_montserrat_20, kGreen);
@@ -304,27 +308,79 @@ void updateFlashing() {
   else setTextf(flashing.detail, "New firmware  ·  %d%%", percent);
 }
 
-void styleTabs(lv_obj_t *tabview) {
-  lv_obj_t *tabs = lv_tabview_get_tab_bar(tabview);
-  lv_obj_set_style_bg_color(tabs, hex(kBg), 0);
-  lv_obj_set_style_border_side(tabs, LV_BORDER_SIDE_TOP, 0);
-  lv_obj_set_style_border_color(tabs, hex(0x22272E), 0);
-  lv_obj_set_style_border_width(tabs, 1, 0);
-  lv_obj_set_style_pad_hor(tabs, 12, 0);
-  lv_obj_set_style_pad_ver(tabs, 3, 0);
-  lv_obj_set_style_pad_column(tabs, 6, 0);
-  const uint32_t n = lv_obj_get_child_count(tabs);
-  for (uint32_t i = 0; i < n; i++) {
-    lv_obj_t *t = lv_obj_get_child(tabs, i);
-    lv_obj_set_style_radius(t, 10, 0);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(t, hex(kMuted), 0);
-    lv_obj_set_style_bg_opa(t, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(t, 0, LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(t, hex(kText), LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(t, hex(kSelected), LV_STATE_CHECKED);
-    lv_obj_set_style_bg_opa(t, LV_OPA_COVER, LV_STATE_CHECKED);
+// The page buttons are the rail's own, not the tabview's bar (hidden): the clock sits above
+// them, the shortcuts' button below, and the rail stops above the context bar.
+const char *const kPageIcons[kPages] = {LV_SYMBOL_HOME, LV_SYMBOL_AUDIO, LV_SYMBOL_EDIT,
+                                        LV_SYMBOL_LIST, LV_SYMBOL_COPY, LV_SYMBOL_KEYBOARD};
+const char *const kPageNames[kPages] = {"Today", "Audio", "Dev", "Windows", "Capture", "Numpad"};
+constexpr int kRailTabH = 47;
+
+// Lights the current page's button. Pages change from many places (a swipe, a pill, the
+// context bar's chip, the companion), so update() asks each pass.
+void updateRail() {
+  const int page = int(lv_tabview_get_tab_active(tabview));
+  if (page == rail.shown) return;
+  rail.shown = page;
+  for (int i = 0; i < kPages; i++) {
+    const bool on = i == page;
+    lv_obj_set_style_bg_opa(rail.tabs[i], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    setTextColor(rail.icons[i], on ? kText : kMuted);
+    setTextColor(rail.names[i], on ? kText : kMuted);
   }
+}
+
+void onRailTab(lv_event_t *e) {
+  lv_tabview_set_active(tabview, uint32_t(intptr_t(lv_event_get_user_data(e))), LV_ANIM_OFF);
+  pc::releaseAllKeys();  // no numpad key left held down
+  updateRail();
+}
+
+void railDivider(lv_obj_t *parent) {
+  lv_obj_t *d = box(parent);
+  lv_obj_set_size(d, kRailW - 24, 1);
+  lv_obj_set_style_bg_color(d, hex(0x22272E), 0);
+  lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
+}
+
+// The rail, all but the shortcuts' button: launcher::build() adds that at its foot.
+void buildRail(lv_obj_t *parent) {
+  lv_obj_t *r = rail.root = box(parent);
+  lv_obj_set_pos(r, 0, 0);
+  lv_obj_set_size(r, kRailW, kRailH);
+  lv_obj_set_style_border_side(r, LV_BORDER_SIDE_RIGHT, 0);
+  lv_obj_set_style_border_color(r, hex(0x22272E), 0);
+  lv_obj_set_style_border_width(r, 1, 0);
+  lv_obj_set_style_pad_left(r, 4, 0);
+  lv_obj_set_style_pad_right(r, 3, 0);  // and the border
+  lv_obj_set_style_pad_ver(r, 6, 0);
+  flexCol(r, 3);
+  lv_obj_set_flex_align(r, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+  // Holding the clock (or the date) opens the deck's diagnostics; a tap does nothing.
+  lv_obj_t *clock = box(r);
+  lv_obj_set_size(clock, LV_PCT(100), 42);
+  flexCol(clock, 0);
+  lv_obj_set_flex_align(clock, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_clickable(clock, true);
+  lv_obj_add_event_cb(clock, [](lv_event_t *) { diag::open(); }, LV_EVENT_LONG_PRESSED, nullptr);
+  bar.time = label(clock, "--:--", &lv_font_montserrat_20, kText);
+  bar.date = label(clock, "", &small_font, kMuted);
+  railDivider(r);
+
+  for (int i = 0; i < kPages; i++) {
+    lv_obj_t *b = rail.tabs[i] = button(r, LV_PCT(100), kRailTabH, kSurface, onRailTab, reinterpret_cast<void *>(intptr_t(i)));
+    lv_obj_set_style_radius(b, 10, 0);
+    lv_obj_set_style_bg_color(b, hex(kSelected), 0);  // shown on the current page's only
+    flexCol(b, 1);
+    lv_obj_set_flex_align(b, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    rail.icons[i] = label(b, kPageIcons[i], &lv_font_montserrat_16, kMuted);
+    rail.names[i] = label(b, kPageNames[i], &small_font, kMuted);
+  }
+
+  lv_obj_t *gap = box(r);
+  lv_obj_set_size(gap, 1, 1);
+  lv_obj_set_flex_grow(gap, 1);
+  railDivider(r);
 }
 
 void updateClock() {
@@ -337,8 +393,8 @@ void updateClock() {
   char buf[32];
   strftime(buf, sizeof(buf), "%H:%M", &tm);
   lv_label_set_text(bar.time, buf);
-  strftime(buf, sizeof(buf), "%a %e %b", &tm);
-  lv_label_set_text(bar.date, buf);
+  strftime(buf, sizeof(buf), "%a", &tm);
+  lv_label_set_text_fmt(bar.date, "%s %d", buf, tm.tm_mday);  // "Thu 19": the rail's width
 }
 
 void updateCompanion() {
@@ -468,7 +524,6 @@ void updateMeeting() {
   // In a call the call pill says enough.
   const bool show = e && e->start - now < kMeetingAheadSecs && model::call.app.length() == 0;
   lv_obj_set_hidden(bar.meeting, !show);
-  lv_obj_set_hidden(bar.date, show);  // room for it; the date is on the Today page anyway
   bar_changed = true;
   if (!show) return;
   const int64_t mins = (e->start - now + 59) / 60;
@@ -541,7 +596,7 @@ void updateToast() {
     setTextUpTo(toast.text, model::toast.text.c_str(), 580);
     lv_obj_set_style_border_color(toast.root, hex(border), 0);
     lv_obj_set_hidden(toast.root, false);
-    lv_obj_align(toast.root, LV_ALIGN_BOTTOM_MID, 0, -(kBarH + kGap));
+    lv_obj_align(toast.root, LV_ALIGN_BOTTOM_MID, kToastX, kToastY);
     toast_ms = millis();
   } else if (!lv_obj_is_hidden(toast.root) && millis() - toast_ms >= kToastMs) {
     lv_obj_set_hidden(toast.root, true);
@@ -640,17 +695,18 @@ void begin() {
   lv_obj_t *scr = lv_screen_active();
   lv_obj_set_style_bg_color(scr, hex(kBg), 0);
   lv_obj_set_style_text_color(scr, hex(kText), 0);
-  lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_scrollable(scr, false);
 
   buildStatusBar(scr);
 
+  // The pages fill the rest: right of the rail, under the status line, down to the bottom
+  // (each but the Numpad keeps room there for the context bar while it shows).
   lv_obj_t *tv = tabview = lv_tabview_create(scr);
-  lv_obj_set_width(tv, LV_PCT(100));
-  lv_obj_set_flex_grow(tv, 1);
+  lv_obj_set_pos(tv, kRailW, kStatusH);
+  lv_obj_set_size(tv, 800 - kRailW, 480 - kStatusH);
   lv_obj_set_style_bg_opa(tv, LV_OPA_TRANSP, 0);
-  lv_tabview_set_tab_bar_position(tv, LV_DIR_BOTTOM);
-  lv_tabview_set_tab_bar_size(tv, kBarH);
+  lv_tabview_set_tab_bar_size(tv, 0);
+  lv_obj_set_hidden(lv_tabview_get_tab_bar(tv), true);  // the rail has the page buttons
   lv_obj_t *content = lv_tabview_get_content(tv);
   lv_obj_set_scrollable(content, false);
   // LVGL hands a gesture to the nearest parent that doesn't pass gestures on, and every
@@ -665,11 +721,11 @@ void begin() {
   capture::build(lv_tabview_add_tab(tv, LV_SYMBOL_COPY "  Capture"));
   numpad::build(lv_tabview_add_tab(tv, LV_SYMBOL_KEYBOARD "  Numpad"));
   pc::bootMark("ui.pages");
-  styleTabs(tv);
-  ctxbar::build(scr, content);  // over the pages' bottom, above the tab bar
+  buildRail(scr);
+  ctxbar::build(scr, content);  // along the bottom, over the pages' room for it
   call::build();
   cheat::build();
-  launcher::build(lv_tabview_get_tab_bar(tv));  // its button ends the tab bar; its panel goes over the pages
+  launcher::build(rail.root);  // its button ends the rail; its panel goes over the pages
   day::build();  // under the sessions board, the approval banner and Claude's questions
   diag::build();  // the same: an approval or a question can come while it's open
   sessions::build();  // under the approval banner and Claude's questions, which can come while it's open
@@ -709,6 +765,7 @@ void update() {
   updateMeeting();
   updateToast();
   updateArt();
+  updateRail();
   today::update();
   day::update();
   audio::update();

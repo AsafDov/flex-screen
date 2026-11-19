@@ -64,7 +64,13 @@ def tap(d: Deck, text: str, exact: bool = False, dx: int = 0, dy: int = 0, hold:
     return True
 
 
-CHIPS_LEFT, CHIPS_RIGHT = 22, 336  # the Tasks card's chip row, on Capture
+CHIPS_LEFT, CHIPS_RIGHT = 98, 384  # the Tasks card's chip row, on Capture
+RAIL_W, RAIL_H = 76, 422  # the page rail down the left, above the context bar
+
+
+def rail_tab(d: Deck, name: str) -> dict | None:
+    """A page's button (its name) in the rail."""
+    return next((n for n in shown(d) if n.get('text') == name and n['x'] < RAIL_W and n['y'] < RAIL_H), None)
 
 
 def tap_chip(d: Deck, text: str, exact: bool = False) -> bool:
@@ -87,9 +93,9 @@ def tap_chip(d: Deck, text: str, exact: bool = False) -> bool:
             d.tap(x, y)
             return True
         if x > CHIPS_RIGHT - 10:
-            d.drag(300, y, 80, y)
+            d.drag(376, y, 156, y)
         else:
-            d.drag(80, y, 300, y)
+            d.drag(156, y, 376, y)
     return False
 
 
@@ -172,7 +178,7 @@ def test_day(d: Deck) -> None:
 
 def test_six_pages(d: Deck) -> None:
     def tab(name: str) -> dict | None:
-        return label(d, name, below=436)
+        return rail_tab(d, name)
 
     # A 0.24.0 companion sends the profile's "pages"; the deck keeps its six tabs, in their order.
     d.send({'t': 'settings', 'palette': 'base', 'idle_clock_s': 600, 'idle_off_s': 1800, 'cheat_hold_s': 10,
@@ -184,7 +190,7 @@ def test_six_pages(d: Deck) -> None:
     except OSError:  # reading the screen needs the same connection: a restart would have closed it
         tabs, panels = [None], None
     check('pages: the six tabs stay, in their order, whatever the settings say',
-          all(tabs) and [t['x'] for t in tabs] == sorted(t['x'] for t in tabs), str([(t or {}).get('x') for t in tabs]))
+          all(tabs) and [t['y'] for t in tabs] == sorted(t['y'] for t in tabs), str([(t or {}).get('y') for t in tabs]))
     check('pages: no Panels tab', panels is None)
 
 
@@ -207,7 +213,7 @@ def test_today(d: Deck) -> None:
     expect_act(d, 'today: previous track', PREV, 'media.prev', exact=True, below=180)
     expect_act(d, 'today: Recent tile runs it again', 'Obsidian', 'recent.run', id='a2', below=180)
     mark = d.mark()
-    d.drag(60, 336, 200, 336)
+    d.drag(136, 320, 280, 320)
     check('today: volume slider sets the volume', did(d, mark, 'vol.set') is not None)
     check('today: the tasks pill counts open and due', on_screen(d, '10 to do · 4 due'))
     tap(d, '10 to do')
@@ -324,7 +330,7 @@ def test_tasks(d: Deck) -> None:
         d.drag(200, 330, 200, 160, steps=20, ms=600)
     undated = label(d, 'Fix the balcony light')
     check('tasks: the undated come after the dated, and the list scrolls to them',
-          on_screen(d, 'NO DATE', exact=True) and undated is not None and undated['y'] + undated['h'] <= 367, str(undated))
+          on_screen(d, 'NO DATE', exact=True) and undated is not None and undated['y'] + undated['h'] <= 411, str(undated))
     d.shot(os.path.join(OUT, 'tasks-all.png'))
     tap_chip(d, 'Scheduled  8', exact=True)
     check('tasks: Scheduled starts at the top, the dated tasks grouped by day',
@@ -438,7 +444,7 @@ def test_task_sources(d: Deck) -> None:
     d.state('tasks', fixtures.task_sources())
     tap_chip(d, 'Scheduled  ')
     check('sources: a Jira issue is under Scheduled by its due day, with its key, priority and status',
-          on_screen(d, 'Checkout fails on Safari') and on_screen(d, 'Mon 9 Nov  ·  ACME-142  ·  High  ·'))  # cut short on the card
+          on_screen(d, 'Checkout fails on Safari') and on_screen(d, 'Mon 9 Nov  ·  ACME-142  ·  High'))  # the status cut short on the card
     n = label(d, 'Checkout fails on Safari')
     mark = d.mark()
     if n:
@@ -551,7 +557,7 @@ def zoom_buttons(d: Deck, h: int) -> list[dict]:
         if inside and n['d'] <= panel_depth:
             break
         if not inside:
-            inside = (n['x'], n['y'], n['w'], n['h']) == (10, 50, 780, 380) and not n.get('hidden')
+            inside = (n['x'], n['y'], n['w'], n['h']) == (82, 44, 712, 378) and not n.get('hidden')  # right of the rail
             panel_depth = n['d']
             continue
         if hidden_depth is not None and n['d'] > hidden_depth:
@@ -739,11 +745,13 @@ def launcher_open(d: Deck) -> bool:
 
 def test_launcher(d: Deck) -> None:
     d.page(0)
-    button = next((n for n in shown(d) if n['y'] >= 436 and n['w'] == 58), None)
-    check('launcher: its button ends the tab bar', button is not None and button['x'] + button['w'] <= 790
-          and abs(button['x'] + button['w'] // 2 - fixtures.LAUNCHER[0]) <= 2, str(button))
-    tabs = [n for n in shown(d) if n['y'] >= 436 and n.get('text', '').strip().endswith(('Today', 'Numpad'))]
-    check('launcher: all six tabs still fit beside it', len(tabs) == 2 and all(t['x'] + t['w'] < 730 for t in tabs), str(tabs))
+    button = next((n for n in shown(d) if n['x'] < RAIL_W and n['h'] == 44 and 300 < n['y'] < RAIL_H), None)
+    check('launcher: its button is at the foot of the rail', button is not None and button['y'] + button['h'] <= RAIL_H
+          and abs(button['x'] + button['w'] // 2 - fixtures.LAUNCHER[0]) <= 2
+          and abs(button['y'] + button['h'] // 2 - fixtures.LAUNCHER[1]) <= 2, str(button))
+    numpad = rail_tab(d, 'Numpad')
+    check('launcher: all six page buttons fit above it', all(rail_tab(d, n) for n in ('Today', 'Numpad')) and numpad
+          and button and numpad['y'] + numpad['h'] < button['y'], str((numpad, button)))
     d.tap(*fixtures.LAUNCHER)
     check('launcher: the button opens it', launcher_open(d))
     names = ['Gmail', 'Calendar', "Today's note", 'Spotify', 'VS Code', 'Terminal']
@@ -770,7 +778,7 @@ def test_launcher(d: Deck) -> None:
     d.tap(*fixtures.LAUNCHER)
     check('launcher: the button again closes it', not launcher_open(d))
 
-    tap(d, 'Capture', below=436)
+    tap_node(d, rail_tab(d, 'Capture'))
     check('launcher: the tabs still switch pages', on_screen(d, 'CLIPBOARD'))
     d.tap(*fixtures.LAUNCHER)
     check('launcher: it opens over any page', launcher_open(d) and on_screen(d, 'Gmail', exact=True))
@@ -806,7 +814,7 @@ def test_launcher(d: Deck) -> None:
     d.settle()
 
 
-BAR_TOP = 384  # the context bar's top edge
+BAR_TOP = 428  # the context bar's top edge
 
 
 def bar_key(d: Deck, name: str) -> dict | None:
@@ -880,7 +888,7 @@ def test_context_bar(d: Deck) -> None:
     keys = [n for n in shown(d) if n['y'] >= BAR_TOP and n['c'] == 'label' and n.get('text') and n['x'] > 130]
     check('context bar: eight keys at most', bar_key(d, 'Mute') and not any('Ninth' in n.get('text', '') for n in keys),
           str([n.get('text') for n in keys]))
-    inside = all(n['x'] + n['w'] <= 790 for n in shown(d) if n['y'] >= BAR_TOP and n['y'] < 436)
+    inside = all(n['x'] + n['w'] <= 790 for n in shown(d) if n['y'] >= BAR_TOP)
     check('context bar: eight long keys stay inside it', inside)
     d.shot(os.path.join(OUT, 'context-bar-stress.png'))
 
@@ -1131,11 +1139,8 @@ def firmware_version() -> str:
 
 
 def bar_clock(d: Deck) -> dict | None:
-    """The status bar's time, "HH:MM", at its left end."""
-    return next((n for n in shown(d) if n['y'] < kBarH and n['x'] < 60 and re.fullmatch(r'\d\d:\d\d', n.get('text', ''))), None)
-
-
-kBarH = 44
+    """The rail's time, "HH:MM", at its top."""
+    return next((n for n in shown(d) if n['y'] < 30 and n['x'] < RAIL_W and re.fullmatch(r'\d\d:\d\d', n.get('text', ''))), None)
 
 
 def counter(d: Deck, name: str) -> str:

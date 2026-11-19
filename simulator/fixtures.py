@@ -22,8 +22,8 @@ ICONS = {
     'ic-gmail': (234, 67, 53),
 }
 
-# Where the launcher's button sits: the right end of the tab bar.
-LAUNCHER = (759, 458)
+# Where the launcher's button sits: the foot of the page rail.
+LAUNCHER = (38, 394)  # the foot of the rail
 
 # VS Code's actions for the context bar, then the everyday ones, as the companion sends them.
 VSCODE_BANK = [

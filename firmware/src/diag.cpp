@@ -15,7 +15,7 @@ namespace ui::diag {
 namespace {
 
 // Where the sessions board sits: under the status bar, over the pages and the tab bar.
-constexpr int kX = 8, kY = kBarH + 4, kW = 800 - 2 * kX, kH = 480 - kY - 8;
+constexpr int kX = 8, kY = kStatusH + 4, kW = 800 - 2 * kX, kH = 480 - kY - 8;  // the whole width: it's a tool
 constexpr int kPad = 12, kCardGap = 10;
 constexpr int kCardW = (kW - 2 * kPad - 2 * kCardGap) / 3;
 constexpr int kTopH = 120;

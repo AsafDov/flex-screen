@@ -9,7 +9,7 @@
 namespace ui::cheat {
 namespace {
 
-constexpr int kW = 788, kH = 480 - kBarH - 10;
+constexpr int kW = 788, kH = 480 - kStatusH - 10;  // the whole width, over the rail too: it's brief
 constexpr int kPad = 14, kBorderW = 2;
 constexpr int kHeadH = 30;
 constexpr int kAreaW = kW - 2 * (kPad + kBorderW);
@@ -139,7 +139,7 @@ void fill(const model::Keymap::Layer &layer, int held_key) {
 void build() {
   w.root = card(lv_layer_top(), kSurface, kBorder);
   lv_obj_set_size(w.root, kW, kH);
-  lv_obj_set_pos(w.root, (800 - kW) / 2, kBarH + 4);
+  lv_obj_set_pos(w.root, (800 - kW) / 2, kStatusH + 4);
   lv_obj_set_style_border_width(w.root, kBorderW, 0);
   lv_obj_set_style_radius(w.root, 18, 0);
   lv_obj_set_style_pad_all(w.root, kPad, 0);

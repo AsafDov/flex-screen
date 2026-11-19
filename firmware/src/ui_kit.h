@@ -19,8 +19,20 @@ extern uint32_t kHighlight, kHighlightLine, kHighlightText;
 // Sets the colors above; unknown names give "base".
 void usePalette(const char *name);
 
-constexpr int kBarH = 44;  // status bar and page tabs
+// The frame around the pages: a rail of page buttons down the left (the clock at its top,
+// the shortcuts at its foot), the status line along the top beside it, and the context
+// bar along the whole bottom, under the rail too, which ends above it.
 constexpr int kGap = 10;
+constexpr int kRailW = 76;
+constexpr int kStatusH = 40;
+constexpr int kCtxH = 46;
+constexpr int kCtxY = 480 - 6 - kCtxH;  // 428
+constexpr int kRailH = kCtxY - 6;       // 422
+// Banners over the pages (an approval, Claude's questions): as wide as the pages' cards.
+constexpr int kColX = kRailW + kGap, kColW = 800 - kColX - kGap, kColY = kStatusH + 6;
+// Panels over the pages (the session board, the call): right of the rail, under the status
+// line, above the context bar.
+constexpr int kPaneX = kRailW + 6, kPaneW = 800 - kPaneX - 6, kPaneY = kStatusH + 4, kPaneH = kRailH - kPaneY;
 
 // Montserrat plus accented Latin, Cyrillic and punctuation (·, …, dashes), with DejaVu as the
 // last fallback for Hebrew and Arabic. Use these for any text that comes from the PC.

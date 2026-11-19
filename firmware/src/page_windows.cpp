@@ -8,11 +8,11 @@
 namespace ui::windows {
 namespace {
 
-constexpr int kZonePanelW = 300;
+constexpr int kZonePanelW = 270;  // the tiles get the rest: the pages are 704 px wide beside the rail
 constexpr int kTileW = 143;
 constexpr int kTileH = 100;
-constexpr int kThumbW = 40;
-constexpr int kThumbH = 26;
+constexpr int kThumbW = 28;
+constexpr int kThumbH = 18;
 constexpr uint32_t kCodeBg = 0x0A0C0F;
 constexpr uint32_t kScreenBg = 0x14181D;
 constexpr uint32_t kThumbOff = 0x4A525C;
@@ -135,9 +135,11 @@ void buildTile(lv_obj_t *grid, int i) {
   lv_obj_set_style_border_width(t.root, 0, 0);
   lv_obj_add_event_cb(t.root, onTileTap, LV_EVENT_SHORT_CLICKED, reinterpret_cast<void *>(intptr_t(i)));
   lv_obj_add_event_cb(t.root, onTileHold, LV_EVENT_LONG_PRESSED, reinterpret_cast<void *>(intptr_t(i)));
-  // The icon beside the app and title: stacked, they didn't fit once the context bar took
-  // some of the page's height.
-  flexRow(t.root, 8);
+  // The icon above the app and title, so they have the tile's whole width: beside the rail
+  // the tiles are ~126 px wide, and beside the icon "Obsidian" read "Obsid…". (With the
+  // tab bar gone there's the height for it again.)
+  flexCol(t.root, 4);
+  lv_obj_set_flex_align(t.root, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
   lv_obj_t *top = box(t.root);
   lv_obj_set_size(top, icons::kSize, icons::kSize);
@@ -150,8 +152,7 @@ void buildTile(lv_obj_t *grid, int i) {
   lv_obj_center(label(t.initials, "", &small_font, kText));
 
   lv_obj_t *text = box(t.root);
-  lv_obj_set_size(text, 1, LV_SIZE_CONTENT);  // any width: the tile's row gives it the rest
-  lv_obj_set_flex_grow(text, 1);
+  lv_obj_set_size(text, LV_PCT(100), LV_SIZE_CONTENT);
   flexCol(text, 0);
   t.app = label(text, "", &body_font, kText);
   ellipsize(t.app);
@@ -204,9 +205,9 @@ void buildWindows(lv_obj_t *row) {
 }
 
 void buildLayoutButton(lv_obj_t *parent, int i) {
-  lv_obj_t *b = button(parent, 134, 40, kRaised, onLayout, reinterpret_cast<void *>(intptr_t(i)));
+  lv_obj_t *b = button(parent, LV_PCT(48), 40, kRaised, onLayout, reinterpret_cast<void *>(intptr_t(i)));  // two to a row
   lv_obj_set_style_radius(b, 12, 0);
-  lv_obj_set_style_pad_hor(b, 8, 0);
+  lv_obj_set_style_pad_hor(b, 6, 0);
   lv_obj_set_style_border_color(b, hex(kAccent), 0);
   flexRow(b, 6);
   lv_obj_t *thumb = box(b);

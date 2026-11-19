@@ -162,7 +162,7 @@ void onAction(lv_event_t *e) {
   if (i < model::actions.count) pc::runRecent(model::actions.list[i].id.c_str());
 }
 
-// The Recent card's tiles, five across, each the same width whether used or not.
+// The Recent card's rows, five down, each the same height whether used or not.
 void buildActions(lv_obj_t *right) {
   lv_obj_t *c = card(right);
   lv_obj_set_width(c, LV_PCT(100));
@@ -187,43 +187,35 @@ void buildActions(lv_obj_t *right) {
   lv_obj_set_width(w.actions_note, LV_PCT(100));
   lv_label_set_long_mode(w.actions_note, LV_LABEL_LONG_MODE_WRAP);
 
+  // A row each, sharing the card's height: five tiles across the narrower page cut their
+  // names to "VS C…" and "Obsid…".
   w.actions_row = box(c);
   lv_obj_set_width(w.actions_row, LV_PCT(100));
   lv_obj_set_flex_grow(w.actions_row, 1);
-  flexRow(w.actions_row, 6);
-  lv_obj_set_flex_align(w.actions_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-  const int line = lv_font_get_line_height(&small_font);
+  flexCol(w.actions_row, 5);
   for (int i = 0; i < model::Actions::kMax; i++) {
     ActionTile &t = w.tiles[i];
     t.asked_ms = 0;
-    t.root = button(w.actions_row, 1, LV_PCT(100), kRaised, onAction, reinterpret_cast<void *>(intptr_t(i)));
+    t.root = button(w.actions_row, LV_PCT(100), 1, kRaised, onAction, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_set_flex_grow(t.root, 1);
-    lv_obj_set_style_radius(t.root, 12, 0);
-    lv_obj_set_style_pad_all(t.root, 6, 0);
-    lv_obj_set_style_pad_top(t.root, 10, 0);
-    flexCol(t.root, 4);
-    lv_obj_set_flex_align(t.root, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_radius(t.root, 10, 0);
+    lv_obj_set_style_pad_hor(t.root, 6, 0);
+    flexRow(t.root, 10);
 
     t.badge = card(t.root, kSurface, kSurface);
     lv_obj_set_size(t.badge, icons::kSize + 4, icons::kSize + 4);
     lv_obj_set_style_pad_all(t.badge, 0, 0);
-    lv_obj_set_style_radius(t.badge, 9, 0);
+    lv_obj_set_style_radius(t.badge, 8, 0);
     t.image = lv_image_create(t.badge);
     lv_obj_set_size(t.image, icons::kSize, icons::kSize);
     lv_obj_center(t.image);
     t.glyph = label(t.badge, "", &lv_font_montserrat_16, kText);
     lv_obj_center(t.glyph);
 
-    t.name = label(t.root, "", &small_font, kText);
-    lv_obj_set_width(t.name, LV_PCT(100));
-    lv_obj_set_style_text_align(t.name, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(t.name, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_height(t.name, line);
+    t.name = label(t.root, "", &body_font, kText);
+    lv_obj_set_height(t.name, lv_font_get_line_height(&body_font));
     t.title = label(t.root, "", &small_font, kMuted);
-    lv_obj_set_width(t.title, LV_PCT(100));
-    lv_obj_set_style_text_align(t.title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(t.title, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_height(t.title, line * 3);  // up to three lines, then "…"
+    fillRow(t.title);
   }
 }
 
@@ -253,14 +245,14 @@ void updateActions() {
   for (int i = 0; i < model::Actions::kMax; i++) {
     ActionTile &t = w.tiles[i];
     const bool used = i < count;
-    // An unused slot keeps its width, so the others stay where they are.
+    // An unused slot keeps its height, so the others stay where they are.
     if (lv_obj_is_clickable(t.root) != used) {
       lv_obj_set_style_opa(t.root, used ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
       lv_obj_set_clickable(t.root, used);
     }
     if (!used) continue;
     const model::RecentAction &x = a.list[i];
-    setText(t.name, x.name.c_str());
+    setTextUpTo(t.name, x.name.c_str(), 150);
     setText(t.title, x.title.c_str());
     const lv_image_dsc_t *icon = x.kind == "window" ? icons::get(x.icon) : nullptr;
     if (!icon && x.icon.length() && millis() - t.asked_ms >= kIconRetryMs) {

@@ -5,7 +5,8 @@ outside the editor: audio, meetings and the day's calendar, tasks, Claude Code, 
 windows, clipboard, Obsidian, keys for the app (or site) in front, and a numpad.
 
 It's a Waveshare **ESP32-S3-Touch-LCD-7** (800×480, capacitive touch) on one USB-C cable,
-talking to a small Windows tray app. Six swipe pages sit under one status bar.
+talking to a small Windows tray app. Six swipe pages sit beside a rail of page buttons,
+under one status line, with the context bar along the bottom.
 
 ```
 ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app, C#)
@@ -33,22 +34,25 @@ can be synced between PCs; each PC signs in for itself and keeps its own folders
 `machine.json` (see [Profiles](#profiles)). A new calendar, account or site needs no new
 firmware or release.
 
-<img src="docs/screens/today.png" alt="The Today page: status bar, clock, now playing, up next, recent actions and the context bar" width="720">
+<img src="docs/screens/today.png" alt="The Today page: the rail, the status line, the clock, now playing, up next, recent actions and the context bar" width="720">
 
 ## Features
 
-### Status bar (on every page)
-- Clock and date. Hold the clock for the deck's diagnostics.
-- Next meeting with a countdown, amber from five minutes out.
-- Claude Code status (working, needs you, done); tap it for the session board.
-- Last build result.
-- Keyboard layer (from a Vial keyboard); tap it to pin the layer cheat sheet open.
-- Volume (tap to mute) and microphone mute, which mutes every mic so Teams, Zoom and
-  Discord all go quiet at once.
+### Rail and status line (on every page)
+- The rail down the left: the clock and date (hold the clock for the deck's diagnostics),
+  a button for each page, and the shortcuts launcher at its foot. Swiping sideways still
+  changes page.
+- The status line along the top:
+  - Next meeting with a countdown, amber from five minutes out.
+  - Claude Code status (working, needs you, done); tap it for the session board.
+  - Last build result.
+  - Keyboard layer (from a Vial keyboard); tap it to pin the layer cheat sheet open.
+  - Volume (tap to mute) and microphone mute, which mutes every mic so Teams, Zoom and
+    Discord all go quiet at once.
 - Toasts over any page: a long command finished or failed, Claude needs approval, git
   results.
 
-### Claude session board (from the status bar)
+### Claude session board (from the status line)
 
 <img src="docs/screens/sessions.png" alt="The Claude session board: five sessions with where each runs, its model and what it's doing, beside the 5-hour usage chart" width="560">
 
@@ -62,14 +66,14 @@ firmware or release.
 - Beside it, the plan's 5-hour usage: the figure, the week's, a chart of the window so far
   with the recent pace carried ahead, when it resets, and "At this pace you hit the limit
   around 21:40" (or that it lasts until the reset).
-- The status bar's Claude pill and the Dev page's Claude banner open it.
+- The status line's Claude pill and the Dev page's Claude banner open it.
 
 ### Claude approvals (on every page)
 
 <img src="docs/screens/approval.png" alt="A Claude permission request with Deny, Always and Approve" width="560">
 
 - When Claude Code asks for permission (in the Claude app, VS Code or a terminal), a banner
-  under the status bar shows what it wants to run, with **Approve**, **Always** (Claude's
+  under the status line shows what it wants to run, with **Approve**, **Always** (Claude's
   own "don't ask again" rule, when it offers one) and **Deny**. Claude's prompt on the PC
   shows as usual; whichever you answer first wins.
 - Claude's own questions (its question box) show on the deck with their options: tap one,
@@ -77,7 +81,7 @@ firmware or release.
   together come one at a time ("2 of 3"). The X leaves it to the PC. Again, whichever you
   answer first wins.
 - Turn both off from the tray icon: **Approve Claude from the deck**.
-- The status bar's Claude pill says **needs you** for a question too, and a plan waiting
+- The status line's Claude pill says **needs you** for a question too, and a plan waiting
   for approval or a turn that ends asking you something in the Claude app (those you
   answer at the PC). A banner or card goes as soon as you answer at the PC instead.
 
@@ -96,7 +100,7 @@ firmware or release.
   - **deck_notify**: a note that stays until you tap **OK** (or write to that session
     again); **Open** brings up its window.
   - **deck_progress**: "3 of 12 · Converting icons" on the Dev page's Claude banner, with
-    a bar, and **Claude 3/12** in the status bar, until the job or the turn ends.
+    a bar, and **Claude 3/12** in the status line, until the job or the turn ends.
 - Claude decides when to use them; it's told they're for when you may be away from the
   keyboard, not for the ordinary chat. Sessions on a Remote-SSH server get them through
   the same tunnel as the hooks.
@@ -105,8 +109,8 @@ firmware or release.
 
 <img src="docs/screens/context-bar.png" alt="Arranging the context bar: VS Code's actions to put in a key's place" width="560">
 
-- A strip above the tabs with keys for the app in front on the PC, in that app's color. The
-  keys each app starts with (a long press shows the rest of its list):
+- A strip along the bottom, the screen's whole width, with keys for the app in front on
+  the PC, in that app's color. The keys each app starts with (a long press shows the rest of its list):
   - **VS Code:** Go to file, Go to symbol, Terminal, Search, Approve, Model. Its list also
     has Build, Debug and stepping, Definition, Rename, Format, Comment, Quick fix, Source
     control, and Claude's own: open Claude, New Claude chat, Accept or Reject changes,
@@ -198,7 +202,7 @@ the first site that matches wins (yours before the built-in ones).
 
 <img src="docs/screens/shortcuts.png" alt="The shortcuts launcher open over Today" width="560">
 
-- A launcher button at the right end of the tab bar opens a panel of up to 12 tiles:
+- A launcher button at the foot of the rail opens a panel of up to 12 tiles:
   apps, links, deck actions and key combinations, each with its real icon (an app's own,
   a site's) or a symbol. Tap one to run it; tap anywhere else to close.
 - An app that's already open comes to the front instead of starting again. Apps are
@@ -216,10 +220,10 @@ the first site that matches wins (yours before the built-in ones).
   calendar each is from, with that calendar's color down its edge, today's all-day events
   along the top, and tomorrow's below.
   <img src="docs/screens/day.png" alt="The day view: today's events in order with the one going on picked out, and tomorrow's" width="560">
-- Recent: the last five things you did from the deck, as tiles: a window you brought up
+- Recent: the last five things you did from the deck, a row each: a window you brought up
   (with its app icon), a note opened, a command run, a meeting joined, Gmail, a Claude
   session, a sound output picked. Tap one to do it again; a window that has closed since
-  brings up another window of its app, or starts the app. Most recent on the left; doing
+  brings up another window of its app, or starts the app. Most recent at the top; doing
   something already listed moves it there instead of adding it twice.
 - How many tasks are open and how many are due today or overdue; tap it for Capture.
 
@@ -348,7 +352,7 @@ the first site that matches wins (yours before the built-in ones).
 
 ### Keyboard layer cheat sheet
 
-<img src="docs/screens/cheat-sheet.png" alt="The cheat sheet: the base layer laid out like the keyboard" width="560">
+<img src="docs/screens/cheat-sheet.png" alt="The cheat sheet: a layer laid out like the keyboard, held keys in blue" width="560">
 
 - Hold a layer key for ten seconds (`cheatSheetSeconds` in [Settings](#settings)) and the
   deck shows that layer laid out like your keyboard, read straight from the Vial keyboard's own layout and keymap. Letting go
@@ -365,7 +369,7 @@ the first site that matches wins (yours before the built-in ones).
   and the dim clock too. **Amber** when Claude comes to need you (a session waiting, an
   approval or a question), **red** when a build fails, **blue** when a call starts. It
   doesn't stay lit, and doesn't blink again for something that's still going on.
-- Diagnostics (hold the status bar's clock): the firmware version and why the deck last
+- Diagnostics (hold the clock at the top of the rail): the firmware version and why the deck last
   restarted, how long it's been up, free memory (internal RAM with its low point and
   largest free block, and PSRAM), the frame rate (now and the busiest second of the last
   minute, with how long a frame takes to draw), and the link to the PC: how long it's been

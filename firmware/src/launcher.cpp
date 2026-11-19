@@ -21,7 +21,7 @@ constexpr int kPad = 14, kBorderW = 2;
 constexpr int kW = kCols * kTile + (kCols - 1) * kTileGap + 2 * (kPad + kBorderW);
 constexpr int kHeadH = 28;
 constexpr int kBadge = 40;
-constexpr int kButtonW = 58;
+constexpr int kButtonH = 44;
 constexpr uint32_t kIconRetryMs = 3000;  // asking again for an icon the deck lacks
 
 constexpr int kTilePadHor = 5;
@@ -194,10 +194,9 @@ void fill() {
 
 }  // namespace
 
-void build(lv_obj_t *tab_bar) {
-  // A plain object, not an lv_button: the tabview takes every button in its bar for a tab.
-  w.button = box(tab_bar);
-  lv_obj_set_size(w.button, kButtonW, LV_PCT(100));
+void build(lv_obj_t *rail) {
+  w.button = box(rail);
+  lv_obj_set_size(w.button, LV_PCT(100), kButtonH);
   lv_obj_set_clickable(w.button, true);
   lv_obj_set_style_radius(w.button, 10, 0);
   lv_obj_set_style_bg_color(w.button, hex(kSelected), LV_STATE_PRESSED);
@@ -215,7 +214,7 @@ void build(lv_obj_t *tab_bar) {
 
   w.panel = card(lv_layer_top(), kSurface, kBorder);
   lv_obj_set_size(w.panel, kW, LV_SIZE_CONTENT);
-  lv_obj_align(w.panel, LV_ALIGN_BOTTOM_RIGHT, -6, -(kBarH + 6));  // just above the tab bar's button
+  lv_obj_align(w.panel, LV_ALIGN_BOTTOM_LEFT, kColX, -(480 - kRailH));  // beside the rail's button, above the context bar
   lv_obj_set_style_border_width(w.panel, kBorderW, 0);
   lv_obj_set_style_radius(w.panel, 18, 0);
   lv_obj_set_style_pad_all(w.panel, kPad, 0);

@@ -244,7 +244,7 @@ void buildGit(lv_obj_t *row) {
 // the recent commands' job: the build command changes all the time.)
 void buildBuild(lv_obj_t *row) {
   lv_obj_t *c = card(row);
-  lv_obj_set_size(c, 300, LV_PCT(100));
+  lv_obj_set_size(c, 220, LV_PCT(100));  // git takes the rest of the row: at 240 "Commit" read "Com…"
   lv_obj_set_style_pad_all(c, 10, 0);
   flexRow(c, 10);
   w.build_icon_bg = box(c);

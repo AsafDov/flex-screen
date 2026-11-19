@@ -121,7 +121,7 @@ void onChannelMute(lv_event_t *e) {
 
 void buildNowPlaying(lv_obj_t *parent) {
   lv_obj_t *c = card(parent);
-  lv_obj_set_size(c, 296, LV_PCT(100));
+  lv_obj_set_size(c, 280, LV_PCT(100));
   lv_obj_set_style_pad_all(c, 14, 0);
   flexCol(c, 4);
 
@@ -199,13 +199,21 @@ void buildNowPlaying(lv_obj_t *parent) {
   iconButton(transport, 48, 48, kRaised, LV_SYMBOL_NEXT, kText, onNext);
 }
 
-lv_obj_t *buildDeviceRow(lv_obj_t *parent, const char *kind) {
+// A speaker or a microphone, not "OUTPUT" and "INPUT": beside the rail the words left room
+// for two devices and a half.
+lv_obj_t *buildDeviceRow(lv_obj_t *parent, bool output) {
   lv_obj_t *row = box(parent);
   lv_obj_set_size(row, LV_PCT(100), kDeviceH);
   flexRow(row, 8);
-  lv_obj_t *k = label(row, kind, &lv_font_montserrat_14, kMuted);
-  lv_obj_set_width(k, 64);  // "OUTPUT" is ~58 px; never wrap
-  lv_label_set_long_mode(k, LV_LABEL_LONG_MODE_CLIP);
+  lv_obj_t *kind = box(row);
+  lv_obj_set_size(kind, 22, kDeviceH);
+  if (output) {
+    lv_obj_center(label(kind, LV_SYMBOL_VOLUME_MAX, &lv_font_montserrat_16, kMuted));
+  } else {
+    const MicIcon mic = micIcon(kind);
+    setMicIcon(mic, kMuted, false);
+    lv_obj_center(mic.root);
+  }
   lv_obj_t *buttons = box(row);
   lv_obj_set_flex_grow(buttons, 1);
   lv_obj_set_height(buttons, kDeviceH);
@@ -227,8 +235,8 @@ void buildRight(lv_obj_t *parent) {
   lv_obj_set_size(devices, LV_PCT(100), LV_SIZE_CONTENT);
   lv_obj_set_style_pad_all(devices, 8, 0);
   flexCol(devices, 6);
-  w.outputs = buildDeviceRow(devices, "OUTPUT");
-  w.inputs = buildDeviceRow(devices, "INPUT");
+  w.outputs = buildDeviceRow(devices, true);
+  w.inputs = buildDeviceRow(devices, false);
 
   // All the height that's left goes to the faders: no heading row (with the context bar
   // under the page, a heading, names and mute icons left them ~25 px of travel).

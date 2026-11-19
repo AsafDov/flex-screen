@@ -13,10 +13,10 @@
 namespace ui::ctxbar {
 namespace {
 
-constexpr int kH = 46;
+constexpr int kH = kCtxH;
 constexpr int kSlot = kH + 8;  // the room at the pages' bottom: the bar and the gap above it
-constexpr int kX = 10, kW = 800 - 2 * kX;
-constexpr int kY = 480 - kBarH - 6 - kH;  // 6 px above the tab bar
+constexpr int kX = 10, kW = 800 - 2 * kX;  // the whole width, under the rail too
+constexpr int kY = kCtxY;                  // 6 px above the screen's edge
 constexpr int kPadL = 10, kPadR = 5;
 constexpr int kChipW = 112;
 constexpr int kChipPad = 4;  // the app's name and icon, a key to its page: its pressed color's edge
@@ -31,7 +31,7 @@ constexpr uint32_t kIconRetryMs = 3000;
 // The long-press menu: the app's actions to choose from, above the bar.
 constexpr int kMenuX = 10, kMenuW = 800 - 2 * kMenuX;
 constexpr int kMenuBottom = kY - 6;
-constexpr int kMenuMaxH = kMenuBottom - kBarH - 6;  // up to just below the status bar
+constexpr int kMenuMaxH = kMenuBottom - kStatusH - 6;  // up to just below the status line
 constexpr int kMenuPad = 12, kMenuBorder = 2;
 constexpr int kMenuHeadH = 30;
 constexpr int kMenuCols = 5;
@@ -410,7 +410,6 @@ void build(lv_obj_t *screen, lv_obj_t *pages) {
     page_pad[i] = lv_obj_get_style_pad_bottom(lv_obj_get_child(pages, i), LV_PART_MAIN);
   }
   w.bar = card(screen, kSurface, kBorder);
-  lv_obj_add_flag(w.bar, LV_OBJ_FLAG_IGNORE_LAYOUT);  // the screen's column holds the status bar and the pages
   lv_obj_set_pos(w.bar, kX, kY);
   lv_obj_set_size(w.bar, kW, kH);
   lv_obj_set_style_radius(w.bar, 12, 0);

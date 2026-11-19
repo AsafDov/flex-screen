@@ -10,9 +10,9 @@
 namespace ui::sessions {
 namespace {
 
-constexpr int kX = 8, kY = kBarH + 4, kW = 800 - 2 * kX, kH = 480 - kY - 8;
-constexpr int kUsageW = 272;
-constexpr int kRowH = 62;
+constexpr int kX = kPaneX, kY = kPaneY, kW = kPaneW, kH = kPaneH;  // right of the rail, above the context bar
+constexpr int kUsageW = 224;  // beside the rail: at 256 the rows cut "VS Code · Sonnet 4.5" beside Stop
+constexpr int kRowH = 56;  // five in the list's height
 constexpr int kRows = model::Claude::kMax;
 constexpr int kSlots = 60;  // the 5-hour window in 5-minute steps
 constexpr int kSlotSecs = 5 * 3600 / kSlots;

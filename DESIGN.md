@@ -7,7 +7,9 @@ Obsidian, and a numpad.
 UI reference: the **ESP32 Desk Companion – 7" UI** canvas
 (https://claude.ai/artifact/Dh5LJ4fLcCeHGErS4omf3o): six swipe pages (Today, Audio,
 Dev, Windows, Capture, Numpad) under one shared status bar (clock, next meeting,
-Claude state, build result, keyboard layer, volume, mic mute).
+Claude state, build result, keyboard layer, volume, mic mute). Since the side rail the
+page tabs and the clock are a rail down the left, the status line runs beside it, and
+the context bar runs along the whole bottom (`layout-0` tags the last commit before it).
 
 ## Hardware
 
@@ -85,7 +87,7 @@ renders under 12px.
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
 | 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
 | 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (its integration's, `companion/Integrations/<App>/`) (long press) and kept per app; the profile's `contextBar` adds actions. In a browser, a site's own keys (`sites.json` and the profile's `sites`), told by the tab's address (browser extension), an installed web app's name, or the title. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
-| 18 | Shortcuts launcher | Every page (tab bar) | Companion | Up to 12 tiles from the profile: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
+| 18 | Shortcuts launcher | Every page (the rail's foot) | Companion | Up to 12 tiles from the profile: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
 | 20 | Edge glow | Every page, the idle clock | Firmware (state from the companion) | Four 10 px strips on LVGL's system layer, solid at the edge and fading inward, that blink twice and fade out (2.8 s) when something starts: amber when a Claude session goes to `input` or an approval or question comes; red when a build turns `failed` (one under 10 minutes old); blue when `call` gets an app |
 | 21 | Diagnostics | Overlay (hold the clock) | Firmware only | Firmware version and reset reason, uptime, internal RAM and PSRAM (`heap_caps_*`), frames per second and draw time (LVGL's refresh events), the link's counters and last error (`pc::linkStats()`) |
 
@@ -1641,6 +1643,50 @@ Gotchas found after phase 6:
     PSRAM buffer, and updates received by the new build (35.6 s before the fix, 26.8 s
     after), kept each time. Not checked: a tap on the panel (the touch controller's I2C
     buffers were set up before the change and stay internal).
+- The side rail, firmware 0.26.0 (2026-11-19; the user picked it from a brainstorm of
+  layouts, asked for the context bar along the whole width, and had the last commit before
+  it tagged `layout-0`):
+  - The tab bar along the bottom became a rail down the left, 76 px wide: the clock and
+    date at its top (holding the clock still opens the diagnostics), a button per page (its
+    icon over its name, 47 px high), and the shortcuts' button at its foot. The rail ends at
+    y 422, above the context bar. The tabview's own bar is hidden and the rail's buttons
+    are its own: the tabview takes every button in its bar for a tab, so a clock couldn't
+    sit above them, and its bar runs the tabview's whole height. `lv_tabview_set_active()`
+    sends no event and pages change from many places (a swipe, the pills, the context
+    bar's chip, the companion), so `updateRail()` lights the current page each pass.
+  - The status line, 40 px, runs beside the rail. With the clock gone it has about the
+    room the old bar had (the clock left, the rail took 76 px): at the old gaps the layer
+    pill missed by a pixel beside a meeting, Claude and a build, so the gaps went from 8
+    and 6 to 6 and 5, and its padding to 6.
+  - The context bar is the same bar, the screen's whole width, 44 px lower: along the
+    bottom edge, under the rail too. `kRailW`, `kStatusH`, `kCtxY`, `kRailH` and the
+    banner and panel rectangles (`kCol*`, `kPane*`) are in `ui_kit.h`; `kBarH` is gone.
+  - The pages lost 76 px of width and gained 48 px of height: their cards are 704×366
+    instead of 780×318. Today's Recent became five rows (five tiles across cut "VS Code"
+    to "VS C…"). Windows' tiles put the icon above the name again, now there's the height
+    (beside it, "Obsidian" read "Obsid…"); its FancyZones panel 300 → 270 px with smaller
+    layout thumbnails, so "Columns" fits. Capture's clipboard 236 → 214 px and Obsidian
+    186 → 160, so the tasks keep ~310 px; the clipboard's hint is "Tap: paste · hold: pin",
+    on one line. Audio's device rows lead with a speaker and a microphone instead of
+    "OUTPUT" and "INPUT" (with the words the third output was cut), beside a now-playing
+    card of 280 px. Dev's build card 300 → 220 px, for git's five buttons. The Numpad has
+    no context bar, so its keys run to the bottom, with an empty corner under the rail.
+  - Overlays: the approval banner and Claude's questions span the pages' cards; the session
+    board, the call panel and the shortcuts panel sit right of the rail and stop above the
+    context bar, so in a call the meeting app's keys stay in reach. The board's rows went
+    from 62 to 56 px to keep five, and its usage panel from 272 to 224 px (at 256,
+    "VS Code · Sonnet 4.5" was cut beside Stop). The day view and an open task are centered
+    on the pages; toasts sit above the context bar. The cheat sheet, the diagnostics and the
+    context bar's own menu keep the screen's whole width.
+  - Checked: the simulator, 338 checks, 331 passed. The 7 that failed were the tests' idea of
+    the old layout (where the call panel is, for five Zoom checks; a Jira row now cut a word
+    earlier) and the session board's cut model names; after fixing them those three groups
+    passed, 67 of 67. The six pages in the day set (base and violet) and the stress set, and
+    the overlays, looked over. The ESP32 build: RAM 27.1 %, flash 20.6 %. On the deck:
+    flashed over USB (27 s) and kept once the PC answered (built before the version went up,
+    so it said 0.25.1). Not looked at from the PC: screenshots through `/deck` timed out
+    with most parts missing, as they had on older builds (the companion's log has the same
+    on earlier days).
 
 ## Decisions
 

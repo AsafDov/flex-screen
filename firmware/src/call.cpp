@@ -14,8 +14,8 @@ constexpr uint32_t kLeave = 0xC93C3C;
 constexpr uint32_t kTickMs = 1000;
 constexpr uint32_t kClearHintMs = 2000;
 constexpr int kControls = 7;
-constexpr int kInnerW = 780 - 2 * 16 - 2 * 2;  // the panel's width inside its padding and border
-constexpr int kColorsW = 560;
+constexpr int kInnerW = kPaneW - 2 * 16 - 2 * 2;  // the panel's width inside its padding and border
+constexpr int kColorsW = kInnerW - 184;              // beside them, the line widths
 constexpr int kSwatchGap = 6;
 constexpr int kMaxSwatchW = 64;
 constexpr int kWidths = 4;
@@ -505,8 +505,9 @@ void updateDuration() {
 
 void build() {
   w.root = card(lv_layer_top(), kSurface, kBorder);
-  lv_obj_set_size(w.root, 780, 480 - 2 * kBarH - 12);
-  lv_obj_set_pos(w.root, 10, kBarH + 6);
+  // Over the pages, above the context bar: the meeting app's keys stay in reach.
+  lv_obj_set_size(w.root, kPaneW, kPaneH);
+  lv_obj_set_pos(w.root, kPaneX, kPaneY);
   lv_obj_set_style_border_width(w.root, 2, 0);
   lv_obj_set_style_radius(w.root, 18, 0);
   lv_obj_set_style_pad_all(w.root, 16, 0);

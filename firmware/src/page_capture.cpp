@@ -10,8 +10,8 @@
 namespace ui::capture {
 namespace {
 
-constexpr int kObsidianW = 186;
-constexpr int kClipsW = 236;
+constexpr int kObsidianW = 160;  // narrower beside the rail, so the tasks keep ~310 px
+constexpr int kClipsW = 214;
 constexpr uint32_t kObsidian = 0xB48CFF;  // Obsidian's purple, from the design canvas
 constexpr uint32_t kOnObsidian = 0x1A1030;
 constexpr uint32_t kTickMs = 30000;  // ages ("4m")
@@ -106,7 +106,7 @@ void buildClipboard(lv_obj_t *row) {
   }
   lv_obj_t *gap = box(c);
   lv_obj_set_flex_grow(gap, 1);
-  w.clip_hint = label(c, "Tap to paste  ·  hold to pin", &small_font, kMuted);
+  w.clip_hint = label(c, "Tap: paste  ·  hold: pin", &small_font, kMuted);  // one line in the narrower column
   lv_obj_set_width(w.clip_hint, LV_PCT(100));
   lv_obj_set_style_text_align(w.clip_hint, LV_TEXT_ALIGN_CENTER, 0);
 }

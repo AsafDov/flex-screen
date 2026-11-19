@@ -290,7 +290,7 @@ void build() {
 
   lv_obj_t *p = w.panel = card(lv_layer_top(), kBg, kBorder);
   lv_obj_set_size(p, kPanelW, kPanelH);
-  lv_obj_align(p, LV_ALIGN_CENTER, 0, 0);
+  lv_obj_align(p, LV_ALIGN_CENTER, kRailW / 2, 0);  // in the middle of the pages, not the screen
   lv_obj_set_style_radius(p, 18, 0);
   lv_obj_set_style_pad_all(p, kPad, 0);
   lv_obj_set_style_shadow_width(p, 30, 0);
