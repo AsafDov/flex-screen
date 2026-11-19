@@ -76,6 +76,7 @@ const Key kSymbols[] = {
 };
 
 struct {
+  lv_obj_t *scrim, *panel;
   lv_obj_t *mode_keys, *mode_calc;
   lv_obj_t *hint, *readout;
   lv_obj_t *num_key;
@@ -259,13 +260,20 @@ void buildPanel(lv_obj_t *row) {
   lv_obj_set_size(c, kPanelW, LV_PCT(100));
   flexCol(c, 10);
 
-  lv_obj_t *modes = card(c, kCodeBg, kCodeBg);
-  lv_obj_set_size(modes, LV_PCT(100), LV_SIZE_CONTENT);
+  // The two modes, and the X that closes the pop-up beside them.
+  lv_obj_t *top = box(c);
+  lv_obj_set_size(top, LV_PCT(100), LV_SIZE_CONTENT);
+  flexRow(top, 8);
+  lv_obj_t *modes = card(top, kCodeBg, kCodeBg);
+  lv_obj_set_size(modes, 1, LV_SIZE_CONTENT);
+  lv_obj_set_flex_grow(modes, 1);
   lv_obj_set_style_pad_all(modes, 4, 0);
   lv_obj_set_style_radius(modes, 12, 0);
   flexRow(modes, 4);
   w.mode_keys = modeButton(modes, "Send keys", false);
   w.mode_calc = modeButton(modes, "Calculator", true);
+  lv_obj_t *x = lv_obj_get_parent(iconButton(top, 48, 48, kRaised, LV_SYMBOL_CLOSE, kText, [](lv_event_t *) { close(); }));
+  lv_obj_set_style_radius(x, 12, 0);
 
   lv_obj_t *display = card(c, kCodeBg, kCodeBg);
   lv_obj_set_size(display, LV_PCT(100), LV_SIZE_CONTENT);
@@ -334,7 +342,26 @@ void showNumLock() {
 
 }  // namespace
 
-void build(lv_obj_t *page) {
+// Over the pages, right of the rail and down to the screen's edge: over the context bar,
+// whose keys are no use while typing numbers. A tap beside it closes it, as the shortcuts'
+// panel does, and reaches nothing underneath.
+void build() {
+  w.scrim = box(lv_layer_top());
+  lv_obj_set_size(w.scrim, 800, 480);
+  lv_obj_set_clickable(w.scrim, true);
+  lv_obj_add_event_cb(w.scrim, [](lv_event_t *) { close(); }, LV_EVENT_CLICKED, nullptr);
+  lv_obj_set_hidden(w.scrim, true);
+
+  lv_obj_t *page = w.panel = card(lv_layer_top(), kBg, kBorder);
+  lv_obj_set_pos(page, kPaneX, kPaneY);
+  lv_obj_set_size(page, kPaneW, 480 - kPaneY - 6);
+  lv_obj_set_style_border_width(page, 2, 0);
+  lv_obj_set_style_radius(page, 18, 0);
+  lv_obj_set_style_shadow_width(page, 30, 0);
+  lv_obj_set_style_shadow_color(page, hex(0x000000), 0);
+  lv_obj_set_style_shadow_opa(page, LV_OPA_60, 0);
+  lv_obj_set_clickable(page, true);  // a tap between keys stays on it
+  lv_obj_set_hidden(page, true);
   lv_obj_set_style_pad_all(page, kGap, 0);
   lv_obj_set_scrollable(page, false);
   flexRow(page, kGap);
@@ -354,6 +381,20 @@ void build(lv_obj_t *page) {
   showNumLock();
   showReadout();
 }
+
+void open() {
+  lv_obj_set_hidden(w.scrim, false);
+  lv_obj_set_hidden(w.panel, false);
+}
+
+void close() {
+  if (!isOpen()) return;
+  lv_obj_set_hidden(w.scrim, true);
+  lv_obj_set_hidden(w.panel, true);
+  pc::releaseAllKeys();  // nothing left held down on the PC
+}
+
+bool isOpen() { return w.panel && !lv_obj_is_hidden(w.panel); }
 
 void update() {
   // Cheap enough every loop: every setter skips unchanged values.

@@ -10,6 +10,7 @@ namespace {
 
 constexpr int kRecentH = 34;  // a command row's least height: one line (a long command wraps to two)
 constexpr int kHistory = 10;
+constexpr int kSideW = 264;  // git and the build, right of the terminal
 constexpr uint32_t kTickMs = 1000;  // "n min ago" and the running timer
 
 constexpr uint32_t kFailText = 0xFF9A70;
@@ -155,12 +156,12 @@ void buildBanner(lv_obj_t *page) {
   lv_obj_set_hidden(w.banner_progress, true);
 }
 
-// The terminal across the page: the last few commands run in VS Code's terminal, whole
+// The terminal down the left of the page: the last few commands run in VS Code's terminal, whole
 // (a long one wraps), with the time each started; tap one to run it again in the
 // terminal it ran in. Nothing else, on request: no output, Ctrl+C or Focus.
 void buildTerminal(lv_obj_t *page) {
   lv_obj_t *c = card(page);
-  lv_obj_set_width(c, LV_PCT(100));
+  lv_obj_set_size(c, 1, LV_PCT(100));
   lv_obj_set_flex_grow(c, 1);
   lv_obj_set_style_pad_all(c, 10, 0);
   flexCol(c, 6);
@@ -191,11 +192,12 @@ void buildTerminal(lv_obj_t *page) {
   }
 }
 
-// Git in a strip: repo, branch, changes and last commit on one line, the operations below.
-void buildGit(lv_obj_t *row) {
-  lv_obj_t *c = card(row);
-  lv_obj_set_height(c, LV_PCT(100));
-  lv_obj_set_flex_grow(c, 1);
+// Git at the top of the right column: the repo, the branch with ahead/behind, the changes,
+// the last commit, each on a line of its own, and the operations in a grid below with room
+// for their names (five in a row under the terminal read "Com…").
+void buildGit(lv_obj_t *col) {
+  lv_obj_t *c = card(col);
+  lv_obj_set_size(c, LV_PCT(100), LV_SIZE_CONTENT);
   lv_obj_set_style_pad_all(c, 10, 0);
   flexCol(c, 6);
 
@@ -203,9 +205,14 @@ void buildGit(lv_obj_t *row) {
   lv_obj_set_size(line, LV_PCT(100), LV_SIZE_CONTENT);
   flexRow(line, 8);
   w.git_title = label(line, "GIT", &small_font, kMuted);
+  fillRow(w.git_title);
+  w.git_busy = label(line, "", &small_font, kAccent);
+  line = box(c);
+  lv_obj_set_size(line, LV_PCT(100), LV_SIZE_CONTENT);
+  flexRow(line, 8);
   w.git_branch = label(line, "", &body_font, kText);
   w.git_ab = label(line, "", &small_font, 0x8CCBFF);
-  w.git_chips = box(line);
+  w.git_chips = box(c);
   lv_obj_set_size(w.git_chips, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
   flexRow(w.git_chips, 4);
   w.chip_m = chip(w.git_chips, 0xF5C36B);
@@ -213,20 +220,27 @@ void buildGit(lv_obj_t *row) {
   w.chip_d = chip(w.git_chips, kFailText);
   w.chip_u = chip(w.git_chips, kMuted);
   w.chip_clean = label(w.git_chips, "No changes", &small_font, kMuted);
-  w.git_last = label(line, "", &small_font, kMuted);
-  fillRow(w.git_last);
-  w.git_busy = label(line, "", &small_font, kAccent);
+  w.git_last = label(c, "", &small_font, kMuted);
+  ellipsize(w.git_last);
 
+  static const int32_t cols[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+  static const int32_t rows[] = {34, 34, LV_GRID_TEMPLATE_LAST};
   w.git_buttons = box(c);
   lv_obj_set_size(w.git_buttons, LV_PCT(100), LV_SIZE_CONTENT);
-  flexRow(w.git_buttons, 6);
+  lv_obj_set_grid_dsc_array(w.git_buttons, cols, rows);
+  lv_obj_set_style_pad_row(w.git_buttons, 6, 0);
+  lv_obj_set_style_pad_column(w.git_buttons, 6, 0);
+  lv_obj_set_style_margin_top(w.git_buttons, 2, 0);
   static const char *const ops[][2] = {{LV_SYMBOL_DOWN " Pull", "pull"}, {LV_SYMBOL_UP " Push", "push"},
                                        {LV_SYMBOL_REFRESH " Fetch", "fetch"}, {LV_SYMBOL_SAVE " Stash", "stash"},
                                        {LV_SYMBOL_EDIT " Commit", "commit"}};
+  int n = 0;
   for (const auto &op : ops) {
-    lv_obj_t *b = textButton(w.git_buttons, 0, 32, kRaised, op[0], kText, onGit, const_cast<char *>(op[1]));
-    lv_obj_set_flex_grow(b, 1);
-    lv_obj_set_style_pad_hor(b, 3, 0);  // five share ~430 px: at 8 px a side "Commit" read "Com…"
+    lv_obj_t *b = textButton(w.git_buttons, 0, 34, kRaised, op[0], kText, onGit, const_cast<char *>(op[1]));
+    lv_obj_set_style_pad_hor(b, 3, 0);
+    // Pull, Push, Fetch; then Stash, and Commit over two cells.
+    lv_obj_set_grid_cell(b, LV_GRID_ALIGN_STRETCH, n % 3, n == 4 ? 2 : 1, LV_GRID_ALIGN_STRETCH, n / 3, 1);
+    n++;
     if (!strcmp(op[1], "push")) {
       w.push_badge = card(b, kAccent, kAccent);
       lv_obj_set_size(w.push_badge, LV_SIZE_CONTENT, 16);
@@ -240,11 +254,12 @@ void buildGit(lv_obj_t *row) {
   }
 }
 
-// Build in a strip: result, when and how long, the last 10 runs. (Building again is
+// The build under git: result, when and how long, the last 10 runs. (Building again is
 // the recent commands' job: the build command changes all the time.)
-void buildBuild(lv_obj_t *row) {
-  lv_obj_t *c = card(row);
-  lv_obj_set_size(c, 220, LV_PCT(100));  // git takes the rest of the row: at 240 "Commit" read "Com…"
+void buildBuild(lv_obj_t *col) {
+  lv_obj_t *c = card(col);
+  lv_obj_set_width(c, LV_PCT(100));
+  lv_obj_set_flex_grow(c, 1);
   lv_obj_set_style_pad_all(c, 10, 0);
   flexRow(c, 10);
   w.build_icon_bg = box(c);
@@ -349,11 +364,6 @@ void updateGit() {
     if (g.last.length()) setTextf(w.git_last, "Last: %s · %s", g.last.c_str(), ago);
     else setText(w.git_last, "No commits yet");
   }
-  // The last commit gets what the branch and change chips leave; with a few chips that was
-  // nothing but "Last:…", so then it isn't shown at all.
-  setHidden(w.git_last, false);
-  lv_obj_update_layout(w.git_last);
-  setHidden(w.git_last, lv_obj_get_width(w.git_last) < 80);
   setHidden(w.push_badge, !usable || g.ahead == 0);
   setTextf(lv_obj_get_child(w.push_badge, 0), "%d", g.ahead);
   const bool enabled = usable && !g.busy.length();
@@ -468,13 +478,18 @@ void build(lv_obj_t *page) {
   flexCol(page, kGap);
   lv_obj_set_scrollable(page, false);
   buildBanner(page);
-  buildTerminal(page);
+  // Below it, the terminal down the left, and git over the build on the right.
   lv_obj_t *row = box(page);
-  lv_obj_set_size(row, LV_PCT(100), 82);
+  lv_obj_set_width(row, LV_PCT(100));
+  lv_obj_set_flex_grow(row, 1);
   flexRow(row, kGap);
   lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-  buildGit(row);
-  buildBuild(row);
+  buildTerminal(row);
+  lv_obj_t *side = box(row);
+  lv_obj_set_size(side, kSideW, LV_PCT(100));
+  flexCol(side, kGap);
+  buildGit(side);
+  buildBuild(side);
   updateRecent();
 }
 

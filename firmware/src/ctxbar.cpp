@@ -6,6 +6,7 @@
 #include "icons.h"
 #include "idle.h"
 #include "model.h"
+#include "page_numpad.h"
 #include "pc.h"
 #include "ui.h"
 #include "ui_kit.h"
@@ -56,8 +57,8 @@ struct {
 } m;
 
 bool shown = false;  // as built: hidden
-bool room = false;   // the pages but the Numpad keep the bar's room at their bottom
-constexpr int kPages = kNumpadPage + 1;
+bool room = false;   // the pages keep the bar's room at their bottom
+constexpr int kPages = kPageCount;
 int32_t page_pad[kPages] = {};  // each page's own bottom padding, as it built itself
 uint32_t context_seen = UINT32_MAX, icons_seen = UINT32_MAX, asked_ms = 0;
 int menu_slot = -1;  // the key the menu changes (the key count: a new one); -1 while it's closed
@@ -476,20 +477,16 @@ void build(lv_obj_t *screen, lv_obj_t *pages) {
 }
 
 void update() {
-  // The pages make room for the bar while it has keys, each but the Numpad, whose keys
-  // are where the bar goes, and they keep it whichever page is on show: going to and from
-  // the Numpad then only hides or shows the bar. Making room laid out all six pages again,
-  // a frame after the page had been drawn without it, which took the bar almost a second
-  // to come back.
+  // The pages make room for the bar while it has keys. The Numpad pops up over it, so it
+  // hides while that's open (its chip showed beside the pop-up, under the rail).
   const bool keys = pc::connected() && (model::context.count > 0 || model::context.bank_count > 0);
   if (keys != room) {
     room = keys;
     for (int i = 0; i < kPages && i < int(lv_obj_get_child_count(w.pages)); i++) {
-      const bool slot = keys && i != kNumpadPage;
-      lv_obj_set_style_pad_bottom(lv_obj_get_child(w.pages, i), page_pad[i] + (slot ? kSlot : 0), 0);
+      lv_obj_set_style_pad_bottom(lv_obj_get_child(w.pages, i), page_pad[i] + (keys ? kSlot : 0), 0);
     }
   }
-  const bool want = keys && currentPage() != kNumpadPage;
+  const bool want = keys && !numpad::isOpen();
   if (want != shown) {
     shown = want;
     lv_obj_set_hidden(w.bar, !want);  // filled below if anything changed while it was hidden

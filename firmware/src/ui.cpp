@@ -50,7 +50,7 @@ struct {
 } bar;
 
 // The rail down the left: the clock, a button per page, the shortcuts' button.
-constexpr int kPages = kNumpadPage + 1;
+constexpr int kPages = kPageCount;
 struct {
   lv_obj_t *root;
   lv_obj_t *tabs[kPages], *icons[kPages], *names[kPages];
@@ -132,21 +132,24 @@ void onMic(lv_event_t *) {
 void onShowDev(lv_event_t *) { lv_tabview_set_active(tabview, kDevTab, LV_ANIM_OFF); }
 
 // A swipe changes page at once: sliding redrew the whole page every frame, which this
-// panel can't do smoothly.
+// panel can't do smoothly. Up goes to the next page, as down the rail, and down to the one
+// before; left and right still work too. A drag that scrolls a list, or moves a fader or
+// a slider, isn't a swipe (LVGL sends no gesture for those).
 void onSwipe(lv_event_t *) {
   lv_indev_t *indev = lv_indev_active();
   if (!indev) return;
   const lv_dir_t dir = lv_indev_get_gesture_dir(indev);
   const uint32_t tab = lv_tabview_get_tab_active(tabview);
-  if (dir == LV_DIR_LEFT && tab + 1 < lv_tabview_get_tab_count(tabview)) {
+  const bool next = dir == LV_DIR_LEFT || dir == LV_DIR_TOP;
+  const bool back = dir == LV_DIR_RIGHT || dir == LV_DIR_BOTTOM;
+  if (next && tab + 1 < lv_tabview_get_tab_count(tabview)) {
     lv_tabview_set_active(tabview, tab + 1, LV_ANIM_OFF);
-  } else if (dir == LV_DIR_RIGHT && tab > 0) {
+  } else if (back && tab > 0) {
     lv_tabview_set_active(tabview, tab - 1, LV_ANIM_OFF);
   } else {
     return;
   }
   lv_indev_wait_release(indev);  // the swipe isn't also a tap on what it started on
-  pc::releaseAllKeys();          // nor a numpad key left held down
 }
 
 // A toast with an action (Claude waiting for approval) runs it; any toast goes away.
@@ -310,10 +313,11 @@ void updateFlashing() {
 
 // The page buttons are the rail's own, not the tabview's bar (hidden): the clock sits above
 // them, the shortcuts' button below, and the rail stops above the context bar.
-const char *const kPageIcons[kPages] = {LV_SYMBOL_HOME, LV_SYMBOL_AUDIO, LV_SYMBOL_EDIT,
-                                        LV_SYMBOL_LIST, LV_SYMBOL_COPY, LV_SYMBOL_KEYBOARD};
-const char *const kPageNames[kPages] = {"Today", "Audio", "Dev", "Windows", "Capture", "Numpad"};
-constexpr int kRailTabH = 47;
+const char *const kPageIcons[kPages] = {LV_SYMBOL_HOME, LV_SYMBOL_AUDIO, LV_SYMBOL_EDIT, LV_SYMBOL_LIST, LV_SYMBOL_COPY};
+const char *const kPageNames[kPages] = {"Today", "Audio", "Dev", "Windows", "Capture"};
+// Five buttons since the Numpad left the rail for the shortcuts panel: room for 28 px icons
+// (16 px read as small).
+constexpr int kRailTabH = 56;
 
 // Lights the current page's button. Pages change from many places (a swipe, a pill, the
 // context bar's chip, the companion), so update() asks each pass.
@@ -331,7 +335,6 @@ void updateRail() {
 
 void onRailTab(lv_event_t *e) {
   lv_tabview_set_active(tabview, uint32_t(intptr_t(lv_event_get_user_data(e))), LV_ANIM_OFF);
-  pc::releaseAllKeys();  // no numpad key left held down
   updateRail();
 }
 
@@ -373,7 +376,7 @@ void buildRail(lv_obj_t *parent) {
     lv_obj_set_style_bg_color(b, hex(kSelected), 0);  // shown on the current page's only
     flexCol(b, 1);
     lv_obj_set_flex_align(b, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    rail.icons[i] = label(b, kPageIcons[i], &lv_font_montserrat_16, kMuted);
+    rail.icons[i] = label(b, kPageIcons[i], &lv_font_montserrat_28, kMuted);
     rail.names[i] = label(b, kPageNames[i], &small_font, kMuted);
   }
 
@@ -719,13 +722,13 @@ void begin() {
   dev::build(lv_tabview_add_tab(tv, LV_SYMBOL_EDIT "  Dev"));
   windows::build(lv_tabview_add_tab(tv, LV_SYMBOL_LIST "  Windows"));
   capture::build(lv_tabview_add_tab(tv, LV_SYMBOL_COPY "  Capture"));
-  numpad::build(lv_tabview_add_tab(tv, LV_SYMBOL_KEYBOARD "  Numpad"));
   pc::bootMark("ui.pages");
   buildRail(scr);
   ctxbar::build(scr, content);  // along the bottom, over the pages' room for it
   call::build();
   cheat::build();
   launcher::build(rail.root);  // its button ends the rail; its panel goes over the pages
+  numpad::build();             // over the shortcuts' panel, which opens it
   day::build();  // under the sessions board, the approval banner and Claude's questions
   diag::build();  // the same: an approval or a question can come while it's open
   sessions::build();  // under the approval banner and Claude's questions, which can come while it's open
@@ -741,7 +744,14 @@ void begin() {
   update();
 }
 
-void showPage(int index) { lv_tabview_set_active(tabview, index, LV_ANIM_OFF); }
+void showPage(int index) {
+  if (index == kNumpadPage) {
+    numpad::open();
+    return;
+  }
+  numpad::close();
+  if (index >= 0 && index < kPageCount) lv_tabview_set_active(tabview, index, LV_ANIM_OFF);
+}
 
 int currentPage() { return int(lv_tabview_get_tab_active(tabview)); }
 

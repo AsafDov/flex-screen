@@ -14,13 +14,21 @@ record AppVolume(string Id, string Name, int Level, bool Muted);
 /// of an app's sessions, on every output, at one level: a fader move sets them all, and a
 /// change made in Windows (its mixer, or the app itself) to any of them is taken up as the
 /// app's level and copied to the rest. Apps are shown if they have a session on the
-/// default playback device.
+/// default playback device, and the call apps (Teams, Discord, Zoom) whenever they're running:
+/// Windows gives an app a session only once it plays something, so until then their fader
+/// holds the level they're to start at, applied to their first session when it comes (and
+/// kept in mixer.json, so a restart of the companion doesn't lose it).
 /// </summary>
 sealed class MixerSource
 {
     /// <summary>The deck has room for this many faders next to Master.</summary>
     const int MaxApps = 5;
     const int PollMs = 750;
+    const int RunningEveryMs = 3000;  // how often to look for call apps that are open but silent
+
+    /// <summary>Apps with a fader while they run, sound or not (process names, lower case).</summary>
+    static readonly HashSet<string> CallApps = new(StringComparer.OrdinalIgnoreCase) { "ms-teams", "teams", "discord", "zoom" };
+    static readonly string SavedPath = Path.Combine(AppPaths.Data, "mixer.json");
 
     static readonly Dictionary<string, string> KnownNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -36,16 +44,17 @@ sealed class MixerSource
         ["flow.launcher"] = "Flow Launcher",
     };
 
-    /// <summary>Fader order the user asked for; other apps follow, busiest first, then by name.</summary>
+    /// <summary>Fader order the user asked for; other apps follow, busiest first, then by name.
+    /// Teams right after Spotify (asked for on 2026-11-19), then Chrome.</summary>
     static readonly Dictionary<string, int> FaderOrder = new(StringComparer.OrdinalIgnoreCase)
     {
         ["spotify"] = 0,
-        ["chrome"] = 1,
-        ["ms-teams"] = 2,
-        ["teams"] = 2,
-        ["discord"] = 2,
-        ["system"] = 3,
-        ["flow.launcher"] = 4,
+        ["ms-teams"] = 1,
+        ["teams"] = 1,
+        ["chrome"] = 2,
+        ["discord"] = 3,
+        ["system"] = 4,
+        ["flow.launcher"] = 5,
     };
 
     static int Rank(string id) => FaderOrder.TryGetValue(id, out var rank) ? rank : FaderOrder.Count;
@@ -73,6 +82,9 @@ sealed class MixerSource
     readonly Dictionary<string, string> _names = new();      // mixer id → display name
     readonly Dictionary<string, Level> _levels = new();      // mixer id → the app's one level
     Dictionary<string, Level> _last = new();                 // session key → as last read or set
+    readonly Dictionary<string, Level> _saved = new();       // call app → its level as in mixer.json
+    HashSet<string> _running = [];                           // call apps open right now
+    long _runningAt = -RunningEveryMs;  // so the first round looks
     MMDeviceEnumerator? _enumerator;
     string _key = "";
 
@@ -116,7 +128,11 @@ sealed class MixerSource
     {
         // Polling instead of per-session callbacks: sessions come and go constantly and a
         // sub-second refresh is plenty for a mixer.
-        lock (_gate) _enumerator = new MMDeviceEnumerator();
+        lock (_gate)
+        {
+            _enumerator = new MMDeviceEnumerator();
+            LoadSaved();
+        }
         while (true)
         {
             Poll();
@@ -153,16 +169,31 @@ sealed class MixerSource
         try
         {
             var groups = ReadSessions(open);
+            // Call apps that are open but have no session on the default device yet: a fader
+            // all the same, at the level they're to start at (as saved, else full).
+            var waiting = RunningCallApps().Where(id => !(groups.TryGetValue(id, out var g) && g.OnDefault)).ToList();
+            foreach (var id in waiting)
+            {
+                if (!_names.ContainsKey(id)) _names[id] = KnownNames.TryGetValue(id, out var known) ? known : id;
+                _levels.TryAdd(id, _saved.TryGetValue(id, out var saved) ? saved : new Level(1f, false));
+            }
             var shown = groups
                 .Where(g => g.Value.OnDefault)
-                .OrderBy(g => Rank(g.Key))
-                .ThenByDescending(g => g.Value.Active)
-                .ThenBy(g => g.Value.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(g => (Id: g.Key, g.Value.Name, g.Value.Active))
+                .Concat(waiting.Select(id => (Id: id, Name: _names[id], Active: false)))
+                .OrderBy(a => Rank(a.Id))
+                .ThenByDescending(a => a.Active)
+                .ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
                 .Take(MaxApps)
-                .Select(g => g.Key)
+                .Select(a => a.Id)
                 .ToList();
-            foreach (var id in shown) _levels.TryAdd(id, Heard(groups[id]));
+            foreach (var id in shown)
+            {
+                if (groups.TryGetValue(id, out var g)) _levels.TryAdd(id, Heard(g));
+            }
 
+            // An app whose level is known gets it on every session, a new one too: that's how a
+            // call app's first session starts at the level set while it was silent.
             var last = new Dictionary<string, Level>();
             foreach (var (id, g) in groups)
             {
@@ -170,7 +201,8 @@ sealed class MixerSource
                 else foreach (var s in g.Sessions) last[s.Key] = s.Level;
             }
             _last = last;
-            return shown.Select(id => new AppVolume(id, groups[id].Name, ToPercent(_levels[id].Volume), _levels[id].Muted)).ToList();
+            Save();
+            return shown.Select(id => new AppVolume(id, _names[id], ToPercent(_levels[id].Volume), _levels[id].Muted)).ToList();
         }
         finally
         {
@@ -243,6 +275,63 @@ sealed class MixerSource
                 }
             }
             last[s.Key] = level;
+        }
+    }
+
+    /// <summary>The call apps open now, looked for every few seconds (not every round).</summary>
+    HashSet<string> RunningCallApps()
+    {
+        if (Environment.TickCount64 - _runningAt < RunningEveryMs) return _running;
+        _runningAt = Environment.TickCount64;
+        var running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var process in Process.GetProcesses())
+        {
+            using (process)
+            {
+                if (CallApps.Contains(process.ProcessName)) running.Add(process.ProcessName.ToLowerInvariant());
+            }
+        }
+        return _running = running;
+    }
+
+    sealed record SavedLevel(float Volume, bool Muted);
+
+    void LoadSaved()
+    {
+        try
+        {
+            if (!File.Exists(SavedPath)) return;
+            var saved = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, SavedLevel>>(File.ReadAllText(SavedPath));
+            foreach (var (id, level) in saved ?? new()) _saved[id] = new Level(Math.Clamp(level.Volume, 0f, 1f), level.Muted);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            Log.Write($"mixer: couldn't read {SavedPath}: {e.Message}");
+        }
+    }
+
+    /// <summary>Keeps the call apps' levels in mixer.json when they change (from the deck or in Windows).</summary>
+    void Save()
+    {
+        var changed = false;
+        foreach (var id in CallApps)
+        {
+            if (!_levels.TryGetValue(id, out var level)) continue;
+            if (_saved.TryGetValue(id, out var was) && was.Same(level)) continue;
+            _saved[id] = level;
+            changed = true;
+        }
+        if (!changed) return;
+        try
+        {
+            Directory.CreateDirectory(AppPaths.Data);
+            var json = System.Text.Json.JsonSerializer.Serialize(_saved.ToDictionary(p => p.Key, p => new SavedLevel(p.Value.Volume, p.Value.Muted)),
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(SavedPath, json);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Log.Write($"mixer: couldn't save {SavedPath}: {e.Message}");
         }
     }
 

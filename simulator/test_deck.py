@@ -64,7 +64,7 @@ def tap(d: Deck, text: str, exact: bool = False, dx: int = 0, dy: int = 0, hold:
     return True
 
 
-CHIPS_LEFT, CHIPS_RIGHT = 98, 384  # the Tasks card's chip row, on Capture
+CHIPS_LEFT, CHIPS_RIGHT = 98, 474  # the Tasks card's chip row, on Capture
 RAIL_W, RAIL_H = 76, 422  # the page rail down the left, above the context bar
 
 
@@ -176,22 +176,36 @@ def test_day(d: Deck) -> None:
     tap(d, 'Close', exact=True)
 
 
-def test_six_pages(d: Deck) -> None:
+def test_pages(d: Deck) -> None:
     def tab(name: str) -> dict | None:
         return rail_tab(d, name)
 
-    # A 0.24.0 companion sends the profile's "pages"; the deck keeps its six tabs, in their order.
+    # A 0.24.0 companion sends the profile's "pages"; the deck keeps its five pages, in their order.
     d.send({'t': 'settings', 'palette': 'base', 'idle_clock_s': 600, 'idle_off_s': 1800, 'cheat_hold_s': 10,
             'pages': ['today', 'panels', 'dev']})
     time.sleep(1.5)
     try:
-        tabs = [tab(n) for n in ('Today', 'Audio', 'Dev', 'Windows', 'Capture', 'Numpad')]
-        panels = tab('Panels')
+        tabs = [tab(n) for n in ('Today', 'Audio', 'Dev', 'Windows', 'Capture')]
+        others = [tab(n) for n in ('Panels', 'Numpad')]
     except OSError:  # reading the screen needs the same connection: a restart would have closed it
-        tabs, panels = [None], None
-    check('pages: the six tabs stay, in their order, whatever the settings say',
+        tabs, others = [None], [None]
+    check('pages: the five pages stay, in their order, whatever the settings say',
           all(tabs) and [t['y'] for t in tabs] == sorted(t['y'] for t in tabs), str([(t or {}).get('y') for t in tabs]))
-    check('pages: no Panels tab', panels is None)
+    check('pages: no Panels or Numpad in the rail', not any(others), str(others))
+
+    # Swipes, on Today's clock card: up is the next page, down the one before; sideways too.
+    d.page(0)
+    d.drag(230, 145, 230, 55)
+    check('pages: a swipe up goes to the next page', on_screen(d, 'Microphone Array'))
+    d.drag(300, 110, 300, 200)
+    check('pages: a swipe down goes back', on_screen(d, 'UP NEXT', exact=True))
+    d.drag(330, 110, 130, 110)
+    check('pages: a swipe left still goes to the next page', on_screen(d, 'Microphone Array'))
+    d.drag(130, 110, 330, 110)
+    check('pages: and right back', on_screen(d, 'UP NEXT', exact=True))
+    tap_node(d, rail_tab(d, 'Dev'))
+    check('pages: the rail goes straight to a page', on_screen(d, 'TERMINAL'))
+    d.page(0)
 
 
 def test_icon_asks(d: Deck) -> None:
@@ -213,7 +227,9 @@ def test_today(d: Deck) -> None:
     expect_act(d, 'today: previous track', PREV, 'media.prev', exact=True, below=180)
     expect_act(d, 'today: Recent tile runs it again', 'Obsidian', 'recent.run', id='a2', below=180)
     mark = d.mark()
-    d.drag(136, 320, 280, 320)
+    slider = next((n for n in shown(d) if n.get('c') == 'slider' and n['x'] < 400), None) or {'x': 120, 'y': 340, 'w': 200, 'h': 8}
+    y = slider['y'] + slider['h'] // 2
+    d.drag(slider['x'] + 10, y, slider['x'] + slider['w'] - 30, y)
     check('today: volume slider sets the volume', did(d, mark, 'vol.set') is not None)
     check('today: the tasks pill counts open and due', on_screen(d, '10 to do · 4 due'))
     tap(d, '10 to do')
@@ -261,6 +277,7 @@ def test_audio(d: Deck) -> None:
         d.drag(x, 250, x, 200)
     hit = did(d, mark, 'mixer.set', app='spotify')
     check('audio: dragging a fader sets that app', hit is not None, str(d.acts(mark)))
+    check('audio: and stays on the page (it isn\'t a swipe)', on_screen(d, 'Microphone Array'))
     d.shot(os.path.join(OUT, 'audio.png'))
 
 
@@ -297,11 +314,16 @@ def test_windows(d: Deck) -> None:
 def test_capture(d: Deck) -> None:
     d.page(4)
     expect_act(d, 'capture: tap a clip pastes it', 'ssh deck', 'clip.paste', id='c1')
-    expect_act(d, 'capture: hold a clip pins it', '#5AB4FF', 'clip.pin', hold=True, id='c4')
+    expect_act(d, 'capture: hold a clip pins it', 'lv_obj_set_style', 'clip.pin', hold=True, id='c3')
+    # Three show at a time above Obsidian; the list scrolls to the rest.
+    clip = label(d, 'lv_obj_set_style')
+    if clip:
+        d.drag(clip['x'] + 40, clip['y'] + 8, clip['x'] + 40, clip['y'] - 80, ms=500)
+    expect_act(d, 'capture: the clips scroll to the rest', '#5AB4FF', 'clip.pin', hold=True, id='c4')
     expect_act(d, 'capture: Clear', 'Clear', 'clip.clear', exact=True)
     check('capture: no mail tasks any more', not on_screen(d, 'FROM MAIL') and not on_screen(d, 'Open Gmail'))
     expect_act(d, "capture: Obsidian today's note", "Today's note", 'obs.today')
-    expect_act(d, 'capture: a recent note', 'Inbox', 'obs.open', exact=True, path='Inbox.md')
+    expect_act(d, 'capture: a recent note', '2026-11-08', 'obs.open', exact=True, path='Daily/2026-11-08.md')
     d.shot(os.path.join(OUT, 'capture.png'))
 
 
@@ -499,8 +521,18 @@ def test_task_sources(d: Deck) -> None:
     d.state('tasks', fixtures.tasks())
 
 
+def numpad_open(d: Deck) -> bool:
+    return on_screen(d, 'Send keys', exact=True)
+
+
 def test_numpad(d: Deck) -> None:
-    d.page(5)
+    d.page(0)  # not Windows: its zone map's "1" "2" "3" would be found before the keys
+    d.tap(*fixtures.LAUNCHER)
+    tap(d, 'Numpad', exact=True)
+    check('numpad: opens from the shortcuts panel', numpad_open(d) and not launcher_open(d))
+    check('numpad: over the page, which stays', on_screen(d, 'UP NEXT', exact=True))
+    check('numpad: the context bar hides under it', not bar_key(d, 'Build'))
+    d.shot(os.path.join(OUT, 'numpad.png'))
     mark = d.mark()
     tap(d, '7', exact=True)
     keys = keys_since(d, mark)
@@ -514,6 +546,16 @@ def test_numpad(d: Deck) -> None:
     d.shot(os.path.join(OUT, 'calculator.png'))
     expect_act(d, 'numpad: a second Enter types the result', 'Enter', 'key.text', text='15')
     tap(d, 'Send keys')
+    tap(d, CLOSE, exact=True)
+    check('numpad: its X closes it', not numpad_open(d))
+    check('numpad: and the context bar is back', bar_key(d, 'Build') is not None)
+    d.page(5)  # the companion's (and the simulator's) old index for it opens it
+    check('numpad: page 5 opens it', numpad_open(d))
+    mark = d.mark()
+    d.tap(38, 160)  # the rail's Dev button, beside it
+    check('numpad: a tap beside it closes it, and reaches nothing underneath',
+          not numpad_open(d) and not on_screen(d, 'TERMINAL') and not d.acts(mark), str(d.acts(mark)))
+    d.page(0)
 
 
 # ---- overlays
@@ -749,11 +791,12 @@ def test_launcher(d: Deck) -> None:
     check('launcher: its button is at the foot of the rail', button is not None and button['y'] + button['h'] <= RAIL_H
           and abs(button['x'] + button['w'] // 2 - fixtures.LAUNCHER[0]) <= 2
           and abs(button['y'] + button['h'] // 2 - fixtures.LAUNCHER[1]) <= 2, str(button))
-    numpad = rail_tab(d, 'Numpad')
-    check('launcher: all six page buttons fit above it', all(rail_tab(d, n) for n in ('Today', 'Numpad')) and numpad
-          and button and numpad['y'] + numpad['h'] < button['y'], str((numpad, button)))
+    last = rail_tab(d, 'Capture')
+    check('launcher: all five page buttons fit above it', all(rail_tab(d, n) for n in ('Today', 'Capture')) and last
+          and button and last['y'] + last['h'] < button['y'], str((last, button)))
     d.tap(*fixtures.LAUNCHER)
     check('launcher: the button opens it', launcher_open(d))
+    check('launcher: with the Numpad button in its header', on_screen(d, 'Numpad', exact=True))
     names = ['Gmail', 'Calendar', "Today's note", 'Spotify', 'VS Code', 'Terminal']
     check('launcher: every shortcut has a tile', all(on_screen(d, n, exact=True) for n in names),
           str([n for n in names if not on_screen(d, n, exact=True)]))
@@ -853,7 +896,7 @@ def test_context_bar(d: Deck) -> None:
         bad = overlapping_bar(d)
         check(f'context bar: page {page} fits above it', not bad, str(bad[:5]))
     d.page(5)
-    check('context bar: not on the Numpad', not bar_key(d, 'Build'))
+    check('context bar: not under the Numpad', not bar_key(d, 'Build'))
     d.page(0)
     check('context bar: back on the other pages', bar_key(d, 'Build') is not None)
     chip = bar_key(d, 'VS Code')
@@ -1481,7 +1524,7 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_icon_asks, test_day, test_six_pages, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
+        for test in (test_today, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
                      test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_diagnostics, test_glow, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day

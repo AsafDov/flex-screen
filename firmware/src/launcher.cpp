@@ -6,6 +6,7 @@
 #include "icons.h"
 #include "idle.h"
 #include "model.h"
+#include "page_numpad.h"
 #include "pc.h"
 #include "ui_kit.h"
 
@@ -19,7 +20,7 @@ constexpr int kTile = 104;
 constexpr int kTileGap = 8;
 constexpr int kPad = 14, kBorderW = 2;
 constexpr int kW = kCols * kTile + (kCols - 1) * kTileGap + 2 * (kPad + kBorderW);
-constexpr int kHeadH = 28;
+constexpr int kHeadH = 40;  // the Numpad button's height
 constexpr int kBadge = 40;
 constexpr int kButtonH = 44;
 constexpr uint32_t kIconRetryMs = 3000;  // asking again for an icon the deck lacks
@@ -52,6 +53,11 @@ void setOpen(bool open) {
 
 void onButton(lv_event_t *) { setOpen(!is_open); }
 void onScrim(lv_event_t *) { setOpen(false); }
+// The Numpad isn't a page: it pops up from here, over whatever page is on show.
+void onNumpad(lv_event_t *) {
+  setOpen(false);
+  numpad::open();
+}
 
 void onTile(lv_event_t *e) {
   const int i = int(intptr_t(lv_event_get_user_data(e)));
@@ -233,6 +239,13 @@ void build(lv_obj_t *rail) {
   lv_obj_set_size(gap, 1, 1);
   lv_obj_set_flex_grow(gap, 1);
   label(head, "Change them from the tray icon: Shortcuts…", &small_font, kMuted);
+  lv_obj_t *numpad = button(head, LV_SIZE_CONTENT, kHeadH, kRaised, onNumpad);
+  lv_obj_set_style_radius(numpad, 10, 0);
+  lv_obj_set_style_pad_hor(numpad, 14, 0);
+  lv_obj_set_style_margin_left(numpad, 6, 0);
+  flexRow(numpad, 8);
+  label(numpad, LV_SYMBOL_KEYBOARD, &lv_font_montserrat_16, kAccent);
+  label(numpad, "Numpad", &body_font, kText);
 
   w.note = label(w.panel, "", &body_font, kMuted);
   lv_obj_set_width(w.note, LV_PCT(100));

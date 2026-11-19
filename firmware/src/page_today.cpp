@@ -17,6 +17,7 @@ namespace {
 constexpr uint32_t kHoldAfterTouchMs = 800;
 constexpr uint32_t kCalendarTickMs = 15000;  // "in 18 min"
 constexpr uint32_t kIconRetryMs = 3000;      // asking again for a window icon the deck lacks
+constexpr int kArtSize = 96;
 
 // A Recent tile: an icon (a window's own, else a glyph on a tinted square), what it is,
 // and which one.
@@ -98,15 +99,16 @@ void buildNowPlaying(lv_obj_t *parent) {
   lv_obj_t *info = box(np);
   lv_obj_set_size(info, LV_PCT(100), LV_SIZE_CONTENT);
   flexRow(info, 10);
+  // The art at 96 px: at 48 the card, taller beside the rail, was mostly empty.
   lv_obj_t *holder = card(info, kArtBg, kArtBg);
-  lv_obj_set_size(holder, 48, 48);
+  lv_obj_set_size(holder, kArtSize, kArtSize);
   lv_obj_set_style_pad_all(holder, 0, 0);
   lv_obj_set_style_radius(holder, 8, 0);
   lv_obj_set_style_clip_corner(holder, true, 0);
-  w.art_icon = label(holder, LV_SYMBOL_AUDIO, &lv_font_montserrat_20, 0x8CCBFF);
+  w.art_icon = label(holder, LV_SYMBOL_AUDIO, &lv_font_montserrat_28, 0x8CCBFF);
   lv_obj_center(w.art_icon);
   w.art = lv_image_create(holder);
-  lv_obj_set_size(w.art, 48, 48);
+  lv_obj_set_size(w.art, kArtSize, kArtSize);
   lv_image_set_inner_align(w.art, LV_IMAGE_ALIGN_STRETCH);
   lv_obj_set_hidden(w.art, true);
 

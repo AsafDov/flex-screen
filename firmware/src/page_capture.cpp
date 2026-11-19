@@ -10,8 +10,8 @@
 namespace ui::capture {
 namespace {
 
-constexpr int kObsidianW = 160;  // narrower beside the rail, so the tasks keep ~310 px
-constexpr int kClipsW = 214;
+constexpr int kSideW = 294;  // the clipboard over Obsidian, right of the tasks
+constexpr int kObsidianH = 150;  // two rows of note chips; the clipboard shows three clips above
 constexpr uint32_t kObsidian = 0xB48CFF;  // Obsidian's purple, from the design canvas
 constexpr uint32_t kOnObsidian = 0x1A1030;
 constexpr uint32_t kTickMs = 30000;  // ages ("4m")
@@ -75,9 +75,10 @@ lv_obj_t *note(lv_obj_t *parent) {
   return l;
 }
 
-void buildClipboard(lv_obj_t *row) {
-  lv_obj_t *c = card(row);
-  lv_obj_set_size(c, kClipsW, LV_PCT(100));
+void buildClipboard(lv_obj_t *col) {
+  lv_obj_t *c = card(col);
+  lv_obj_set_width(c, LV_PCT(100));
+  lv_obj_set_flex_grow(c, 1);
   flexCol(c, 6);
   // The hint sits at the bottom, away from Clear: tapping "TAP TO PASTE" up there hit Clear.
   lv_obj_t *h = header(c, "CLIPBOARD");
@@ -87,9 +88,18 @@ void buildClipboard(lv_obj_t *row) {
   lv_obj_center(label(clear, "Clear", &small_font, kMuted));
   w.clip_note = note(c);
 
+  // The clips in a list of their own that scrolls: about four show at once above Obsidian.
+  lv_obj_t *list = box(c);
+  lv_obj_set_width(list, LV_PCT(100));
+  lv_obj_set_flex_grow(list, 1);
+  flexCol(list, 6);
+  lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scroll_dir(list, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
+  lv_obj_set_clickable(list, true);  // a drag between clips still scrolls
   for (int i = 0; i < model::Clips::kMax; i++) {
     ClipRow &r = w.clips[i];
-    r.root = button(c, LV_PCT(100), 40, kRaised, nullptr);
+    r.root = button(list, LV_PCT(100), 38, kRaised, nullptr);
     lv_obj_set_style_radius(r.root, 10, 0);
     lv_obj_set_style_pad_hor(r.root, 10, 0);
     lv_obj_add_event_cb(r.root, onClipTap, LV_EVENT_SHORT_CLICKED, reinterpret_cast<void *>(intptr_t(i)));
@@ -104,9 +114,7 @@ void buildClipboard(lv_obj_t *row) {
     fillRow(r.text);
     r.age = label(r.root, "", &small_font, kMuted);
   }
-  lv_obj_t *gap = box(c);
-  lv_obj_set_flex_grow(gap, 1);
-  w.clip_hint = label(c, "Tap: paste  ·  hold: pin", &small_font, kMuted);  // one line in the narrower column
+  w.clip_hint = label(c, "Tap: paste  ·  hold: pin", &small_font, kMuted);
   lv_obj_set_width(w.clip_hint, LV_PCT(100));
   lv_obj_set_style_text_align(w.clip_hint, LV_TEXT_ALIGN_CENTER, 0);
 }
@@ -118,19 +126,29 @@ lv_obj_t *obsidianButton(lv_obj_t *parent, const char *text, const char *what, b
   return b;
 }
 
-void buildObsidian(lv_obj_t *row) {
-  lv_obj_t *c = card(row);
-  lv_obj_set_size(c, kObsidianW, LV_PCT(100));
-  flexCol(c, 8);
-  w.vault_title = label(header(c, ""), "", &small_font, kMuted);
-  fillRow(w.vault_title);
+// Under the clipboard: today's note, and the recent notes in a grid of two even columns,
+// each name cut to its cell (chips as wide as their names looked heaped one after the
+// other). As many rows as fit; see updateObsidian.
+void buildObsidian(lv_obj_t *col) {
+  lv_obj_t *c = card(col);
+  lv_obj_set_size(c, LV_PCT(100), kObsidianH);
+  lv_obj_set_style_pad_all(c, 10, 0);
+  flexCol(c, 6);
+  w.vault_title = label(c, "", &small_font, kMuted);
+  ellipsize(w.vault_title);
   w.today = obsidianButton(c, LV_SYMBOL_FILE "  Today's note", "today", true);
+  lv_obj_set_height(w.today, 40);
   w.obsidian_note = note(c);
-  label(c, "RECENT", &small_font, kMuted);
+  lv_obj_t *grid = box(c);
+  lv_obj_set_width(grid, LV_PCT(100));
+  lv_obj_set_flex_grow(grid, 1);
+  lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
+  lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+  lv_obj_set_style_pad_row(grid, 5, 0);  // two rows under Today's note: at 28 and 6 the second missed by a pixel
   for (int i = 0; i < model::Obsidian::kMaxRecent; i++) {
-    lv_obj_t *b = button(c, LV_PCT(100), 32, kSurface, onRecent, reinterpret_cast<void *>(intptr_t(i)));
+    lv_obj_t *b = button(grid, LV_PCT(48), 26, kRaised, onRecent, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_set_style_radius(b, 8, 0);
-    lv_obj_set_style_pad_hor(b, 6, 0);
+    lv_obj_set_style_pad_hor(b, 8, 0);
     flexRow(b, 6);
     label(b, LV_SYMBOL_FILE, &small_font, kObsidian);
     w.recent_text[i] = label(b, "", &small_font, kText);
@@ -206,7 +224,7 @@ void updateObsidian() {
     setHidden(w.recent[i], !used);
     if (used) setText(w.recent_text[i], o.recent[i].name.c_str());
   }
-  // Only the notes that fit: with the context bar showing, the fifth ran past the card.
+  // Only the notes that fit: past two rows of the grid they'd run out of the card.
   lv_obj_t *card = lv_obj_get_parent(w.recent[0]);
   lv_obj_update_layout(card);
   lv_area_t inside;
@@ -230,8 +248,13 @@ void build(lv_obj_t *page) {
   flexRow(page, kGap);
   lv_obj_set_flex_align(page, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
   tasks::build(page);
-  buildClipboard(page);
-  buildObsidian(page);
+  // Right of the tasks, the clipboard over Obsidian: three columns beside the rail left
+  // each too narrow.
+  lv_obj_t *side = box(page);
+  lv_obj_set_size(side, kSideW, LV_PCT(100));
+  flexCol(side, kGap);
+  buildClipboard(side);
+  buildObsidian(side);
   updateClips();
   updateObsidian();
 }

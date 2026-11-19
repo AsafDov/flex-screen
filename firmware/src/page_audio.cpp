@@ -9,12 +9,13 @@ namespace ui::audio {
 namespace {
 
 // The companion sends 180 px art; it's drawn smaller so the card fits above the context bar.
-constexpr int kArtSize = 128;
+constexpr int kArtSize = 104;
 constexpr int kChannels = 1 + model::Mixer::kMax;  // Master + apps
 constexpr uint32_t kHoldAfterTouchMs = 1000;       // the mixer is polled every 750 ms
 constexpr uint32_t kProgressEveryMs = 250;
 constexpr uint32_t kSwitchTimeoutMs = 4000;
-constexpr int kDeviceH = 36;  // the output and input buttons
+constexpr int kDeviceH = 32;  // the output and input buttons
+constexpr int kDevicesW = 200;  // their column, left of the mixer: as narrow as "Microphone Array" allows
 
 struct Channel {
   String id;  // "" for Master
@@ -119,21 +120,66 @@ void onChannelMute(lv_event_t *e) {
   }
 }
 
+// Now playing as a band across the top: the keys on the left, what's playing in the middle
+// with its progress on one line (times either side of the bar), and the album on the right.
+// (The art first and the keys at the far end spread it across the band.)
 void buildNowPlaying(lv_obj_t *parent) {
   lv_obj_t *c = card(parent);
-  lv_obj_set_size(c, 280, LV_PCT(100));
-  lv_obj_set_style_pad_all(c, 14, 0);
-  flexCol(c, 4);
+  lv_obj_set_size(c, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_style_pad_all(c, 12, 0);
+  lv_obj_set_style_pad_left(c, 16, 0);
+  flexRow(c, 20);
 
-  // Art as large as the card's height allows, with where it's playing and the
-  // shuffle/repeat toggles in the column beside it.
-  lv_obj_t *top = box(c);
-  lv_obj_set_size(top, LV_PCT(100), kArtSize);
-  flexRow(top, 10);
-  lv_obj_set_flex_align(top, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-  lv_obj_set_style_margin_bottom(top, 4, 0);
+  lv_obj_t *controls = box(c);
+  lv_obj_set_size(controls, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  flexCol(controls, 10);
+  lv_obj_set_flex_align(controls, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_t *transport = box(controls);
+  lv_obj_set_size(transport, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  flexRow(transport, 12);
+  iconButton(transport, 48, 48, kRaised, LV_SYMBOL_PREV, kText, onPrev);
+  lv_obj_t *play = button(transport, 60, 60, kText, onToggle);
+  lv_obj_set_style_bg_color(play, hex(0xC9CED4), LV_STATE_PRESSED);
+  w.play_icon = label(play, LV_SYMBOL_PLAY, &lv_font_montserrat_28, kBg);
+  lv_obj_center(w.play_icon);
+  iconButton(transport, 48, 48, kRaised, LV_SYMBOL_NEXT, kText, onNext);
+  lv_obj_t *toggles = box(controls);
+  lv_obj_set_size(toggles, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  flexRow(toggles, 8);
+  w.shuffle_icon = iconButton(toggles, 56, 30, kRaised, LV_SYMBOL_SHUFFLE, kMuted, onShuffle);
+  w.shuffle = lv_obj_get_parent(w.shuffle_icon);
+  w.repeat_icon = iconButton(toggles, 56, 30, kRaised, LV_SYMBOL_LOOP, kMuted, onRepeat);
+  w.repeat = lv_obj_get_parent(w.repeat_icon);
+  for (lv_obj_t *b : {w.shuffle, w.repeat}) lv_obj_set_style_radius(b, 10, 0);
 
-  lv_obj_t *holder = card(top, kArtBg, kArtBg);
+  lv_obj_t *info = box(c);
+  lv_obj_set_size(info, 1, LV_SIZE_CONTENT);
+  lv_obj_set_flex_grow(info, 1);
+  flexCol(info, 2);
+  lv_obj_t *where = box(info);
+  lv_obj_set_size(where, LV_PCT(100), LV_SIZE_CONTENT);
+  flexRow(where, 8);
+  w.app = label(where, "", &small_font, kAccent);
+  w.device = label(where, "", &small_font, kMuted);
+  fillRow(w.device);
+  w.title = label(info, "Nothing playing", &title_font, kText);
+  w.artist = label(info, "", &body_font, kMuted);
+  ellipsize(w.title);
+  ellipsize(w.artist);
+  lv_obj_t *times = box(info);
+  lv_obj_set_size(times, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_style_margin_top(times, 8, 0);
+  flexRow(times, 10);
+  w.elapsed = label(times, "", &lv_font_montserrat_14, kMuted);
+  w.progress = lv_bar_create(times);
+  lv_obj_set_size(w.progress, 1, 6);
+  lv_obj_set_flex_grow(w.progress, 1);
+  lv_bar_set_range(w.progress, 0, 1000);
+  lv_obj_set_style_bg_color(w.progress, hex(kTrack), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(w.progress, hex(kAccent), LV_PART_INDICATOR);
+  w.total = label(times, "", &lv_font_montserrat_14, kMuted);
+
+  lv_obj_t *holder = card(c, kArtBg, kArtBg);
   lv_obj_set_size(holder, kArtSize, kArtSize);
   lv_obj_set_style_pad_all(holder, 0, 0);
   lv_obj_set_style_clip_corner(holder, true, 0);
@@ -143,105 +189,50 @@ void buildNowPlaying(lv_obj_t *parent) {
   lv_obj_set_size(w.art, kArtSize, kArtSize);
   lv_image_set_inner_align(w.art, LV_IMAGE_ALIGN_STRETCH);
   lv_obj_set_hidden(w.art, true);
-
-  lv_obj_t *side = box(top);
-  lv_obj_set_flex_grow(side, 1);
-  lv_obj_set_height(side, LV_PCT(100));
-  flexCol(side, 6);
-  lv_obj_set_flex_align(side, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-  w.app = label(side, "", &small_font, kAccent);
-  w.device = label(side, "", &small_font, kMuted);
-  ellipsize(w.app);
-  ellipsize(w.device);
-  lv_obj_t *gap = box(side);
-  lv_obj_set_flex_grow(gap, 1);
-  // Side by side: stacked, the second ran past the art's 128 px and was cut off.
-  lv_obj_t *toggles = box(side);
-  lv_obj_set_size(toggles, LV_PCT(100), LV_SIZE_CONTENT);
-  flexRow(toggles, 8);
-  w.shuffle_icon = iconButton(toggles, 40, 40, kRaised, LV_SYMBOL_SHUFFLE, kMuted, onShuffle);
-  w.shuffle = lv_obj_get_parent(w.shuffle_icon);
-  w.repeat_icon = iconButton(toggles, 40, 40, kRaised, LV_SYMBOL_LOOP, kMuted, onRepeat);
-  w.repeat = lv_obj_get_parent(w.repeat_icon);
-  for (lv_obj_t *b : {w.shuffle, w.repeat}) lv_obj_set_style_radius(b, 10, 0);
-
-  w.title = label(c, "Nothing playing", &title_font, kText);
-  w.artist = label(c, "", &body_font, kMuted);
-  ellipsize(w.title);
-  ellipsize(w.artist);
-
-  w.progress = lv_bar_create(c);
-  lv_obj_set_size(w.progress, LV_PCT(100), 6);
-  lv_bar_set_range(w.progress, 0, 1000);
-  lv_obj_set_style_bg_color(w.progress, hex(kTrack), LV_PART_MAIN);
-  lv_obj_set_style_bg_color(w.progress, hex(kAccent), LV_PART_INDICATOR);
-  lv_obj_set_style_margin_top(w.progress, 4, 0);
-  lv_obj_t *times = box(c);
-  lv_obj_set_size(times, LV_PCT(100), LV_SIZE_CONTENT);
-  flexRow(times, 0);
-  lv_obj_set_flex_align(times, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  w.elapsed = label(times, "", &lv_font_montserrat_14, kMuted);
-  w.total = label(times, "", &lv_font_montserrat_14, kMuted);
-
-  lv_obj_t *spacer = box(c);
-  lv_obj_set_width(spacer, LV_PCT(100));
-  lv_obj_set_flex_grow(spacer, 1);
-
-  lv_obj_t *transport = box(c);
-  lv_obj_set_size(transport, LV_PCT(100), LV_SIZE_CONTENT);
-  flexRow(transport, 16);
-  lv_obj_set_flex_align(transport, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  iconButton(transport, 48, 48, kRaised, LV_SYMBOL_PREV, kText, onPrev);
-  lv_obj_t *play = button(transport, 60, 60, kText, onToggle);
-  lv_obj_set_style_bg_color(play, hex(0xC9CED4), LV_STATE_PRESSED);
-  w.play_icon = label(play, LV_SYMBOL_PLAY, &lv_font_montserrat_28, kBg);
-  lv_obj_center(w.play_icon);
-  iconButton(transport, 48, 48, kRaised, LV_SYMBOL_NEXT, kText, onNext);
 }
 
-// A speaker or a microphone, not "OUTPUT" and "INPUT": beside the rail the words left room
-// for two devices and a half.
-lv_obj_t *buildDeviceRow(lv_obj_t *parent, bool output) {
-  lv_obj_t *row = box(parent);
-  lv_obj_set_size(row, LV_PCT(100), kDeviceH);
-  flexRow(row, 8);
-  lv_obj_t *kind = box(row);
-  lv_obj_set_size(kind, 22, kDeviceH);
+// The outputs, then the inputs, each a list under its heading, left of the mixer: every
+// name gets the column's width (side by side the third output was cut off), and more
+// devices than fit scroll.
+lv_obj_t *buildDeviceList(lv_obj_t *parent, bool output) {
+  lv_obj_t *head = box(parent);
+  lv_obj_set_size(head, LV_PCT(100), LV_SIZE_CONTENT);
+  flexRow(head, 6);
   if (output) {
-    lv_obj_center(label(kind, LV_SYMBOL_VOLUME_MAX, &lv_font_montserrat_16, kMuted));
+    label(head, LV_SYMBOL_VOLUME_MAX, &lv_font_montserrat_14, kMuted);
   } else {
-    const MicIcon mic = micIcon(kind);
+    const MicIcon mic = micIcon(head);
     setMicIcon(mic, kMuted, false);
-    lv_obj_center(mic.root);
   }
-  lv_obj_t *buttons = box(row);
-  lv_obj_set_flex_grow(buttons, 1);
-  lv_obj_set_height(buttons, kDeviceH);
-  flexRow(buttons, 8);
-  // More than three devices scroll sideways instead of shrinking.
-  lv_obj_set_scrollable(buttons, true);
-  lv_obj_set_scroll_dir(buttons, LV_DIR_HOR);
-  lv_obj_set_scrollbar_mode(buttons, LV_SCROLLBAR_MODE_OFF);
-  return buttons;
+  label(head, output ? "OUTPUT" : "INPUT", &small_font, kMuted);
+  lv_obj_t *list = box(parent);
+  lv_obj_set_size(list, LV_PCT(100), LV_SIZE_CONTENT);
+  flexCol(list, 5);
+  return list;
 }
 
-void buildRight(lv_obj_t *parent) {
-  lv_obj_t *right = box(parent);
-  lv_obj_set_flex_grow(right, 1);
-  lv_obj_set_height(right, LV_PCT(100));
-  flexCol(right, kGap);
+void buildBottom(lv_obj_t *parent) {
+  lv_obj_t *row = box(parent);
+  lv_obj_set_width(row, LV_PCT(100));
+  lv_obj_set_flex_grow(row, 1);
+  flexRow(row, kGap);
 
-  lv_obj_t *devices = card(right);
-  lv_obj_set_size(devices, LV_PCT(100), LV_SIZE_CONTENT);
-  lv_obj_set_style_pad_all(devices, 8, 0);
+  lv_obj_t *devices = card(row);
+  lv_obj_set_size(devices, kDevicesW, LV_PCT(100));
+  lv_obj_set_style_pad_all(devices, 10, 0);
   flexCol(devices, 6);
-  w.outputs = buildDeviceRow(devices, true);
-  w.inputs = buildDeviceRow(devices, false);
+  lv_obj_add_flag(devices, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scroll_dir(devices, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(devices, LV_SCROLLBAR_MODE_AUTO);
+  w.outputs = buildDeviceList(devices, true);
+  lv_obj_t *gap = box(devices);
+  lv_obj_set_size(gap, 1, 4);
+  w.inputs = buildDeviceList(devices, false);
 
   // All the height that's left goes to the faders: no heading row (with the context bar
   // under the page, a heading, names and mute icons left them ~25 px of travel).
-  lv_obj_t *mixer = card(right);
-  lv_obj_set_width(mixer, LV_PCT(100));
+  lv_obj_t *mixer = card(row);
+  lv_obj_set_height(mixer, LV_PCT(100));
   lv_obj_set_flex_grow(mixer, 1);
   lv_obj_set_style_pad_all(mixer, 8, 0);
   w.channels = box(mixer);
@@ -258,16 +249,13 @@ void fillDevices(lv_obj_t *row, const model::Device *list, int count, lv_event_c
   }
   for (int i = 0; i < count; i++) {
     const model::Device &d = list[i];
-    // As wide as the name (up to a limit, then "…"): at a fixed 124 px "Headphones" and
-    // "Microphone Array" were cut short and three outputs ran past the card's edge, while
-    // "Speakers" had room to spare (seen in the simulator).
-    lv_obj_t *b = button(row, LV_SIZE_CONTENT, kDeviceH, kRaised, cb, reinterpret_cast<void *>(intptr_t(i)));
-    lv_obj_set_style_min_width(b, 84, 0);
+    // A row each, the list's width: the name from the left, "…" when too long.
+    lv_obj_t *b = button(row, LV_PCT(100), kDeviceH, kRaised, cb, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_set_style_radius(b, 10, 0);
     lv_obj_set_style_pad_hor(b, 12, 0);
-    lv_obj_t *l = label(b, "", &body_font, kSoftText);
-    setTextUpTo(l, d.name.c_str(), 150);
-    lv_obj_center(l);
+    lv_obj_t *l = label(b, d.name.c_str(), &body_font, kSoftText);
+    ellipsize(l);
+    lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
     styleDevice(b, d.selected);
     if (d.selected) shown = i;
   }
@@ -460,11 +448,10 @@ void updateMedia() {
 
 void build(lv_obj_t *page) {
   lv_obj_set_style_pad_all(page, kGap, 0);
-  lv_obj_set_flex_flow(page, LV_FLEX_FLOW_ROW);
-  lv_obj_set_style_pad_column(page, kGap, 0);
+  flexCol(page, kGap);
   lv_obj_set_scrollable(page, false);
   buildNowPlaying(page);
-  buildRight(page);
+  buildBottom(page);
 }
 
 void update() {

@@ -1,7 +1,8 @@
 // The shortcuts launcher: a button at the foot of the page rail, on every page, that
 // opens a panel of up to 12 tiles over the page: apps, links, deck actions and key
 // combinations from the companion's settings. A tap on a tile runs it and closes the
-// panel; a tap anywhere else (the button too) just closes it.
+// panel; a tap anywhere else (the button too) just closes it. Its header has the Numpad
+// button, which pops the Numpad up over the page.
 #pragma once
 
 #include <lvgl.h>

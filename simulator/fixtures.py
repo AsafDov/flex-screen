@@ -144,8 +144,8 @@ def day() -> dict[str, dict]:
         'vol': {'v': 42, 'muted': False},
         'mixer': {'apps': [
             {'id': 'spotify', 'name': 'Spotify', 'v': 47, 'muted': False},
+            {'id': 'ms-teams', 'name': 'Teams', 'v': 80, 'muted': True},  # right after Spotify, as the companion ranks it
             {'id': 'chrome', 'name': 'Chrome', 'v': 33, 'muted': False},
-            {'id': 'ms-teams', 'name': 'Teams', 'v': 80, 'muted': True},
             {'id': 'system', 'name': 'System', 'v': 100, 'muted': False},
             {'id': 'flow.launcher', 'name': 'Flow Launcher', 'v': 54, 'muted': False},
         ]},

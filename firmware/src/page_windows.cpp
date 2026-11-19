@@ -8,7 +8,7 @@
 namespace ui::windows {
 namespace {
 
-constexpr int kZonePanelW = 270;  // the tiles get the rest: the pages are 704 px wide beside the rail
+constexpr int kZonePanelW = 234;  // the tiles get the rest: the pages are 704 px wide beside the rail
 constexpr int kTileW = 143;
 constexpr int kTileH = 100;
 constexpr int kThumbW = 28;
@@ -205,7 +205,7 @@ void buildWindows(lv_obj_t *row) {
 }
 
 void buildLayoutButton(lv_obj_t *parent, int i) {
-  lv_obj_t *b = button(parent, LV_PCT(48), 40, kRaised, onLayout, reinterpret_cast<void *>(intptr_t(i)));  // two to a row
+  lv_obj_t *b = button(parent, LV_PCT(100), 32, kRaised, onLayout, reinterpret_cast<void *>(intptr_t(i)));  // a row each, the whole name
   lv_obj_set_style_radius(b, 12, 0);
   lv_obj_set_style_pad_hor(b, 6, 0);
   lv_obj_set_style_border_color(b, hex(kAccent), 0);
@@ -239,11 +239,10 @@ void buildZones(lv_obj_t *row) {
   flexCol(c, 8);
   header(c, "FANCYZONES LAYOUT", nullptr);
 
+  // A list, a layout a row: two to a row beside the rail cut "Columns" to "Colu…".
   lv_obj_t *layouts = box(c);
   lv_obj_set_size(layouts, LV_PCT(100), LV_SIZE_CONTENT);
-  lv_obj_set_flex_flow(layouts, LV_FLEX_FLOW_ROW_WRAP);
-  lv_obj_set_flex_align(layouts, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-  lv_obj_set_style_pad_row(layouts, 8, 0);
+  flexCol(layouts, 5);
   for (int i = 0; i < kLayoutCount; i++) buildLayoutButton(layouts, i);
 
   w.snap_title = label(c, "", &small_font, kMuted);
@@ -262,12 +261,15 @@ void buildZones(lv_obj_t *row) {
   lv_obj_set_size(w.monitors, LV_PCT(100), LV_SIZE_CONTENT);
   flexRow(w.monitors, 8);
   for (int i = 0; i < model::Zones::kMax; i++) {
-    lv_obj_t *b = button(w.monitors, 0, 36, kRaised, onMonitor, reinterpret_cast<void *>(intptr_t(i)));
+    lv_obj_t *b = button(w.monitors, 0, 40, kRaised, onMonitor, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_set_flex_grow(b, 1);
     lv_obj_set_style_radius(b, 10, 0);
     lv_obj_set_style_pad_hor(b, 6, 0);
+    // Up to two lines: in the narrower column one cut "DELL P2722H" to "DELL P…".
     w.mon_labels[i] = label(b, "", &small_font, kSoftText);
-    ellipsize(w.mon_labels[i]);
+    lv_obj_set_width(w.mon_labels[i], LV_PCT(100));
+    lv_label_set_long_mode(w.mon_labels[i], LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_style_max_height(w.mon_labels[i], 2 * lv_font_get_line_height(&small_font), 0);
     lv_obj_set_style_text_align(w.mon_labels[i], LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(w.mon_labels[i]);
     w.mon_buttons[i] = b;

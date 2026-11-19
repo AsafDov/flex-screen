@@ -10,6 +10,8 @@ Dev, Windows, Capture, Numpad) under one shared status bar (clock, next meeting,
 Claude state, build result, keyboard layer, volume, mic mute). Since the side rail the
 page tabs and the clock are a rail down the left, the status line runs beside it, and
 the context bar runs along the whole bottom (`layout-0` tags the last commit before it).
+Since 0.26.1 the Numpad is no page but a pop-up from the shortcuts panel, and the rail
+has five buttons.
 
 ## Hardware
 
@@ -85,8 +87,8 @@ renders under 12px.
 | 14 | Calendar | Status bar, Today | Companion | Every calendar source in the profile (one `ICalendarProvider` each: Google accounts through the Calendar API, Microsoft 365 through Graph, iCalendar links expanded by the companion), merged and filtered: next-meeting countdown, Up next with its Join button, and the whole day behind it (tap Up next), each event in its calendar's color |
 | 15 | Tasks | Capture, Today | Companion | Open tasks from the task sources (Google Tasks, Microsoft To Do, the latest Obsidian daily note, Jira and GitHub issues; one `ITaskProvider` each): All tasks (every task of the lists chosen in the tray, where it opens), Scheduled (every dated task) or one of those lists, grouped by due day; tap = open (Open in its source), box = tick off (not Jira's or GitHub's issues), + = add one with the on-screen keyboard. Today has a count pill |
 | 16 | Keyboard layer | Status bar | Corne firmware + companion | The Corne runs QMK with Vial, which has no "current layer" query, so a small firmware addition answers a custom raw-HID request with the active layer. The companion polls it (pausing while the Vial app is open so their replies don't cross) and maps layer numbers to names (BASE, LOWER, RAISE, ADJUST). Hidden when the Corne isn't plugged in |
-| 17 | Numpad | Numpad | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
-| 19 | Context bar | Every page but the Numpad | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (its integration's, `companion/Integrations/<App>/`) (long press) and kept per app; the profile's `contextBar` adds actions. In a browser, a site's own keys (`sites.json` and the profile's `sites`), told by the tab's address (browser extension), an installed web app's name, or the title. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
+| 17 | Numpad | Pop-up (Shortcuts) | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
+| 19 | Context bar | Every page | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (its integration's, `companion/Integrations/<App>/`) (long press) and kept per app; the profile's `contextBar` adds actions. In a browser, a site's own keys (`sites.json` and the profile's `sites`), told by the tab's address (browser extension), an installed web app's name, or the title. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
 | 18 | Shortcuts launcher | Every page (the rail's foot) | Companion | Up to 12 tiles from the profile: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
 | 20 | Edge glow | Every page, the idle clock | Firmware (state from the companion) | Four 10 px strips on LVGL's system layer, solid at the edge and fading inward, that blink twice and fade out (2.8 s) when something starts: amber when a Claude session goes to `input` or an approval or question comes; red when a build turns `failed` (one under 10 minutes old); blue when `call` gets an app |
 | 21 | Diagnostics | Overlay (hold the clock) | Firmware only | Firmware version and reset reason, uptime, internal RAM and PSRAM (`heap_caps_*`), frames per second and draw time (LVGL's refresh events), the link's counters and last error (`pc::linkStats()`) |
@@ -1687,6 +1689,52 @@ Gotchas found after phase 6:
     so it said 0.25.1). Not looked at from the PC: screenshots through `/deck` timed out
     with most parts missing, as they had on older builds (the companion's log has the same
     on earlier days).
+- The Numpad as a pop-up, five rail buttons, swipes up and down, and the pages laid out
+  again for the rail, firmware 0.26.1 (2026-11-19; the user: the tabs' icons "a bit small",
+  the Numpad into the shortcuts or the Windows page "to pop up for use", "swipe up to move
+  between tabs", then "the layouts should be re-adapted instead of just stretched down and
+  squeezed right"):
+  - The Numpad isn't a page: **Numpad** in the shortcuts panel's header (reachable from
+    every page, unlike the Windows page) opens it over the page on show. Its panel runs from
+    the rail to the screen's right edge and down over the context bar, which hides while it's
+    open (its chip showed under the rail beside it). Its X, or a tap beside it, closes it and
+    lets go of any key held. `kNumpadPage` stays 5 for `page` (the companion's `/deck`, the
+    simulator), which opens it; 0-4 close it.
+  - The rail's five buttons are 56 px high with 28 px icons (16 px read as small).
+  - Swipes: up is the next page, down the one before; sideways still works. LVGL sends no
+    gesture for a drag that scrolls a list or moves a fader or a slider (those already had
+    gesture bubbling off), so they stay what they are; checked on Audio's faders.
+  - The pages laid out again for 704×366 rather than narrowed. Today: Now playing's art 48 →
+    96 px. Audio: Now playing a band across the top (the keys on the left, what's playing in
+    the middle with the times either side of its progress bar, the 104 px album on the
+    right: with the art first and the keys at the far end, the user found it stretched), outputs and inputs as lists in a 200 px
+    column (as narrow as "Microphone Array" allows, for the mixer; more devices scroll), and
+    the companion ranks Teams right after Spotify among the faders, then Chrome. The call
+    apps (Teams, Discord, Zoom) have a fader whenever they run: Windows gives an app a
+    session only once it plays, so the user couldn't set Teams before a call. Their level
+    is held in `_levels` until a session comes, which `Align` then sets to it (within a
+    750 ms round), and kept in `mixer.json` for a restart; an app already playing when the
+    companion starts keeps its own level, the mixer beside them (~125 px of fader travel instead
+    of ~150). Dev: the banner, then the terminal down the left and a 264 px column of git over
+    the build; git's lines stacked (the last commit on a line of its own) and its buttons in a
+    3×2 grid, Commit over two cells. Windows: the FancyZones column 234 px with the layouts as
+    a list (whole names), tiles ~140 px wide, monitor names on up to two lines. Capture: two
+    columns, the tasks 400 px, then the clipboard (its clips in a list that scrolls, three at
+    a time) over Obsidian (today's note, and four recent notes in a grid of two even columns:
+    chips as wide as their names looked heaped one after the other, the user said).
+  - Checked: the simulator, 354 checks, 351 passed. Of the 3 that failed, two were the tests
+    tapping a clip and a note the new Capture scrolls or wraps away (now a visible clip, a
+    scroll to the rest, and a visible note), and the layer pill's cheat sheet passed on its
+    own: those groups again, 15 of 15. New checks: swipes up, down and sideways, the rail, a
+    fader drag staying on Audio, the Numpad from the shortcuts, its X, a tap beside it, and
+    the context bar hiding under it.
+    After the user's changes on the deck (Audio's keys left and album right, Obsidian's notes
+    in a grid, the narrower devices column, the call apps' faders): Audio's and Capture's
+    checks, 7 of 7 and 14 of 14. The call apps' faders seen with the PC's real Teams and
+    Discord, open and silent, through a test companion on the simulator; a first session
+    taking the level set beforehand not seen yet (neither played a sound). The ESP32 build,
+    and on the deck flashed and kept each time; not looked at from the PC (screenshots over
+    USB still time out).
 
 ## Decisions
 

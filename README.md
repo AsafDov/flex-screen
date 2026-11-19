@@ -5,8 +5,8 @@ outside the editor: audio, meetings and the day's calendar, tasks, Claude Code, 
 windows, clipboard, Obsidian, keys for the app (or site) in front, and a numpad.
 
 It's a Waveshare **ESP32-S3-Touch-LCD-7** (800×480, capacitive touch) on one USB-C cable,
-talking to a small Windows tray app. Six swipe pages sit beside a rail of page buttons,
-under one status line, with the context bar along the bottom.
+talking to a small Windows tray app. Five swipe pages sit beside a rail of page buttons,
+under one status line, with the context bar along the bottom; the numpad pops up over them.
 
 ```
 ESP32-S3 deck ──USB (serial + keyboard)──► Companion (Windows tray app, C#)
@@ -40,8 +40,9 @@ firmware or release.
 
 ### Rail and status line (on every page)
 - The rail down the left: the clock and date (hold the clock for the deck's diagnostics),
-  a button for each page, and the shortcuts launcher at its foot. Swiping sideways still
-  changes page.
+  a button for each page (Today, Audio, Dev, Windows, Capture), and the shortcuts
+  launcher at its foot. Swipe up for the next page and down for the one before (sideways
+  works too); a drag on a list, a fader or a slider stays what it is.
 - The status line along the top:
   - Next meeting with a countdown, amber from five minutes out.
   - Claude Code status (working, needs you, done); tap it for the session board.
@@ -105,7 +106,7 @@ firmware or release.
   keyboard, not for the ordinary chat. Sessions on a Remote-SSH server get them through
   the same tunnel as the hooks.
 
-### Context bar (on every page but the Numpad)
+### Context bar (on every page)
 
 <img src="docs/screens/context-bar.png" alt="Arranging the context bar: VS Code's actions to put in a key's place" width="560">
 
@@ -231,10 +232,14 @@ the first site that matches wins (yours before the built-in ones).
 
 <img src="docs/screens/audio.png" alt="The Audio page: output, inputs and the app mixer" width="560">
 
-- Now playing with large art, progress, shuffle and repeat.
-- Output and input device pickers that set the Windows default device.
-- Per-app mixer: a fader for each app playing sound; tap the app's name under it to mute
-  it (amber while muted).
+- Now playing across the top: the keys on the left (play/pause, next/previous, shuffle,
+  repeat), the track and its progress in the middle, the album art on the right.
+- Output and input devices as lists down the left; a tap sets the Windows default device.
+- Per-app mixer beside them: a fader for each app playing sound; tap the app's name under
+  it to mute it (amber while muted). Teams, Discord and Zoom have a fader whenever they're
+  open, even before they make a sound (Windows only gives an app a volume once it plays
+  something): they start at the level set there, kept across restarts. Spotify comes
+  first, then Teams.
 
 ### Dev
 
@@ -242,12 +247,12 @@ the first site that matches wins (yours before the built-in ones).
 
 - Claude banner: what the current session is doing, with an **Open** button; tap the
   banner for the session board.
-- Git for VS Code's active repo: branch, ahead/behind, changed files; fetch, pull, push,
-  stash, and **Commit…** to open VS Code's Source Control.
-- Build card: the last 10 build runs and their results.
-- Terminal: the last few commands run in VS Code's terminal, each in full (a long one
-  wraps), with ✓/✕ and the time it started. Tap one to run it again in the terminal it
-  came from. History is kept per workspace, so it survives restarts.
+- Terminal, down the left: the last few commands run in VS Code's terminal, each in full
+  (a long one wraps), with ✓/✕ and the time it started. Tap one to run it again in the
+  terminal it came from. History is kept per workspace, so it survives restarts.
+- Git for VS Code's active repo, on the right: branch, ahead/behind, changed files, the
+  last commit; fetch, pull, push, stash, and **Commit…** to open VS Code's Source Control.
+- Build card under it: the last 10 build runs and their results.
 
 ### Windows
 
@@ -265,11 +270,13 @@ the first site that matches wins (yours before the built-in ones).
 
 <img src="docs/screens/capture.png" alt="The Capture page: tasks, clipboard and Obsidian" width="560">
 
-- Tasks (see below), the clipboard and Obsidian side by side.
+- Tasks (see below) on the left; the clipboard over Obsidian on the right.
 - Clipboard history: your newest text copies plus pins. Tap to paste into the focused
-  window, hold to pin, Clear. Copies that password managers mark as private are never
-  recorded, and the history is stored encrypted for your Windows account.
-- Obsidian: open today's daily note, or one of the five most recent notes.
+  window, hold to pin, Clear; three show at a time, and the list scrolls. Copies that
+  password managers mark as private are never recorded, and the history is stored
+  encrypted for your Windows account.
+- Obsidian: open today's daily note, or one of the four most recent notes, in a grid of
+  two columns under it.
 
 ### Tasks (on Capture)
 
@@ -308,8 +315,11 @@ the first site that matches wins (yours before the built-in ones).
 
 ### Numpad
 
-<img src="docs/screens/numpad.png" alt="The Numpad page" width="560">
+<img src="docs/screens/numpad.png" alt="The Numpad, popped up over Today" width="560">
 
+- Not a page: **Numpad** in the shortcuts panel's header (the launcher at the foot of the
+  rail) pops it up over whatever page is on show, covering the context bar. Its X, or a
+  tap beside it, closes it.
 - A full USB keypad, with keys that repeat while held, editing keys, and `( ) , =`.
   Num Lock follows the PC's.
 - Calculator mode: work it out on the deck, and Enter types the result into the PC.
