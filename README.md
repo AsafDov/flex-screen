@@ -421,7 +421,9 @@ the first site that matches wins (yours before the built-in ones).
 ### Firmware
 Once the companion is installed, it keeps the deck's firmware up to date by itself (see
 [Updates](#updates)). Building and flashing it yourself needs PlatformIO (run it from
-PowerShell, not Git Bash). From the repo root:
+PowerShell, not Git Bash). The deck builds ESP-IDF itself with its own memory and display
+settings, in a PlatformIO folder of its own (`~/.platformio-deck`): the first build there
+downloads the toolchain and takes ~25 minutes, later ones a few. From the repo root:
 
 ```powershell
 pio run -d firmware -t upload

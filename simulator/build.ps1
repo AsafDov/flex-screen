@@ -3,7 +3,8 @@
 #   powershell -ExecutionPolicy Bypass -File simulator\build.ps1
 #
 # Needs Visual Studio's C++ build tools (MSVC) and the firmware's PlatformIO libraries
-# (pio run -d firmware fetches them); CMake and Ninja come from PlatformIO's packages.
+# (pio run -d firmware fetches them); CMake and Ninja come from PlatformIO's packages, in
+# the deck's own PlatformIO folder (firmware/platformio.ini's core_dir) or the shared one.
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $build = Join-Path $here 'build'
@@ -13,7 +14,8 @@ $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.
 if (-not $vs) { throw 'No Visual Studio with the C++ build tools found' }
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
 
-$pio = Join-Path $env:USERPROFILE '.platformio\packages'
+$pio = Join-Path $env:USERPROFILE '.platformio-deck\packages'
+if (-not (Test-Path (Join-Path $pio 'tool-cmake'))) { $pio = Join-Path $env:USERPROFILE '.platformio\packages' }
 $cmake = Join-Path $pio 'tool-cmake\bin\cmake.exe'
 $ninja = Join-Path $pio 'tool-ninja\ninja.exe'
 foreach ($tool in $cmake, $ninja) { if (-not (Test-Path $tool)) { throw "Missing $tool (a PlatformIO package)" } }

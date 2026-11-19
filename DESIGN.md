@@ -162,6 +162,7 @@ across PCs"). `pio run -d firmware -t upload` is for working on the firmware.
 |---|---|
 | PlatformIO core | upgraded to 6.2.0 (the pioarduino build, which reports `6.2.0.post1`) |
 | ESP32 platform | pioarduino **55.03.311** (Arduino-ESP32 3.3.11, ESP-IDF 5.5.5). Pinned because 55.03.312 and later read `6.2.0.post1` as older than 6.2.0 and refuse to install |
+| The deck's PlatformIO folder | `~/.platformio-deck` (`core_dir`, from 0.27.0): the deck rebuilds ESP-IDF with its own settings into its packages, so it doesn't share `~/.platformio`. The first build there downloads the toolchain and ESP-IDF and rebuilds it, ~25 min; changing `custom_sdkconfig` rebuilds it (~15 min); `src/` alone ~3 min |
 | Windows long paths | on. Arduino-ESP32's libraries package can't unpack without it |
 | Node 26 (VS Code extension) | installed |
 | .NET 10 SDK (companion) | installed, 10.0.403 |
@@ -1735,6 +1736,57 @@ Gotchas found after phase 6:
     taking the level set beforehand not seen yet (neither played a sound). The ESP32 build,
     and on the deck flashed and kept each time; not looked at from the PC (screenshots over
     USB still time out).
+- Twice as fast to draw, touch on its own core, and a picture that rights itself, firmware
+  0.27.0 (2026-11-19/20; the user asked whether both cores were used, then for the touch
+  task, "smoothness over bluetooth", the memory settings tuned, and the torn screen that
+  needed a replug "all the time after testing" looked into):
+  - Measured first (`bench` now logs `load:` lines: each core's load, average and busiest
+    second, the loop's split between link, UI and LVGL with its worst pass, and every task
+    with its core, priority, CPU share and least free stack): core 0 sat idle, everything
+    ran on core 1, and drawing was most of it.
+  - Touch: a task on core 0 polls the GT911 every 8 ms and LVGL reads what it found, so
+    touch is read during long redraws and a tap that comes and goes inside one still counts.
+    I2C goes through one lock (the expander's writes from the loop too).
+  - Drawing on core 0 was tried: two LVGL draw threads were ~15% slower (most of a redraw is
+    the loop walking the objects), one on core 0 was 7-10% faster but the picture flickered
+    (its PSRAM traffic starved the panel's refills). Dropped then; to try again on 0.27.0.
+  - ESP-IDF is rebuilt with the deck's own settings (`custom_sdkconfig`, pioarduino's
+    hybrid compile): a 64 KB data cache with 64-byte lines and a 32 KB instruction cache
+    (48 KB of internal RAM), and code and constants copied into PSRAM at start and run from
+    there (`SPIRAM_XIP_FROM_PSRAM`, 1.3 MB of PSRAM). Against 0.26.1 with the touch task:
+    full redraws of the five pages 280/274/229/269/284 ms became 128/125/100/125/125,
+    PSRAM fill and copy 15/8 MB/s became 28/17, core 1 while changing pages 46% busy became
+    18%, the first frame 4.4 s after power-on became 3.5 s. Internal RAM free went from 133
+    to 83 KB (largest block 61 KB, 33 KB after the panel is recreated), PSRAM free from 6.1
+    to 4.9 MB, lowest 4.0.
+  - The rebuild starts from Arduino's generic ESP32-S3 settings, not its octal-PSRAM
+    build's, and missed two things that one has. TinyUSB (the keyboard, media keys and serial
+    link compiled out): `firmware/components/arduino_tinyusb` declares its settings and links
+    Arduino's own prebuilt library from the package, unchanged. PSRAM set up at startup
+    (`SPIRAM_BOOT_*`): without it Arduino added PSRAM to the heap in `initArduino()`, and
+    ESP-IDF sets the lowest free of a heap added after startup to 0, so PSRAM's lowest read 0.
+  - The torn screen: Arduino builds ESP-IDF with `LCD_RGB_RESTART_IN_VSYNC`, and in that
+    branch ESP-IDF 5.5's RGB driver never resets `bb_eof_count`, whose parity says which
+    bounce buffer the EOF interrupt refills (0.24.2 found it after updates and recreated the
+    panel then). Anything that holds the interrupt off for two refills, a flash write or
+    PSRAM busy, can flip it for good; testing does both often. With it off the driver does
+    what ESP-IDF does by default: it counts each frame's refills, restarts after a short
+    frame and resets the count, so a late refill costs one frame. Only a rebuild of ESP-IDF
+    can change it. The redraw after an update stays.
+  - Building: `core_dir = ~/.platformio-deck`, or any build without these settings in the
+    same folder (another project, an older branch) reinstalls the framework and the next
+    deck build rebuilds it. `firmware/scripts/idf_rebuild.py` patches the platform's
+    linker-script step, whose list of fragments (~10,700 characters) is over cmd.exe's 8191,
+    to pass it through a file, and keeps pioarduino's `sdkconfig.defaults` (where it keeps
+    the settings' hash) beside the rebuilt libraries for a checkout that has none, which
+    would otherwise reinstall the framework and rebuild it. `platform_packages` pins SCons to
+    the one PlatformIO runs on; the platform's own and PlatformIO's replaced each other
+    halfway through a rebuild.
+  - Checked on the deck: each build flashed over USB and kept, 0.27.0 built from scratch in
+    `~/.platformio-deck` (18 min); the benchmark three times with page changes; PSRAM's
+    lowest 4.0 MB; the screen clean after the update (the user). The simulator: 355 checks,
+    all passed. Not seen: a missed refill healing (none forced). The deck still sometimes
+    reports a watchdog restart after an update, as before.
 
 ## Decisions
 
