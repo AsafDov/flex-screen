@@ -5,6 +5,7 @@
 #include "board.h"
 #include "display.h"
 #include "pc.h"
+#include "psram_first.h"
 #include "ui.h"
 
 // LVGL renders recursively, one level per nested object plus glyph drawing at the
@@ -31,6 +32,9 @@ void setup() {
   if (!screen_ok) return;
   display::begin();
   pc::bootMark("display");
+  // The hardware is set up (USB, I2C, the panel keep their buffers in internal RAM); what
+  // the loop allocates from here on (the PC's state, parsing, the UI's texts) goes to PSRAM.
+  psram::preferForThisTask();
   ui::begin();
   pc::bootMark("ui");
   board::startPanel();

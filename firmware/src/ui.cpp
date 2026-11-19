@@ -557,9 +557,17 @@ void updateArt() {
   releaseOldArt();  // nothing points at the previous image any more
 }
 
+// How long update() takes, a pass at a time, between benchmarks.
+struct {
+  uint32_t count = 0;
+  uint64_t us = 0;
+  uint32_t worst_us = 0;
+} update_timing;
+
 // Times a full redraw of every page (best of three; total, and without the wait for
-// vsync) and PSRAM's raw speed, and logs them, for tuning. The companion asks for it; the
-// pages flash past in about a second.
+// vsync) and PSRAM's raw speed, and logs them with memory and the time taken by lines and
+// UI updates since the last one, for tuning. The companion asks for it; the pages flash
+// past in about a second.
 void bench() {
   const uint32_t tab = lv_tabview_get_tab_active(tabview);
   const uint32_t n = lv_tabview_get_tab_count(tabview);
@@ -598,9 +606,19 @@ void bench() {
   }
   heap_caps_free(a);
   heap_caps_free(b);
-  pc::log("%s; PSRAM fill %u MB/s, copy %u MB/s; internal RAM free %u, lowest %u", line, unsigned(fill_mbs),
-          unsigned(copy_mbs), unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
-          unsigned(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)));
+  // Three lines: a log line holds 160 characters, and one line cut the memory figures off.
+  pc::log("%s", line);
+  pc::log("bench: PSRAM fill %u MB/s, copy %u MB/s; internal RAM free %u, lowest %u, largest block %u; PSRAM free %u, lowest %u",
+          unsigned(fill_mbs), unsigned(copy_mbs), unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+          unsigned(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
+          unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)), unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+          unsigned(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM)));
+  // Since the last benchmark (or the start): taking in lines, and the UI catching up with them.
+  const pc::LineTiming lines = pc::takeLineTiming();
+  pc::log("bench: %u lines, %u us avg, %u us worst; %u ui updates, %u us avg, %u us worst", unsigned(lines.lines),
+          unsigned(lines.lines ? lines.us / lines.lines : 0), unsigned(lines.worst_us), unsigned(update_timing.count),
+          unsigned(update_timing.count ? update_timing.us / update_timing.count : 0), unsigned(update_timing.worst_us));
+  update_timing = {};
 }
 
 }  // namespace
@@ -680,6 +698,7 @@ void previewVolume(int level) {
 }
 
 void update() {
+  const uint32_t t0 = micros();
   updateCompanion();
   updateClock();
   updateVolume();
@@ -709,6 +728,10 @@ void update() {
   idle::update();
   glow::update();
   updateFlashing();
+  const uint32_t us = micros() - t0;
+  update_timing.count++;
+  update_timing.us += us;
+  if (us > update_timing.worst_us) update_timing.worst_us = us;
   if (model::bench_requests != bench_seen) {
     bench_seen = model::bench_requests;
     bench();

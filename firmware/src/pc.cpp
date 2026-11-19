@@ -19,6 +19,7 @@
 #include "idle.h"
 #include "mbedtls/base64.h"
 #include "model.h"
+#include "psram_first.h"
 #include "ui.h"
 
 namespace pc {
@@ -86,12 +87,15 @@ void sendShot() {
   constexpr size_t kPart = 3072;
   constexpr size_t kSize = size_t(board::kWidth) * board::kHeight * 2;
   constexpr int kParts = int((kSize + kPart - 1) / kPart);
-  static unsigned char b64[4 * kPart / 3 + 4];
+  // In PSRAM, the first time it's needed: 4 KB of internal RAM that sat idle otherwise.
+  constexpr size_t kB64 = 4 * kPart / 3 + 4;
+  static auto *b64 = static_cast<unsigned char *>(heap_caps_malloc(kB64, MALLOC_CAP_SPIRAM));
+  if (!b64) return;
   char head[96];
   for (int i = 0; i < kParts; i++) {
     const size_t at = size_t(i) * kPart;
     size_t len = 0;
-    mbedtls_base64_encode(b64, sizeof(b64), &len, fb + at, min(kPart, kSize - at));
+    mbedtls_base64_encode(b64, kB64, &len, fb + at, min(kPart, kSize - at));
     const int n = snprintf(head, sizeof(head), "{\"t\":\"shot\",\"w\":%d,\"h\":%d,\"i\":%d,\"n\":%d,\"d\":\"",
                            board::kWidth, board::kHeight, i, kParts);
     cdc.write(reinterpret_cast<const uint8_t *>(head), n);
@@ -897,7 +901,12 @@ void handleOta(const char *t, const JsonDocument &doc) {
     otaFree();
     received = 0;
     ota_wrote = false;
-    if (size == 0 || !Update.begin(size, U_FLASH)) return otaFail(Update.errorString());
+    bool begun;
+    {
+      psram::Internal flash_source;  // the updater's sector buffer, which flash is written from
+      begun = size && Update.begin(size, U_FLASH);
+    }
+    if (!begun) return otaFail(Update.errorString());
     ota_size = size;
     ota_image = static_cast<uint8_t *>(heap_caps_malloc(size, MALLOC_CAP_SPIRAM));
     // The companion (0.21.0 on) sends the image's MD5: Update.end() then checks every byte
@@ -914,10 +923,13 @@ void handleOta(const char *t, const JsonDocument &doc) {
   } else if (!strcmp(t, "ota_data")) {
     if (!Update.isRunning()) return otaFail("no update in progress");
     if ((doc["off"] | size_t(0)) != received) return otaFail("out-of-order chunk");
-    static uint8_t chunk[4096];
+    // In PSRAM, the first time an update comes: 4 KB of internal RAM that sat idle otherwise.
+    constexpr size_t kChunk = 4096;
+    static auto *chunk = static_cast<uint8_t *>(heap_caps_malloc(kChunk, MALLOC_CAP_SPIRAM));
+    if (!chunk) return otaFail("no memory for the update");
     const char *b64 = doc["b64"] | "";
     size_t n = 0;
-    if (mbedtls_base64_decode(chunk, sizeof(chunk), &n, reinterpret_cast<const unsigned char *>(b64),
+    if (mbedtls_base64_decode(chunk, kChunk, &n, reinterpret_cast<const unsigned char *>(b64),
                               strlen(b64)) != 0) {
       return otaFail("bad base64");
     }
@@ -1025,7 +1037,7 @@ bool sameAsLast(const char *topic, uint32_t hash) {
   return false;
 }
 
-void handleLine() {
+void takeLine() {
   JsonDocument doc;
   if (deserializeJson(doc, rx) != DeserializationError::Ok) {
     stats.bad_lines++;
@@ -1037,6 +1049,18 @@ void handleLine() {
   last_rx_ms = millis();
   if (!strcmp(doc["t"] | "", "state") && sameAsLast(doc["topic"] | "", lineHash(rx))) return;
   handle(doc);
+}
+
+LineTiming line_timing;
+
+// Parsing a line and applying it, timed for the benchmark.
+void handleLine() {
+  const uint32_t t0 = micros();
+  takeLine();
+  const uint32_t us = micros() - t0;
+  line_timing.lines++;
+  line_timing.us += us;
+  if (us > line_timing.worst_us) line_timing.worst_us = us;
 }
 
 }  // namespace
@@ -1136,6 +1160,12 @@ void poll() {
 }
 
 const LinkStats &linkStats() { return stats; }
+
+LineTiming takeLineTiming() {
+  const LineTiming t = line_timing;
+  line_timing = {};
+  return t;
+}
 
 bool connected() { return port_open && heard && millis() - last_rx_ms < kCompanionTimeoutMs; }
 

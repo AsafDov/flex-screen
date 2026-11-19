@@ -475,3 +475,13 @@ size_t USBCDC::write(const uint8_t *buffer, size_t size) {
 }
 
 USBCDC::operator bool() const { return sim::client != INVALID_SOCKET; }
+
+// ---- the firmware's PSRAM preference (psram_first.h): one kind of memory here
+
+#include "psram_first.h"
+
+namespace psram {
+void preferForThisTask() {}
+void pause() {}
+void resume() {}
+}  // namespace psram

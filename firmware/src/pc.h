@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.25.0";
+constexpr const char *kFirmwareVersion = "0.25.1";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -119,6 +119,15 @@ struct LinkStats {
   char error[64] = "";      // what it was: "bad line (812 bytes)"
 };
 const LinkStats &linkStats();
+
+// Lines taken in since the last call, and the time spent parsing and applying them, for the
+// benchmark (a screenshot's line includes sending it: a couple of seconds).
+struct LineTiming {
+  uint32_t lines = 0;
+  uint64_t us = 0;
+  uint32_t worst_us = 0;
+};
+LineTiming takeLineTiming();
 
 // Why the deck last restarted: "power-on", "usb", "panic", "task watchdog", …
 const char *resetReason();

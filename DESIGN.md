@@ -1592,7 +1592,55 @@ Gotchas found after phase 6:
     minutes ago; back online, a blink for a call that started meanwhile and none for what
     stayed the same); the firmware builds for the ESP32 (RAM 29.6%, flash 20.6%). On the deck: the
     always-on glow version (before the blink) ran there as 0.25.0 and drew a clean screen;
-    the blink, the overlay and the watchdog wording not yet seen on it.
+    the blink build was flashed the next morning and drew a clean screen too. The blink and
+    the overlay haven't been seen on the panel itself.
+- The deck's own data in PSRAM, firmware 0.25.1 (2026-11-19; the user: keep Wi-Fi and
+  Bluetooth in internal RAM as intended, but leave internal RAM for other work; "run tests
+  to see if it compromised the performance too much"):
+  - ESP-IDF (Arduino's `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` 4096) puts every `malloc` of
+    4 KB or less in internal RAM: the PC's state, each line's JSON, the UI's strings. Lowering
+    that limit for everyone would also move lwIP's buffers once Wi-Fi comes: without
+    `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP` (off in Arduino's build) lwIP uses plain `malloc`
+    (`mem_clib_malloc`). The Wi-Fi driver's buffers and NimBLE (`MEM_ALLOC_MODE_INTERNAL`)
+    ask for internal RAM by name. So `malloc`, `calloc` and `realloc` are wrapped
+    (`-Wl,--wrap=`, `src/psram_first.cpp`): on the loop task, from just before the UI is
+    built, they prefer PSRAM (`heap_caps_*_prefer`, internal RAM if PSRAM runs out); on
+    every other task they're ESP-IDF's as before. USB, I2C and the panel are set up before,
+    and explicit `heap_caps_*` calls (DMA, the panel, FreeRTOS, LVGL's heap) never pass
+    through it.
+  - The 4 KB buffers for a screenshot's base64 and an update's parts were static (internal
+    RAM, idle nearly always); now PSRAM, allocated the first time they're needed.
+  - An update first took 35.6 s instead of 24-26 s: the install phase (after the last part)
+    went from ~5 s to 14.4 s. Arduino's updater allocates its 4 KB flash-sector buffer with
+    a plain `new` (internal before, as 4096 is within the limit; PSRAM now), and ESP-IDF
+    writes flash from a PSRAM source a few bytes at a time. `psram::Internal` pauses the
+    preference around `Update.begin()`; installing took 5.6 s again (26.8 s in all).
+  - The benchmark (`bench`) now logs three lines (one was cut at the log's 160 characters,
+    losing the memory figures): redraws; PSRAM's speed and memory, with the largest free
+    internal block (what a radio needs in one piece); and, since the last benchmark, lines
+    taken in and UI update passes, average and worst.
+  - Measured on the deck, the same run on each build (a benchmark 10-20 s after connecting,
+    then two more after a minute of page changes each): internal RAM free 127.4 KB before,
+    139.4 KB after; its lowest point 108.0 KB, 122.9 KB; the largest free block 73.7 KB,
+    81.9 KB. PSRAM free went down only 4 KB (6.30 MB): of the 12 KB gained, 8 KB is the two
+    static buffers and the rest the state's strings; the bigger gain in the lowest point is
+    each line's JSON, which peaks during the connect burst. Lines after a minute: 1.20-1.26
+    ms avg, 5.9 ms worst before; 1.23 ms, 5.9 ms after. In the connect burst 2.0 ms avg, 36
+    ms worst before; 2.3-2.5 ms, 33-41 ms after (a different number of lines each time).
+    UI update passes 0.52 ms avg before, 0.53 ms after; worst 16-17 ms (100 and 85 ms
+    while pages changed) both. Full redraws the same, 226-281 ms a page. No performance cost
+    worth the name, and internal RAM went from ~127 to ~139 KB free.
+  - What's left in internal RAM is mostly fixed: ~89 KB static (USB stack buffers, part of
+    them for USB classes Arduino builds in that the deck doesn't use; the model's arrays;
+    fonts' tables are in flash), the panel's 64 KB of bounce buffers, the loop's 32 KB
+    stack, and other tasks' stacks.
+  - Checked: the simulator, 340 checks, 339 passed (it doesn't run the wrapper: its memory is the PC's).
+    The one that failed, "a tap on Stop only says Hold" on the session board, is the test's
+    timing: it reads the screen 1.0-1.5 s after the tap and the hint shows for 1.5 s; on its
+    own it passed 2 times of 3. On the deck, the measurements above, a screenshot through the
+    PSRAM buffer, and updates received by the new build (35.6 s before the fix, 26.8 s
+    after), kept each time. Not checked: a tap on the panel (the touch controller's I2C
+    buffers were set up before the change and stay internal).
 
 ## Decisions
 
