@@ -4,6 +4,7 @@
 
 #include "board.h"
 #include "display.h"
+#include "load.h"
 #include "pc.h"
 #include "psram_first.h"
 #include "ui.h"
@@ -30,6 +31,7 @@ void setup() {
   screen_ok = board::begin();
   pc::bootMark("board");
   if (!screen_ok) return;
+  board::startTouch();  // the touch task, on core 0
   display::begin();
   pc::bootMark("display");
   // The hardware is set up (USB, I2C, the panel keep their buffers in internal RAM); what
@@ -51,13 +53,21 @@ void loop() {
     first = false;
     pc::bootMark("loop");  // from here the deck answers the companion
   }
+  uint32_t t0 = micros();
   pc::poll();
+  load::add(load::Part::Link, micros() - t0);
   if (!screen_ok) {
     delay(5);
+    load::endPass();
     return;
   }
   display::resyncIfNeeded();
+  t0 = micros();
   ui::update();
+  load::add(load::Part::Ui, micros() - t0);
+  t0 = micros();
   const uint32_t idle = lv_timer_handler();
+  load::add(load::Part::Lvgl, micros() - t0);
   delay(idle < 5 ? idle : 5);
+  load::endPass();
 }

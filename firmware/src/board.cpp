@@ -7,6 +7,9 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_rgb.h"
 #include "esp_ota_ops.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 
 namespace board {
 namespace {
@@ -44,13 +47,42 @@ uint8_t exp_out = kSdCs;  // SD card deselected, USB_SEL low, everything else he
 esp_lcd_panel_handle_t panel_handle = nullptr;
 constexpr uint32_t kReleaseDebounceMs = 40;  // reports come every 8 ms while touched
 
+// The touch task (startTouch()) on core 0 polls the GT911; readTouch() on the loop only
+// reads what it found. Both kinds of I2C traffic (touch, and the expander's backlight and
+// resets from the loop) take i2c_lock, a transaction or a GT911 exchange at a time.
+constexpr uint32_t kTouchPollMs = 8;  // the GT911 reports every 5 + refresh (3) ms
+constexpr UBaseType_t kTouchPriority = 5;  // above LVGL's draw threads (3), below USB (24)
+SemaphoreHandle_t i2c_lock = nullptr;
+portMUX_TYPE touch_mux = portMUX_INITIALIZER_UNLOCKED;
+
+// The touch task's own state.
 bool touch_down = false;
 uint32_t touch_seen_ms = 0;
-int16_t touch_x = 0;
-int16_t touch_y = 0;
+
+// What it found, under touch_mux. `presses` counts each finger coming down, so a tap that
+// came and went between two of LVGL's reads (during a long redraw) still reaches it.
+struct Touch {
+  int16_t x = 0, y = 0;
+  int16_t press_x = 0, press_y = 0;  // where the last press began
+  bool down = false;
+  uint32_t presses = 0;
+} touch;
+uint32_t presses_seen = 0;  // the loop's: the last press LVGL was told about
+bool gt911_found = false;
+bool touch_task = false;  // running; until then (or if it couldn't start) readTouch() polls itself
 TouchInfo touch_info;
 
+struct I2cLock {
+  I2cLock() {
+    if (i2c_lock) xSemaphoreTake(i2c_lock, portMAX_DELAY);
+  }
+  ~I2cLock() {
+    if (i2c_lock) xSemaphoreGive(i2c_lock);
+  }
+};
+
 bool i2cWrite(uint8_t addr, const uint8_t *data, size_t len) {
+  I2cLock lock;
   Wire.beginTransmission(addr);
   Wire.write(data, len);
   return Wire.endTransmission() == 0;
@@ -65,6 +97,7 @@ bool expSet(uint8_t mask, bool high) {
 
 bool gtRead(uint16_t reg, uint8_t *buf, size_t len) {
   const uint8_t addr[2] = {uint8_t(reg >> 8), uint8_t(reg & 0xFF)};
+  I2cLock lock;  // the address write and the read, with no other transaction between them
   Wire.beginTransmission(kGt911);
   Wire.write(addr, 2);
   if (Wire.endTransmission(false) != 0) return false;
@@ -164,6 +197,7 @@ bool beginTouch() {
 
   uint8_t id[4];
   if (!gtRead(kGtProductId, id, sizeof(id)) || memcmp(id, "911", 3) != 0) return false;
+  gt911_found = true;
 
   gtSetLowPowerTimeout(kGtMaxLowPowerTimeout);
   uint8_t cfg[kGtRefresh - kGtConfig + 1];  // read back, so hello shows what stuck
@@ -209,14 +243,18 @@ bool backlightOn() { return exp_out & kBacklight; }
 
 TouchInfo touchInfo() { return touch_info; }
 
-bool readTouch(int16_t &x, int16_t &y) {
+namespace {
+
+// One poll of the GT911, on the touch task.
+void pollTouch() {
   uint8_t status;
+  int16_t x = touch.x, y = touch.y;
   if (gtRead(kGtStatus, &status, 1) && (status & 0x80)) {
     const uint8_t count = status & 0x0F;
     uint8_t p[8];
     if (count > 0 && count <= 5 && gtRead(kGtPoint1, p, sizeof(p))) {
-      touch_x = int16_t(p[1] | (p[2] << 8));
-      touch_y = int16_t(p[3] | (p[4] << 8));
+      x = int16_t(p[1] | (p[2] << 8));
+      y = int16_t(p[3] | (p[4] << 8));
       touch_down = true;
       touch_seen_ms = millis();
     } else {
@@ -227,9 +265,56 @@ bool readTouch(int16_t &x, int16_t &y) {
   // No new report since the last poll: the finger hasn't moved or lifted. The GT911 also
   // sends the odd empty report mid-press, which read as a lift and a second tap, so a
   // lift only counts once no finger has been seen for a few reports.
-  x = touch_x;
-  y = touch_y;
-  return touch_down || millis() - touch_seen_ms < kReleaseDebounceMs;
+  const bool down = touch_down || millis() - touch_seen_ms < kReleaseDebounceMs;
+  taskENTER_CRITICAL(&touch_mux);
+  if (down && !touch.down) {
+    touch.presses++;
+    touch.press_x = x;
+    touch.press_y = y;
+  }
+  touch.x = x;
+  touch.y = y;
+  touch.down = down;
+  taskEXIT_CRITICAL(&touch_mux);
+}
+
+void touchTask(void *) {
+  TickType_t wake = xTaskGetTickCount();
+  for (;;) {
+    pollTouch();
+    vTaskDelayUntil(&wake, pdMS_TO_TICKS(kTouchPollMs));
+  }
+}
+
+}  // namespace
+
+bool startTouch() {
+  if (!gt911_found) return false;  // nothing to poll
+  i2c_lock = xSemaphoreCreateMutex();
+  if (!i2c_lock) return false;
+  // Core 0: away from LVGL and the panel's refills on core 1. Its stack and the I2C
+  // driver's buffers stay in internal RAM (the task isn't the loop, so psram_first.h's
+  // preference doesn't apply to it).
+  touch_task = xTaskCreatePinnedToCore(touchTask, "touch", 4096, nullptr, kTouchPriority, nullptr, 0) == pdPASS;
+  return touch_task;
+}
+
+bool readTouch(int16_t &x, int16_t &y) {
+  if (!touch_task && gt911_found) pollTouch();  // the old way, on the loop
+  taskENTER_CRITICAL(&touch_mux);
+  const Touch t = touch;
+  taskEXIT_CRITICAL(&touch_mux);
+  // A press LVGL hasn't seen yet: shown where it began, even if the finger has lifted
+  // since (its next read then sees the lift, and the tap still counts as a click).
+  if (t.presses != presses_seen) {
+    presses_seen = t.presses;
+    x = t.down ? t.x : t.press_x;
+    y = t.down ? t.y : t.press_y;
+    return true;
+  }
+  x = t.x;
+  y = t.y;
+  return t.down;
 }
 
 bool keepFirmware() {

@@ -16,6 +16,7 @@
 #include "sessions.h"
 #include "ctxbar.h"
 #include "launcher.h"
+#include "load.h"
 
 #include "model.h"
 #include "page_audio.h"
@@ -627,6 +628,7 @@ struct {
 // UI updates since the last one, for tuning. The companion asks for it; the pages flash
 // past in about a second.
 void bench() {
+  load::report();  // first: the cores and the loop since the last one, before these redraws
   const uint32_t tab = lv_tabview_get_tab_active(tabview);
   const uint32_t n = lv_tabview_get_tab_count(tabview);
   char line[200];

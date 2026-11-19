@@ -7,7 +7,15 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_rgb.h"
 #include "freertos/semphr.h"
+#include "load.h"
 #include "lv_mem_psram.h"
+
+// LVGL draws on the loop, on core 1, with the panel's refills. Drawing on core 0 as well was
+// tried (0.26.0+cores, LV_OS_FREERTOS): two draw threads, one on each core, made full redraws
+// ~15% slower (most of a redraw is the loop walking the objects, which can't be split); one
+// draw thread on core 0 made them 7-10% faster but the picture flickered, as when the
+// panel's interrupt ran on core 0 (board.cpp, createPanel()): PSRAM traffic from the other
+// core starves the refills. Only touch moved to core 0 (board::startTouch()).
 
 namespace display {
 namespace {
@@ -47,7 +55,9 @@ uint32_t last_touch_ms = 0;
 
 void readTouch(lv_indev_t *, lv_indev_data_t *data) {
   int16_t x, y;
+  const uint32_t t0 = micros();
   const bool down = board::readTouch(x, y);
+  load::touch(micros() - t0);
   if (down) last_touch_ms = millis();
   data->point.x = x;
   data->point.y = y;

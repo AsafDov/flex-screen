@@ -27,8 +27,14 @@ bool recreatePanel();
 void backlight(bool on);
 bool backlightOn();
 
-// Polls the touch controller. Returns true while a finger is down; x/y keep the last
-// position so a release still reports where it happened.
+// Starts the touch task: it polls the GT911 every 8 ms on core 0, so touch keeps being read
+// while the loop draws. Call once after begin(). False if there's no GT911 or it couldn't
+// start (readTouch() then polls the controller itself, as before).
+bool startTouch();
+
+// The touch task's latest: true while a finger is down; x/y keep the last position so a
+// release still reports where it happened. A press that began and ended since the last call
+// reads as down once, where it began, so quick taps during a long redraw aren't lost.
 bool readTouch(int16_t &x, int16_t &y);
 
 // The GT911's power and scan settings, read once at begin().

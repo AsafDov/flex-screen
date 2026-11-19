@@ -485,3 +485,14 @@ void preferForThisTask() {}
 void pause() {}
 void resume() {}
 }  // namespace psram
+
+// ---- the cores' load (load.h): the deck's FreeRTOS figures, which a PC doesn't have
+
+#include "load.h"
+
+namespace load {
+void add(Part, uint32_t) {}
+void touch(uint32_t) {}
+void endPass() {}
+void report() {}
+}  // namespace load
