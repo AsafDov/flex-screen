@@ -1929,6 +1929,41 @@ Gotchas found after phase 6:
     a progress and the lock (from `/test`'s `ctx.lock`) seen in a screenshot. Not checked
     on the deck: the ring and the lock by finger, and the lock holding while another app
     comes to the front (only its log line).
+- Four picks from the ideas list, firmware 0.30.0 (2026-11-20; built on a branch of its own
+  while another session built 0.29.0 on master; "8 - but I just want to open the vial website from
+  the cheat sheet, not edit yet", "turn the shortcuts 4 squares to three squares where top
+  two are eyes and the bottom is the mouth"):
+  - **Edit in Vial** on the cheat sheet: `kbd.vial`, and the companion opens
+    `https://vial.rocks/` (Vial's web app, WebHID: Chrome or Edge). Editing the keymap on the
+    deck itself waits (the W-CORNE's receiver answers VIA's read-only queries; writes untried).
+  - **The face**: the launcher's four squares are three, two eyes over a mouth, posed from
+    what's going on (`launcher.cpp`, `Mood`): asleep (PC away), alert (Claude needs you:
+    a waiting session, an approval or a `deck_ask`), glum (a build failed, for a minute),
+    busy (Claude at work, glancing), pleased (Claude done, for a minute), drowsy (the PC idle
+    5 minutes), awake (blinking every few seconds). A pose is applied only when it changes,
+    and redraws the face's 22 px; nothing under the idle clock.
+  - **Suggested keys**: `ShortcutCounter`, a low-level keyboard hook on a thread of its own
+    with a message loop, counts per bar key (`code`, `chrome:gmail`) the combinations with
+    Ctrl, Alt or Win and the F-keys pressed on the PC's keyboards (not injected keys, not
+    AltGr; typing is dropped at the first check), kept as names and counts only in
+    `shortcut-counts.json` (30 days). The bank starts with up to 5 pressed at least 5 times
+    and not on the bar (`context.sug`): the bank's own action for those keys, moved up, or a
+    key made from them (`used-ctrl+shift+l`), which stays in the bank while it's on the bar.
+    The deck's long-press menu has a section for them, first. `countShortcuts: false` turns
+    it off.
+  - **The desktop map**: Map beside Lock PC swaps the tiles for the monitors as arranged
+    (`zones.mons` now say where each work area is, `x`, `y`) with the windows on them
+    (`windows` now say where each is, `r`, and its place front to back, `z`; sent again when
+    one moves or resizes by 16 px). Objects made once and placed on change; a drag moves the
+    window's box (the gesture and scroll chains are off on it, so the page doesn't swipe),
+    shows the zones, and on letting go sends `zone.snap` with the window's `hwnd`, or
+    `win.move` on a monitor without zones (the companion keeps its size, minus what doesn't
+    fit, and allows for the invisible borders as a snap does). Back in its own zone, or off
+    the monitors, nothing is sent. The box stays where it was let go until the PC's next list,
+    at most 1.5 s.
+  - Checked: the simulator (see the commit), the companion's build and the ESP32 build. Not
+    tried on the deck or with the real companion yet: the hook counting real keys, windows
+    really moving.
 
 ## Decisions
 

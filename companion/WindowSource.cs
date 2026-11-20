@@ -182,7 +182,11 @@ sealed class WindowSource
                     .ToList();
             }
             Polled?.Invoke(all, foreground);
-            var layout = string.Join("\n", shown.Select(w => $"{w.Id}|{w.App}|{w.Icon}|{w.Active}|{w.Minimized}"));
+            // Where each is too, for the deck's desktop map: a move or a resize goes out, though
+            // not every pixel of one being dragged (in steps of 16 px).
+            var front = FrontToBack(all, shown);
+            var layout = string.Join("\n", shown.Select(w =>
+                $"{w.Id}|{w.App}|{w.Icon}|{w.Active}|{w.Minimized}|{w.Bounds.X >> 4},{w.Bounds.Y >> 4},{w.Bounds.Width >> 4},{w.Bounds.Height >> 4}|{front[w.Id]}"));
             var titles = string.Join("\n", shown.Select(w => w.Title));
             var now = DateTime.UtcNow;
             if (layout != _shownLayout || (titles != _shownTitles && now - _shownAt >= TitleEvery))
@@ -202,6 +206,17 @@ sealed class WindowSource
         {
             _timer.Change(PollMs, Timeout.Infinite);
         }
+    }
+
+    /// <summary>Each of <paramref name="shown"/>'s place front to back among themselves (0 in front), by <paramref name="all"/>'s order.</summary>
+    public static Dictionary<long, int> FrontToBack(IReadOnlyList<DeckWindow> all, IReadOnlyList<DeckWindow> shown)
+    {
+        var order = new Dictionary<long, int>();
+        for (var i = 0; i < all.Count; i++) order.TryAdd(all[i].Id, i);
+        var ranked = shown.OrderBy(w => order.GetValueOrDefault(w.Id, int.MaxValue)).ToList();
+        var front = new Dictionary<long, int>();
+        for (var i = 0; i < ranked.Count; i++) front.TryAdd(ranked[i].Id, i);
+        return front;
     }
 
     int TaskbarIndex(DeckWindow w)

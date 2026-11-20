@@ -53,7 +53,7 @@ struct {
 } w;
 
 struct {
-  lv_obj_t *scrim, *panel, *title, *remove, *reset, *list, *own_label, *every_label;
+  lv_obj_t *scrim, *panel, *title, *remove, *reset, *list, *sug_label, *own_label, *every_label;
   KeyView items[model::Context::kBankMax];
 } m;
 
@@ -113,12 +113,19 @@ void fillMenu() {
   setHidden(m.remove, adding);
   setHidden(m.reset, false);
 
+  // Three sections: the shortcuts pressed most in the app, its own actions, everyday ones.
+  // The labels go back where they belong each time (the counts change from app to app):
+  // first the last one to the end, so it doesn't push the middle one out of place.
   String app = c.app;
   app.toUpperCase();
   setText(m.own_label, app.c_str());
+  setHidden(m.sug_label, c.sug == 0);
   setHidden(m.own_label, c.own == 0);
-  setHidden(m.every_label, c.own == c.bank_count);
-  lv_obj_move_to_index(m.every_label, c.own + 1);  // after the app's own actions
+  setHidden(m.every_label, c.sug + c.own == c.bank_count);
+  lv_obj_move_to_index(m.sug_label, 0);
+  lv_obj_move_foreground(m.every_label);
+  lv_obj_move_to_index(m.own_label, c.sug + 1);             // after the suggested ones
+  lv_obj_move_to_index(m.every_label, c.sug + c.own + 2);   // after the app's own actions
 
   for (int i = 0; i < model::Context::kBankMax; i++) {
     KeyView &v = m.items[i];
@@ -140,8 +147,9 @@ void fillMenu() {
   }
 
   // As tall as its rows, up to just below the status bar; past that it scrolls.
-  const int every = c.bank_count - c.own;
-  sizeMenu((c.own + kMenuCols - 1) / kMenuCols + (every + kMenuCols - 1) / kMenuCols, (c.own > 0) + (every > 0));
+  const int every = c.bank_count - c.sug - c.own;
+  auto rows = [](int n) { return (n + kMenuCols - 1) / kMenuCols; };
+  sizeMenu(rows(c.sug) + rows(c.own) + rows(every), (c.sug > 0) + (c.own > 0) + (every > 0));
   menu_seen = c.version;
 }
 
@@ -152,6 +160,7 @@ void fillPicker() {
   setText(m.title, p.title.c_str());
   setHidden(m.remove, true);
   setHidden(m.reset, true);
+  setHidden(m.sug_label, true);
   setHidden(m.own_label, true);
   setHidden(m.every_label, true);
   for (int i = 0; i < model::Context::kBankMax; i++) {
@@ -265,6 +274,7 @@ void buildMenu() {
   lv_obj_set_clickable(m.list, true);  // a drag starting between items scrolls it too
   lv_obj_set_scroll_dir(m.list, LV_DIR_VER);
   lv_obj_set_scrollbar_mode(m.list, LV_SCROLLBAR_MODE_ACTIVE);
+  m.sug_label = sectionLabel(m.list, "YOU PRESS THESE OFTEN");
   m.own_label = sectionLabel(m.list, "");
   for (int i = 0; i < model::Context::kBankMax; i++) {
     KeyView &v = m.items[i];

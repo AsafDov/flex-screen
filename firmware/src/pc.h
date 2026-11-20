@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.29.0";
+constexpr const char *kFirmwareVersion = "0.30.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -75,6 +75,9 @@ void closeWindow(const char *id);      // asks it to close, like its X button
 void showDesktop();                    // Win+D, over HID: works without the companion
 void requestIcon(const char *id);      // one the deck doesn't have (any more)
 void snapWindow(int monitor, int zone);  // the foreground window, into a FancyZones zone
+void snapWindowTo(const char *id, int monitor, int zone);  // that window (the desktop map's drag)
+// That window onto a monitor, its top-left at (x, y) of the work area, its size kept.
+void moveWindow(const char *id, int monitor, int x, int y);
 // A LayoutChoice::id; the built-in layout already applied steps to its next zone count.
 void setLayout(int monitor, const char *id);
 
@@ -101,6 +104,7 @@ void openTask(const char *src, const char *list, const char *id);
 // Opens the task where it lives, on the PC (Jira's page, the note in Obsidian…).
 void openTaskLink(const char *src, const char *list, const char *id);
 void joinMeeting(const char *id);  // opens the event's Meet/Zoom/Teams link
+void openVial();                   // Vial's web app (vial.rocks) on the PC, to change the keymap
 
 // Characters, typed by the companion as Unicode (so "(" doesn't depend on the keyboard
 // layout); without it, as US-layout keys.

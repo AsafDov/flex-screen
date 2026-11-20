@@ -55,6 +55,7 @@ sealed class TrayApp : ApplicationContext
     readonly RecentActions _recent = new();
     readonly Shortcuts _shortcuts;
     readonly ContextBar _context;
+    readonly ShortcutCounter? _shortcutCounts;
     readonly System.Threading.Timer _meetingTick;
     readonly ClaudeApprovals _approvals = new();
     readonly DeckQuestions _questions = new();
@@ -263,6 +264,8 @@ sealed class TrayApp : ApplicationContext
             Claude: ClaudeInWindow, Usage: () => _usage.Label, ClaudeSignedOut: () => _usage.SignedOut,
             VsCode: _vscode.RunCommand, ClaudeInCode: () => _vscode.Current?.ClaudeInFront == true);
         _context = new ContextBar(_windows, RunContextAction, AppIntegrations.All(apps));
+        // The shortcuts pressed in each app, for the bar to offer (the settings' countShortcuts: false turns it off).
+        if (Settings.CountShortcuts) _context.Counter = _shortcutCounts = new ShortcutCounter(() => _context.Current.Key);
         _calendar.Changed += _ => _context.Refresh();
         _devices.MicChanged += _ => _context.Refresh();
         // The next meeting's key counts down ("· 12m").
@@ -436,13 +439,19 @@ sealed class TrayApp : ApplicationContext
             lock (_iconsSent) fresh = w.Icon.Length > 0 && _iconsSent.Add(w.Icon);
             if (fresh && _windows.FindIcon(w.Icon) is { } icon) SendIcon(icon);
         }
+        // Front to back among them, and where each is, for the desktop map.
+        var front = WindowSource.FrontToBack(_windows.All, windows);
         _link.Send(new
         {
             t = "state",
             topic = "windows",
             d = new
             {
-                list = windows.Select(w => new { id = w.Id.ToString(), app = w.App, title = w.Title, icon = w.Icon, active = w.Active, min = w.Minimized }),
+                list = windows.Select(w => new
+                {
+                    id = w.Id.ToString(), app = w.App, title = w.Title, icon = w.Icon, active = w.Active, min = w.Minimized,
+                    r = new[] { w.Bounds.X, w.Bounds.Y, w.Bounds.Width, w.Bounds.Height }, z = front[w.Id],
+                }),
             },
         });
     }
@@ -1018,6 +1027,9 @@ sealed class TrayApp : ApplicationContext
             case "git.fetch" or "git.pull" or "git.push" or "git.stash": _git.Run(action[4..]); break;
             case "win.focus": if (long.TryParse(id, out var focus)) WindowSource.Focus(focus); break;
             case "win.close": if (long.TryParse(id, out var close)) _windows.Close(close); break;
+            case "win.move":
+                if (long.TryParse(id, out var moved)) _zones.Move(moved, (int?)message["mon"] ?? -1, (int?)message["x"] ?? 0, (int?)message["y"] ?? 0);
+                break;
             case "icon.need": if (_windows.FindIcon(id) is { } icon) SendIcon(icon); break;
             case "key.text": KeyInput.Type((string?)message["text"] ?? ""); break;
             case "pc.lock": LockWorkStation(); break;
@@ -1061,6 +1073,7 @@ sealed class TrayApp : ApplicationContext
             case "task.link": _tasks.Open((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
             case "cal.join": OpenUrl(_calendar.Find(id)?.Join ?? ""); break;
             case "mail.open": OpenUrl("https://mail.google.com/"); break;
+            case "kbd.vial": OpenUrl("https://vial.rocks/"); break;  // the cheat sheet's Edit in Vial: Vial's web app (Chrome or Edge, WebHID)
             case "zone.snap": _zones.Snap((int?)message["mon"] ?? -1, (int?)message["zone"] ?? -1, (long?)message["hwnd"] ?? 0); break;
             case "zone.layout": _zones.SetLayout((int?)message["mon"] ?? -1, (string?)message["id"] ?? (string?)message["type"] ?? ""); break;
             case "recent.run": RunRecent(id); break;
@@ -1358,6 +1371,7 @@ sealed class TrayApp : ApplicationContext
             bank = bar.Bank.Select(k => new { id = k.Id, name = k.Name, glyph = k.Glyph }),
             own = bar.Own,
             locked = bar.Locked,
+            sug = bar.Suggested,
         };
         lock (_actionsGate)
         {
@@ -1413,6 +1427,7 @@ sealed class TrayApp : ApplicationContext
     {
         Log.Write("companion: quitting");
         _tick.Stop();
+        _shortcutCounts?.Dispose();  // and saves the counts
         _icon.Visible = false;
         ExitThread();
     }

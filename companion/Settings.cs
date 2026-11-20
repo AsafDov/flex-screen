@@ -32,6 +32,7 @@ namespace FlexScreen.Companion;
 ///   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
 ///   "layerNames": ["BASE", "NAV", "SYMBOL"],                  // the keyboard's layers, from 0
 ///   "cheatSheetSeconds": 10,                                  // a layer key held this long shows the cheat sheet; 0: only from the pill
+///   "countShortcuts": true,                                   // count the shortcuts pressed per app, for the context bar to offer (on unless false)
 ///   "accounts": {                                             // by id; without it, one Google account: "google"
 ///     "google": { "type": "google", "label": "Personal", "calendars": { "hide": ["Birthdays"] } },
 ///     "google-work": { "type": "google", "label": "Work", "client": "google-client-work.json", "tasks": false },
@@ -109,6 +110,12 @@ static class Settings
     /// <summary>Idle minutes before the deck shows its clock, and before its screen goes off.</summary>
     public static (double Clock, double Off) Idle =>
         ((double?)Get("idle")?["clockAfterMinutes"] ?? 10, (double?)Get("idle")?["screenOffAfterMinutes"] ?? 30);
+
+    /// <summary>
+    /// Whether the shortcuts pressed in each app are counted, so the context bar can offer the
+    /// ones used most (on unless set false; read when the companion starts).
+    /// </summary>
+    public static bool CountShortcuts => Get("countShortcuts") is JsonValue v && v.TryGetValue(out bool on) ? on : true;
 
     /// <summary>How long a layer key is held before the deck shows the cheat sheet; 0: only when the pill is tapped.</summary>
     public static double CheatSheetSeconds => Math.Clamp((double?)Get("cheatSheetSeconds") ?? 10, 0, 600);

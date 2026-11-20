@@ -66,6 +66,7 @@ def tap(d: Deck, text: str, exact: bool = False, dx: int = 0, dy: int = 0, hold:
 
 CHIPS_LEFT, CHIPS_RIGHT = 98, 474  # the Tasks card's chip row, on Capture
 RAIL_W, RAIL_H = 76, 422  # the page rail down the left, above the context bar
+LV_HOME = ''  # LV_SYMBOL_HOME, before the primary monitor's name
 
 
 def rail_tab(d: Deck, name: str) -> dict | None:
@@ -309,6 +310,68 @@ def test_windows(d: Deck) -> None:
     tap(d, 'LEN T24i-10')
     check('windows: picking the other monitor shows its zones', on_screen(d, 'Chrome', exact=True))
     d.shot(os.path.join(OUT, 'windows-monitor2.png'))
+
+
+def on_map(d: Deck, text: str) -> dict | None:
+    """A label on the desktop map (the open windows card, left of the FancyZones panel): its
+    text, or its start when the window is too narrow for all of it ("Termin…")."""
+    for n in shown(d):
+        t = n.get('text', '')
+        cut = t.rstrip('.…')
+        if (t == text or (len(cut) >= 4 and len(cut) < len(t) and text.startswith(cut))) and RAIL_W < n['x'] < 460 and 80 < n['y'] < 420:
+            return n
+    return None
+
+
+def test_desktop_map(d: Deck) -> None:
+    d.page(3)
+    check('map: the tiles show first', on_screen(d, 'Show desktop'))
+    tap(d, 'Map', exact=True)
+    d.settle()
+    check('map: Map shows the desktop map instead of the tiles',
+          not on_screen(d, 'Show desktop') and on_screen(d, 'Tiles', exact=True) and on_screen(d, 'Drag: move', exact=True))
+    d.shot(os.path.join(OUT, 'windows-map.png'))
+    dell, lenovo = on_map(d, LV_HOME + ' DELL P2722H'), on_map(d, 'LEN T24i-10')
+    check('map: both monitors, side by side', bool(dell and lenovo) and lenovo['x'] > dell['x'], f'{dell} {lenovo}')
+    check('map: a minimized window is left off it', not on_map(d, 'Obsidian') and not on_map(d, 'Spotify'))
+    vscode = on_map(d, 'VS Code')
+    mark = d.mark()
+    if vscode:
+        d.tap(vscode['x'] + 10, vscode['y'] + 6)
+    check('map: tap a window focuses it', bool(did(d, mark, 'win.focus', id='101')))
+    terminal = on_map(d, 'Terminal')
+    check('map: the windows show their names', bool(terminal and vscode))
+    if terminal and lenovo:
+        # Into the portrait monitor's lower zone (Claude's), just above its name at the bottom.
+        mark = d.mark()
+        d.drag(terminal['x'] + 10, terminal['y'] + 6, lenovo['x'] + lenovo['w'] // 2, lenovo['y'] - 20, steps=16, ms=600)
+        hit = did(d, mark, 'zone.snap')
+        check('map: drag a window into a zone snaps it there', bool(hit) and hit.get('mon') == 1 and hit.get('zone') == 1 and
+              hit.get('hwnd') == 103, str(hit))
+        check('map: the drag stays on the Windows page', on_screen(d, 'Tiles', exact=True))
+    explorer = on_map(d, 'Explorer') or on_map(d, 'PrusaSlicer')
+    check('map: a window behind others is on it too', bool(explorer))
+    if explorer and dell:
+        # Below the landscape monitor, where there's no screen: nothing moves.
+        mark = d.mark()
+        d.drag(explorer['x'] + 10, explorer['y'] + 6, dell['x'] + dell['w'] // 2, dell['y'] + 40, steps=16, ms=600)
+        time.sleep(0.5)
+        check('map: let go off the monitors, nothing moves', not d.took('zone.snap', since=mark) and not d.took('win.move', since=mark))
+    # A monitor without zones: the window goes where it's let go.
+    no_zones = fixtures.zones()
+    no_zones['mons'][1]['zones'] = []
+    d.state('zones', no_zones)
+    d.settle()
+    vscode, lenovo = on_map(d, 'VS Code'), on_map(d, 'LEN T24i-10')
+    if vscode and lenovo:
+        mark = d.mark()
+        d.drag(vscode['x'] + 10, vscode['y'] + 6, lenovo['x'] + 10, lenovo['y'] - 120, steps=16, ms=600)
+        hit = did(d, mark, 'win.move')
+        check('map: on a monitor without zones it moves where it was let go', bool(hit) and hit.get('id') == '101' and
+              hit.get('mon') == 1, str(hit))
+    tap(d, 'Tiles', exact=True)
+    d.settle()
+    check('map: Tiles shows the tiles again', on_screen(d, 'Show desktop'))
 
 
 def test_capture(d: Deck) -> None:
@@ -755,6 +818,14 @@ def test_cheat_sheet(d: Deck) -> None:
     d.state('kbd', fixtures.day()['kbd'])
     d.settings('base')
     d.settle()
+    # Edit in Vial: Vial's web app on the PC, and the sheet goes.
+    tap(d, 'BASE', exact=True)
+    d.settle()
+    mark = d.mark()
+    tap(d, 'Edit in Vial', exact=True)
+    check('cheat sheet: Edit in Vial opens Vial on the PC', did(d, mark, 'kbd.vial') is not None, str(d.acts(mark)))
+    d.settle()
+    check('cheat sheet: and closes', not on_screen(d, 'Edit in Vial'))
 
 
 def test_idle(d: Deck) -> None:
@@ -783,6 +854,72 @@ def test_idle(d: Deck) -> None:
 
 def launcher_open(d: Deck) -> bool:
     return on_screen(d, 'Change them from the tray icon')
+
+
+def test_face(d: Deck) -> None:
+    """The launcher's button is a face: two square eyes over a square mouth, in the colors of
+    its mood (sampled at the mouth, which never blinks)."""
+    d.page(0)
+    cx, cy = fixtures.LAUNCHER
+    parts = [n for n in shown(d) if abs(n['x'] + n['w'] // 2 - cx) <= 11 and abs(n['y'] + n['h'] // 2 - cy) <= 11
+             and n['w'] <= 10 and n['h'] <= 10]
+    parts.sort(key=lambda n: (n['y'], n['x']))
+    check('face: three squares', len(parts) == 3, str(parts))
+    if len(parts) == 3:
+        left, right, mouth = parts
+        check('face: two eyes side by side over the mouth', left['y'] == right['y'] and left['x'] < mouth['x'] < right['x']
+              and mouth['y'] > left['y'] + left['h'], str(parts))
+
+    def mouth_color() -> tuple[int, int, int]:
+        d.settle()
+        return d.pixel(d.frame(), cx, cy + 6)
+
+    r, g, b = mouth_color()
+    check('face: busy while Claude works (the accent)', b > r + 40, str((r, g, b)))
+    d.state('approval', fixtures.approval())
+    d.settle()
+    r, g, b = mouth_color()
+    check('face: amber when Claude needs you', r > 180 and b < 120, str((r, g, b)))
+    d.shot(os.path.join(OUT, 'face-alert.png'))
+    d.state('approval', fixtures.day()['approval'])
+    d.state('claude', dict(fixtures.day()['claude'], sessions=[]))
+    d.settle()
+    r, g, b = mouth_color()
+    check('face: grey with nothing going on', abs(r - g) < 30 and abs(g - b) < 30 and r > 60, str((r, g, b)))
+
+    # A failed build or a finished session shows for a minute from when it happened on the PC,
+    # so one from an hour ago isn't news. Sampled a row lower, inside the thin mouths.
+    def low_mouth_color() -> tuple[int, int, int]:
+        d.settle()
+        return d.pixel(d.frame(), cx, cy + 7)
+
+    def grey(c: tuple[int, int, int]) -> bool:
+        return abs(c[0] - c[1]) < 30 and abs(c[1] - c[2]) < 30
+
+    build = fixtures.day()['build']
+    d.state('build', dict(build, state='failed', secs=3600))
+    c = low_mouth_color()
+    check('face: a build that failed an hour ago leaves it calm', grey(c), str(c))
+    d.state('build', dict(build, state='passed'))
+    d.state('build', dict(build, state='failed', secs=5))
+    r, g, b = low_mouth_color()
+    check('face: glum just after a build fails', r > 200 and 110 < g < 190 and b > 80, str((r, g, b)))
+    d.state('build', build)
+    session = fixtures.day()['claude']['sessions'][0]
+    d.state('claude', dict(fixtures.day()['claude'], sessions=[dict(session, state='done', secs=3600)]))
+    c = low_mouth_color()
+    check('face: a session done an hour ago leaves it calm', grey(c), str(c))
+    d.state('claude', fixtures.day()['claude'])
+    d.settle()
+    d.state('claude', dict(fixtures.day()['claude'], sessions=[dict(session, state='done', secs=2)]))
+    r, g, b = low_mouth_color()
+    check('face: pleased just after Claude finishes', g > r + 80 and g > b + 20, str((r, g, b)))
+    d.state('claude', dict(fixtures.day()['claude'], sessions=[]))
+    d.offline()
+    r, g, b = mouth_color()
+    check('face: faded while the PC is away', max(r, g, b) < 110, str((r, g, b)))
+    d.online()
+    d.settle()
 
 
 def test_launcher(d: Deck) -> None:
@@ -1024,7 +1161,32 @@ def test_context_menu(d: Deck) -> None:
     d.settle()
     plus = next((n for n in shown(d) if n.get('text') == '\uf067' and n['y'] >= BAR_TOP), None)
     check('context menu: with every key removed, + is still there', plus is not None)
+
+    # The shortcuts pressed most in the app come first, in a section of their own: one the
+    # bank has (moved up from the app's own), one made from its keys.
+    ctx = fixtures.day()['context']
+    own, every = ctx['bank'][:ctx['own']], ctx['bank'][ctx['own']:]
+    moved = next(k for k in own if k['id'] not in {b['id'] for b in ctx['keys']})
+    sug = [{'id': 'used-ctrl+shift+l', 'name': 'Ctrl+Shift+L', 'glyph': 'keyboard'}, moved]
+    d.state('context', dict(ctx, bank=sug + [k for k in own if k is not moved] + every, sug=2, own=len(own) - 1))
+    d.settle()
+    hold_key(d, 'Build')
+    sections = [n['text'] for n in shown(d) if n.get('text') in ('YOU PRESS THESE OFTEN', 'VS CODE', 'EVERYWHERE')]
+    check('context menu: the shortcuts you press come first, then the app\'s, then everyday ones',
+          sections == ['YOU PRESS THESE OFTEN', 'VS CODE', 'EVERYWHERE'], str(sections))
+    first = label(d, 'YOU PRESS THESE OFTEN')
+    made = menu_item(d, 'Ctrl+Shift+L')
+    check('context menu: a made key sits under them', bool(first and made) and made['y'] > first['y'] and made['y'] < label(d, 'VS CODE')['y'])
+    mark = d.mark()
+    if made:
+        d.tap(made['x'] + made['w'] // 2, made['y'] + made['h'] // 2)
+    check('context menu: picking it puts it on the bar', did(d, mark, 'ctx.set', app='code', id='used-ctrl+shift+l') is not None,
+          str(d.acts(mark)))
     d.state('context', fixtures.day()['context'])
+    d.settle()
+    hold_key(d, 'Build')
+    check('context menu: without any, no such section', not on_screen(d, 'YOU PRESS THESE OFTEN'))
+    d.tap(400, 20)
     d.settle()
 
 
@@ -1746,8 +1908,8 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
-                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_scripts, test_hold_ring, test_context_lock, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
+        for test in (test_today, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_dev, test_windows, test_desktop_map, test_capture, test_tasks, test_task_sources, test_numpad,
+                     test_toast, test_call, test_zoom, test_cheat_sheet, test_face, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_scripts, test_hold_ring, test_context_lock, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)

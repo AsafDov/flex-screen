@@ -202,10 +202,11 @@ struct Context {
   uint32_t color = 0;  // the bar's color, 0xRRGGBB
   ContextKey keys[kMax];
   int count = 0;       // 0: no bar
-  // Every action a key can be (a long press picks one): the app's own first, then the
-  // everyday ones (copy, paste, snap…).
+  // Every action a key can be (a long press picks one): the shortcuts pressed most in the
+  // app (`sug` of them), then the app's own (`own`), then the everyday ones (copy, paste, snap…).
   ContextKey bank[kBankMax];
   int bank_count = 0;
+  int sug = 0;
   int own = 0;
   bool locked = false;  // held on this app (a hold on its name): another app in front doesn't change it
   uint32_t version = 0;
@@ -369,6 +370,8 @@ struct Window {
   String icon;  // icons:: id, or ""
   bool active = false;
   bool minimized = false;  // still a tile; a tap brings it back
+  int x = 0, y = 0, w = 0, h = 0;  // where it is on the PC's screens (physical pixels), for the desktop map
+  int z = 0;                       // front to back: 0 is in front
 };
 
 struct Windows {
@@ -388,6 +391,7 @@ struct Monitor {
   static constexpr int kMaxZones = 12;
   String name;  // "DELL P2722H"
   bool primary = false;
+  int x = 0, y = 0;  // the work area's top-left on the PC's screens, as windows' are given
   int w = 0, h = 0;  // work area
   String type;       // "priority-grid", "columns", "rows", "grid", "focus", "custom", …
   String layout;     // the applied layout's LayoutChoice::id

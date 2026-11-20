@@ -111,6 +111,8 @@ sealed class ZoneSource
         {
             name = m.Name,
             primary = m.Primary,
+            x = m.Work.X,  // where the work area is on the screens, as windows' places are given (the deck's desktop map)
+            y = m.Work.Y,
             w = m.Work.Width,
             h = m.Work.Height,
             type = m.Layout.Type,
@@ -226,6 +228,47 @@ sealed class ZoneSource
             // their own title bar (the Claude app): they undo the move as it happens.
             Toast?.Invoke(new Toast("attention", $"{AppName(state, handle, hwnd)} keeps its own size. Restore it in the app, then snap"));
         }
+        lock (_gate) _loadedAt = DateTime.MinValue;
+    }
+
+    /// <summary>
+    /// Moves a window onto a monitor, its top-left at (x, y) of the work area, keeping its size
+    /// (made smaller only to fit): the deck's desktop map, a window let go where there's no
+    /// zone. A maximized or minimized window is restored first.
+    /// </summary>
+    public void Move(long handle, int monitor, int x, int y)
+    {
+        var state = Current;
+        if (monitor < 0 || monitor >= state.Monitors.Count || !WindowSource.Exists(handle)) return;
+        var m = state.Monitors[monitor];
+        var hwnd = (IntPtr)handle;
+        if (IsZoomed(hwnd) || IsIconic(hwnd)) ShowWindow(hwnd, SwRestore);
+        // Twice, as for a snap: arriving on a monitor with another scale resizes it.
+        for (var pass = 0; pass < 2; pass++)
+        {
+            GetWindowRect(hwnd, out var window);
+            var visible = WindowSource.Bounds(hwnd);
+            var w = Math.Min(visible.Width, m.Work.Width);
+            var h = Math.Min(visible.Height, m.Work.Height);
+            var target = new Rectangle(m.Work.Left + Math.Clamp(x, 0, m.Work.Width - w), m.Work.Top + Math.Clamp(y, 0, m.Work.Height - h), w, h);
+            // The window rect is the visible one plus invisible resize borders.
+            var left = target.Left - (visible.Left - window.Left);
+            var top = target.Top - (visible.Top - window.Top);
+            var right = target.Right - (visible.Right - window.Right);
+            var bottom = target.Bottom - (visible.Bottom - window.Bottom);
+            if (!SetWindowPos(hwnd, IntPtr.Zero, left, top, right - left, bottom - top, SwpNoZOrder | SwpNoActivate | SwpNoOwnerZOrder))
+            {
+                var error = Marshal.GetLastWin32Error();
+                Log.Write($"move: SetWindowPos failed ({error})");
+                if (error == ErrorAccessDenied)
+                {
+                    Toast?.Invoke(new Toast("error", $"{AppName(state, handle, hwnd)} runs as administrator, so it can't be moved from the deck"));
+                    return;
+                }
+            }
+        }
+        var after = WindowSource.Bounds(hwnd);
+        Log.Write($"move: \"{WindowSource.WindowText(hwnd)}\" to {m.Name} at {x},{y}, now {after.X},{after.Y} {after.Width}x{after.Height}");
         lock (_gate) _loadedAt = DateTime.MinValue;
     }
 

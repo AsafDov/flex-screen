@@ -34,8 +34,15 @@ struct Tile {
   int lines;  // the name's height, in lines (1 or 2)
 };
 
+// The launcher's symbol is a face, the deck's familiar: two square eyes and a square mouth
+// (it was four squares, a grid). On the rail's button it shows how things are going.
+struct Face {
+  lv_obj_t *root, *eye[2], *mouth;
+};
+
 struct {
-  lv_obj_t *button, *button_icon;
+  lv_obj_t *button;
+  Face face;
   lv_obj_t *scrim, *panel, *note, *grid;
   Tile tiles[model::Shortcuts::kMax];
 } w;
@@ -65,24 +72,163 @@ void onTile(lv_event_t *e) {
   setOpen(false);
 }
 
-// Four small squares: the launcher's symbol (there's no such glyph in the fonts).
-lv_obj_t *gridIcon(lv_obj_t *parent, uint32_t color) {
-  constexpr int kDot = 7, kGap = 4;
-  lv_obj_t *g = box(parent);
-  lv_obj_set_size(g, 2 * kDot + kGap, 2 * kDot + kGap);
-  for (int i = 0; i < 4; i++) {
-    lv_obj_t *dot = card(g, color, color);
-    lv_obj_set_size(dot, kDot, kDot);
-    lv_obj_set_style_pad_all(dot, 0, 0);
-    lv_obj_set_style_border_width(dot, 0, 0);
-    lv_obj_set_style_radius(dot, 2, 0);
-    lv_obj_set_pos(dot, (i % 2) * (kDot + kGap), (i / 2) * (kDot + kGap));
+// ---- the face
+//
+// Drawn in a 22 px square: the eyes 8 px squares at the top corners, the mouth an 8 px
+// square under the middle. Its moods, the first that applies:
+//   asleep    the PC is away: eyes shut, a small mouth, faded
+//   alert     Claude needs you (an approval, a question): wide eyes, an open mouth, amber,
+//             bobbing
+//   glum      a build failed in the last minute: low eyes, a flat mouth
+//   busy      Claude is at work: eyes glancing side to side, a small mouth, in the accent
+//   pleased   Claude finished in the last minute: squinting eyes, a wide mouth, green
+//   drowsy    the PC has had no input for 5 minutes: eyelids half down
+//   awake     the rest: the three squares
+// Awake and busy it blinks every few seconds. Only a change of pose redraws it, and only
+// its own few pixels.
+constexpr int kFace = 22, kEye = 8;
+constexpr uint32_t kRecentMs = 60 * 1000;      // pleased and glum last this long
+constexpr uint32_t kDrowsyS = 5 * 60;          // the PC idle this long
+constexpr uint32_t kBlinkMs = 130;
+constexpr uint32_t kGlanceMs = 700;            // busy: a glance this often
+constexpr uint32_t kBobMs = 450;               // alert: up, then down
+
+enum class Mood { Asleep, Alert, Glum, Busy, Pleased, Drowsy, Awake };
+
+// Where the parts are: the left eye's box (the right one mirrors it), the eyes moved
+// sideways together, the mouth's size and top (it stays centered), the whole moved up,
+// the color and the opacity.
+struct Pose {
+  int8_t ex, ey, ew, eh, glance, mw, mh, my, lift;
+  uint32_t color;
+  lv_opa_t opa;
+  bool operator==(const Pose &o) const {
+    return ex == o.ex && ey == o.ey && ew == o.ew && eh == o.eh && glance == o.glance && mw == o.mw && mh == o.mh &&
+           my == o.my && lift == o.lift && color == o.color && opa == o.opa;
   }
-  return g;
+};
+
+Pose awake(uint32_t color) { return {0, 1, kEye, kEye, 0, kEye, kEye, 14, 0, color, LV_OPA_COVER}; }
+
+lv_obj_t *square(lv_obj_t *parent, uint32_t color) {
+  lv_obj_t *s = card(parent, color, color);
+  lv_obj_set_style_pad_all(s, 0, 0);
+  lv_obj_set_style_border_width(s, 0, 0);
+  lv_obj_set_style_radius(s, 2, 0);
+  return s;
 }
 
-void setGridColor(lv_obj_t *g, uint32_t color) {
-  for (uint32_t i = 0; i < lv_obj_get_child_count(g); i++) setBgColor(lv_obj_get_child(g, i), color);
+void place(lv_obj_t *o, int x, int y, int w, int h) {
+  if (lv_obj_get_style_x(o, LV_PART_MAIN) != x || lv_obj_get_style_y(o, LV_PART_MAIN) != y) lv_obj_set_pos(o, x, y);
+  if (lv_obj_get_style_width(o, LV_PART_MAIN) != w || lv_obj_get_style_height(o, LV_PART_MAIN) != h) lv_obj_set_size(o, w, h);
+}
+
+void setPose(const Face &f, const Pose &p) {
+  place(f.eye[0], p.ex + p.glance, p.ey, p.ew, p.eh);
+  place(f.eye[1], kFace - p.ex - p.ew + p.glance, p.ey, p.ew, p.eh);
+  place(f.mouth, (kFace - p.mw) / 2, p.my, p.mw, p.mh);
+  for (lv_obj_t *o : {f.eye[0], f.eye[1], f.mouth}) setBgColor(o, p.color);
+  if (lv_obj_get_style_opa(f.root, LV_PART_MAIN) != p.opa) lv_obj_set_style_opa(f.root, p.opa, 0);
+  // Moved as a whole (the parts would be cut off at its top).
+  if (lv_obj_get_style_translate_y(f.root, LV_PART_MAIN) != -p.lift) lv_obj_set_style_translate_y(f.root, -p.lift, 0);
+}
+
+Face face(lv_obj_t *parent, uint32_t color) {
+  Face f;
+  f.root = box(parent);
+  lv_obj_set_size(f.root, kFace, kFace);
+  for (lv_obj_t *&eye : f.eye) eye = square(f.root, color);
+  f.mouth = square(f.root, color);
+  setPose(f, awake(color));
+  return f;
+}
+
+// Moments that last a minute: a build failing, Claude finishing.
+uint32_t build_seen = UINT32_MAX, failed_ms = 0;
+String claude_state;
+uint32_t done_ms = 0;
+bool failed_recently = false, done_recently = false;
+
+// From when it happened, as the PC says (a build that failed an hour ago, or a session done
+// long since, isn't news when the deck reconnects).
+void noteMoments() {
+  const uint32_t now = millis();
+  const model::Build &b = model::build;
+  if (b.version != build_seen) {
+    build_seen = b.version;
+    const uint32_t ago_ms = b.secs > 0 ? uint32_t(b.secs) * 1000 + (now - b.at_ms) : 0;
+    if (b.state == "failed" && !failed_recently) failed_ms = ago_ms < kRecentMs ? now - ago_ms : 0;
+  }
+  failed_recently = b.state == "failed" && failed_ms && now - failed_ms < kRecentMs;
+  const bool any = model::claude.count > 0;
+  const String &state = any ? model::claude.sessions[0].state : String();
+  if (state != claude_state) {
+    const int32_t secs = any ? model::claude.sessions[0].secs : 0;
+    done_ms = state == "done" && secs < int32_t(kRecentMs / 1000) ? now - uint32_t(secs > 0 ? secs : 0) * 1000 : 0;
+    claude_state = state;
+  }
+  done_recently = state == "done" && done_ms && now - done_ms < kRecentMs;
+}
+
+Mood mood() {
+  if (!pc::connected()) return Mood::Asleep;
+  noteMoments();
+  const bool asks = model::question.id.length() && model::question.kind == "ask";
+  if (claude_state == "input" || model::approval.id.length() || asks) return Mood::Alert;
+  if (failed_recently) return Mood::Glum;
+  if (claude_state == "working") return Mood::Busy;
+  if (done_recently) return Mood::Pleased;
+  const model::Pc &p = model::pc;
+  if (!p.locked && p.at_ms && p.idle_s + (millis() - p.at_ms) / 1000 >= kDrowsyS) return Mood::Drowsy;
+  return Mood::Awake;
+}
+
+// Every few seconds, now and then twice; the gaps vary so it doesn't tick like a clock.
+bool blinking(uint32_t now) {
+  static uint32_t next_ms = 3000, end_ms = 0, count = 0;
+  if (int32_t(now - end_ms) < 0) return true;
+  if (int32_t(now - next_ms) < 0) return false;
+  count++;
+  end_ms = now + kBlinkMs;
+  const bool twice = count % 5 == 3;
+  next_ms = now + (twice ? kBlinkMs + 160 : 3500 + (count * 1371) % 3000);
+  return true;
+}
+
+Pose pose(Mood m, bool open) {
+  const uint32_t now = millis();
+  const uint32_t base = open ? kText : kMuted;
+  Pose p = awake(base);
+  switch (m) {
+    case Mood::Asleep:
+      p = {0, 5, kEye, 2, 0, 6, 3, 16, 0, kMuted, LV_OPA_50};
+      break;
+    case Mood::Alert:
+      p = {0, 0, 9, 9, 0, 6, 8, 13, int8_t((now / kBobMs) % 2 ? 2 : 0), kAmber, LV_OPA_COVER};
+      break;
+    case Mood::Glum:
+      p = {0, 4, kEye, 5, 0, 12, 3, 17, 0, 0xFF9A70, LV_OPA_COVER};
+      break;
+    case Mood::Busy: {
+      static const int8_t kGlances[] = {0, -2, 0, 2};
+      p = {0, 1, kEye, kEye, kGlances[(now / kGlanceMs) % 4], 6, 4, 16, 0, kAccent, LV_OPA_COVER};
+      break;
+    }
+    case Mood::Pleased:
+      p = {0, 2, kEye, 4, 0, 14, 5, 15, 0, kGreen, LV_OPA_COVER};
+      break;
+    case Mood::Drowsy:
+      p = {0, 5, kEye, 4, 0, 6, 4, 16, 0, base, LV_OPA_COVER};
+      break;
+    case Mood::Awake:
+      break;
+  }
+  const bool can_blink = m == Mood::Awake || m == Mood::Busy || m == Mood::Alert;
+  if (can_blink && blinking(now)) {
+    p.ey += p.eh / 2 - 1;
+    p.eh = 2;
+  }
+  return p;
 }
 
 // A tile's symbol and colors when it has no icon, by the name the companion gave it.
@@ -208,8 +354,8 @@ void build(lv_obj_t *rail) {
   lv_obj_set_style_bg_color(w.button, hex(kSelected), LV_STATE_PRESSED);
   lv_obj_set_style_bg_opa(w.button, LV_OPA_COVER, LV_STATE_PRESSED);
   lv_obj_add_event_cb(w.button, onButton, LV_EVENT_CLICKED, nullptr);
-  w.button_icon = gridIcon(w.button, kMuted);
-  lv_obj_center(w.button_icon);
+  w.face = face(w.button, kMuted);
+  lv_obj_center(w.face.root);
 
   // Taps beside the panel close it rather than reaching the page underneath.
   w.scrim = box(lv_layer_top());
@@ -233,7 +379,7 @@ void build(lv_obj_t *rail) {
   lv_obj_t *head = box(w.panel);
   lv_obj_set_size(head, LV_PCT(100), kHeadH);
   flexRow(head, 10);
-  gridIcon(head, kMuted);
+  face(head, kMuted);
   label(head, "Shortcuts", &title_font, kText);
   lv_obj_t *gap = box(head);
   lv_obj_set_size(gap, 1, 1);
@@ -272,7 +418,14 @@ void update() {
     setHidden(w.panel, !is_open);
     lv_obj_set_style_bg_color(w.button, hex(kSelected), 0);
     lv_obj_set_style_bg_opa(w.button, is_open ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-    setGridColor(w.button_icon, is_open ? kText : kMuted);
+  }
+  if (!idle::asleep()) {  // under the idle clock nobody sees it
+    static Pose shown = {};
+    const Pose p = pose(mood(), is_open);
+    if (!(p == shown)) {
+      shown = p;
+      setPose(w.face, p);
+    }
   }
   if (!is_open) return;  // filled when it opens
   const int online = pc::connected();

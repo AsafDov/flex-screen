@@ -43,6 +43,12 @@ firmware or release.
   a button for each page (Today, Audio, Dev, Windows, Capture), and the shortcuts
   launcher at its foot. Swipe up for the next page and down for the one before (sideways
   works too); a drag on a list, a fader or a slider stays what it is.
+- The launcher's button is a face, the deck's familiar: two square eyes over a square
+  mouth. It blinks now and then and shows how things are going: glancing side to side, in
+  the accent color, while Claude works; wide-eyed, amber and bobbing when Claude needs you
+  (an approval or a question); pleased, green, for a minute after Claude finishes; glum,
+  for a minute after a build fails; drowsy when the PC has had no input for five minutes;
+  eyes shut and faded while the PC is away.
 - The status line along the top:
   - Next meeting with a countdown, amber from five minutes out.
   - Claude Code status (working, needs you, done); tap it for the session board.
@@ -200,6 +206,14 @@ firmware or release.
   swaps places with it, which is how you reorder. **Remove** takes the key off, **Reset**
   puts the app's defaults back, and **+** at the end adds a key. Each app's arrangement is
   kept by the companion on that PC.
+- **The shortcuts you press there come first** in that list, under *You press these often*:
+  the companion counts the key combinations you press on the PC's own keyboards in each app
+  (Ctrl, Alt and Win combinations and the F-keys, never typing, and never keys a program
+  presses), and offers the ones pressed five times or more that aren't on the bar yet, up to
+  five. One the app's list has an action for is that action; any other is a key of its own,
+  named by its keys ("Ctrl+Shift+L"), that presses them. Only the counts are kept, per app, in
+  `%LOCALAPPDATA%\flex-screen\shortcut-counts.json`; one not pressed for 30 days is dropped.
+  `"countShortcuts": false` in the settings turns it off (from the companion's next start).
 - Add your own actions to an app's list in the profile's `contextBar` (see [Settings](#settings)).
 
 ### Sites in the browser
@@ -297,6 +311,15 @@ the first site that matches wins (yours before the built-in ones).
   again to minimize); a minimized window keeps its tile, icon dimmed, and a tap brings it
   back. Hold to close the window, which takes its tile away at once.
 - Show desktop and Lock PC.
+- **Map** (beside Lock PC) shows the desktop map instead of the tiles (**Tiles** goes back):
+  your monitors as they're arranged, each open window drawn where it is on them, the one in
+  front on top, with its icon and name when there's room. Tap a window to bring it up (or
+  minimize the one in front, as a tile does). Drag one to move it: the FancyZones zones show
+  while it's dragged, the one under your finger lit, and letting go snaps the window into
+  it, on whichever monitor. On a monitor without zones it goes where you let go, its size
+  kept. Let go off the monitors, or back in the zone it fills already, and nothing moves.
+  Minimized windows stay on the tiles.
+  <img src="docs/screens/windows-map.png" alt="The desktop map: a landscape and a portrait monitor with the open windows drawn where they are" width="560">
 - FancyZones: switch each monitor's layout (Priority grid, Columns, Rows, Grid or your
   custom layouts), tap a zone on the map to snap the active window into it, tap it again
   to maximize. A monitor picker for multi-monitor setups.
@@ -402,6 +425,9 @@ the first site that matches wins (yours before the built-in ones).
 - Hold a layer key for ten seconds (`cheatSheetSeconds` in [Settings](#settings)) and the
   deck shows that layer laid out like your keyboard, read straight from the Vial keyboard's own layout and keymap. Letting go
   hides it; tapping the layer pill keeps it open.
+- **Edit in Vial**, at its top right, opens Vial's web app ([vial.rocks](https://vial.rocks/))
+  on the PC, to change the keymap there; the deck only shows it. Vial's web app needs
+  Chrome or Edge.
 - With more than one Vial keyboard plugged in, the pill and cheat sheet follow the one
   you last typed on. A keyboard Vial has locked can't report its layer: unlock it once
   in the Vial app (Security > Unlock) and it stays unlocked until it's unplugged.
@@ -585,6 +611,7 @@ gives editors that read it (VS Code) completion and checks for everything here
   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
   "layerNames": ["BASE", "NAV", "SYMBOL"],             // your keyboard's layers
   "cheatSheetSeconds": 10,                             // hold a layer key this long for its cheat sheet; 0: only from the pill
+  "countShortcuts": true,                              // count the shortcuts you press per app, for the context bar to offer; false: off
   "accounts": {                                        // by id (the tray's Google accounts and Calendars); without it, one: "google"
     "google": { "type": "google", "label": "Personal", "calendars": { "hide": ["Birthdays"] } },
     "google-work": { "type": "google", "label": "Work", "client": "google-client-work.json", "tasks": false },

@@ -321,6 +321,12 @@ void handleWindows(JsonObjectConst d) {
     win.icon = item["icon"] | "";
     win.active = item["active"] | false;
     win.minimized = item["min"] | false;
+    JsonArrayConst r = item["r"];
+    win.x = r[0] | 0;
+    win.y = r[1] | 0;
+    win.w = r[2] | 0;
+    win.h = r[3] | 0;
+    win.z = item["z"] | w.count;
   }
   w.version++;
 }
@@ -333,6 +339,8 @@ void handleZones(JsonObjectConst d) {
     model::Monitor &mon = z.mons[z.mon_count++];
     mon.name = m["name"] | "";
     mon.primary = m["primary"] | false;
+    mon.x = m["x"] | 0;
+    mon.y = m["y"] | 0;
     mon.w = m["w"] | 0;
     mon.h = m["h"] | 0;
     mon.type = m["type"] | "";
@@ -529,7 +537,8 @@ void handleState(const char *topic, JsonObjectConst d) {
       out.name = k["name"] | "";
       out.glyph = k["glyph"] | "";
     }
-    c.own = min(int(d["own"] | 0), c.bank_count);
+    c.sug = min(int(d["sug"] | 0), c.bank_count);
+    c.own = min(int(d["own"] | 0), c.bank_count - c.sug);
     c.locked = d["locked"] | false;
     c.version++;
   } else if (!strcmp(topic, "git")) {
@@ -1419,6 +1428,27 @@ void snapWindow(int monitor, int zone) {
   send(doc);
 }
 
+void snapWindowTo(const char *id, int monitor, int zone) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "zone.snap";
+  doc["mon"] = monitor;
+  doc["zone"] = zone;
+  doc["hwnd"] = strtoll(id, nullptr, 10);
+  send(doc);
+}
+
+void moveWindow(const char *id, int monitor, int x, int y) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "win.move";
+  doc["id"] = id;
+  doc["mon"] = monitor;
+  doc["x"] = x;
+  doc["y"] = y;
+  send(doc);
+}
+
 void setLayout(int monitor, const char *id) {
   JsonDocument doc;
   doc["t"] = "act";
@@ -1457,6 +1487,7 @@ void obsidian(const char *what) {
 
 void openNote(const char *path) { act("obs.open", "path", path); }
 void joinMeeting(const char *id) { act("cal.join", "id", id); }
+void openVial() { act("kbd.vial"); }
 
 void setTaskDone(const char *src, const char *list, const char *id, bool done) {
   JsonDocument doc;

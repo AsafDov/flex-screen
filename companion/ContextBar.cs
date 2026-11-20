@@ -39,10 +39,12 @@ sealed class ContextBar
 
     /// <param name="Key">Whose layout this is: the exe's name ("code"), "chrome:gmail" on Gmail, "ms-teams:call" during a meeting.</param>
     /// <param name="Color">The bar's color, 0xRRGGBB.</param>
-    /// <param name="Bank">Every action the bar can hold: the app's own first (<paramref name="Own"/> of them), then the everyday ones.</param>
+    /// <param name="Bank">Every action the bar can hold: the shortcuts pressed most in the app first
+    /// (<paramref name="Suggested"/> of them, <see cref="ShortcutCounter"/>), then the app's own
+    /// (<paramref name="Own"/> of them), then the everyday ones.</param>
     /// <param name="Locked">Held on this window: another app in front doesn't change it.</param>
     public record Bar(string App, string Key, string Icon, int Color, IReadOnlyList<BarItem> Keys, IReadOnlyList<BarItem> Bank, int Own,
-                      bool Locked = false)
+                      bool Locked = false, int Suggested = 0)
     {
         public static readonly Bar None = new("", "", "", 0, [], [], 0);
     }
@@ -78,6 +80,9 @@ sealed class ContextBar
     string _context = "";  // what the app in front is doing, as it says: "gmail", "claude", "call"
     string _config = "\0";
     Bar _bar = Bar.None;
+
+    /// <summary>The shortcuts pressed in each app, offered first in the bank; null: none offered.</summary>
+    public ShortcutCounter? Counter { get; set; }
 
     /// <param name="act">Runs a deck action (the "action" keys).</param>
     /// <param name="apps">Every app with keys of its own (<see cref="AppIntegrations.All"/>).</param>
@@ -218,11 +223,22 @@ sealed class ContextBar
         if (mine == null && builtIn == null) mine = FromSettings(config as JsonObject, "*", "*");
         var own = (mine?.Items ?? []).Concat(builtIn?.Items ?? []).DistinctBy(i => i.Id).ToList();
         var names = own.Select(i => i.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var bank = own.Concat(Everyday.Where(i => !names.Contains(i.Name))).Select(i => integration?.Live(i, window) ?? i).ToList();
         var layout = _layouts.GetValueOrDefault(key) ?? mine?.Default ?? builtIn?.Default ?? EverydayDefault;
-        var keys = layout.Select(id => bank.FirstOrDefault(i => i.Id == id)).OfType<BarItem>().Take(MaxKeys).ToList();
+        // A key made from a shortcut you press (no action of the bank's has its keys) stays
+        // the app's own for as long as it's on the bar.
+        own.AddRange(layout.Where(id => own.All(i => i.Id != id)).Select(ShortcutCounter.Item).OfType<BarItem>());
+        var live = (BarItem i) => integration?.Live(i, window) ?? i;
+        var ownLive = own.Select(live).ToList();
+        var everyday = Everyday.Where(i => !names.Contains(i.Name)).Select(live).ToList();
+        var all = ownLive.Concat(everyday).ToList();
+        var keys = layout.Select(id => all.FirstOrDefault(i => i.Id == id)).OfType<BarItem>().Take(MaxKeys).ToList();
+        // The shortcuts pressed most in this app and not on its bar go first, moved up from
+        // where they were (or made: "Ctrl+Shift+P" itself).
+        var suggested = Counter?.Suggest(key, all, keys) ?? [];
+        var rest = ownLive.Where(i => suggested.All(s => s.Id != i.Id)).ToList();
+        var bank = suggested.Concat(rest).Concat(everyday.Where(i => suggested.All(s => s.Id != i.Id))).ToList();
         var color = mine?.Color ?? builtIn?.Color ?? IconColor(_windows.FindIcon(front.Icon));
-        return new Bar(app, key, front.Icon, color, keys, bank, own.Count);
+        return new Bar(app, key, front.Icon, color, keys, bank, rest.Count, Suggested: suggested.Count);
     }
 
     /// <summary>An app's actions from the settings, by exe name or the app's name on the deck; null if it has none.</summary>
@@ -274,7 +290,7 @@ sealed class ContextBar
     static string Slug(string name) => new(name.ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray());
 
     static bool Same(Bar a, Bar b) =>
-        a.App == b.App && a.Key == b.Key && a.Icon == b.Icon && a.Color == b.Color && a.Own == b.Own && a.Locked == b.Locked &&
+        a.App == b.App && a.Key == b.Key && a.Icon == b.Icon && a.Color == b.Color && a.Own == b.Own && a.Locked == b.Locked && a.Suggested == b.Suggested &&
         a.Keys.Select(k => (k.Id, k.Name)).SequenceEqual(b.Keys.Select(k => (k.Id, k.Name))) &&
         a.Bank.Select(k => (k.Id, k.Name)).SequenceEqual(b.Bank.Select(k => (k.Id, k.Name)));
 

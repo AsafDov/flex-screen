@@ -54,6 +54,11 @@
       "maximum": 600,
       "default": 10
     },
+    "countShortcuts": {
+      "description": "Count the shortcuts pressed in each app (Ctrl, Alt and Win combinations and F-keys, never typing), so the context bar's long-press menu offers the ones used most. Read when the companion starts.",
+      "type": "boolean",
+      "default": true
+    },
     "approveFromDeck": {
       "description": "Claude's permission requests wait for Approve or Deny on the deck.",
       "type": "boolean",

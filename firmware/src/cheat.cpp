@@ -43,6 +43,12 @@ void dismiss() {
 
 void onTap(lv_event_t *) { dismiss(); }
 
+// Vial's web app, to change the keymap there (the deck only shows it).
+void onVial(lv_event_t *) {
+  pc::openVial();
+  dismiss();
+}
+
 lv_obj_t *line(lv_obj_t *parent, const lv_font_t *font, int width) {
   lv_obj_t *l = label(parent, "", font, kText);
   lv_obj_set_width(l, width);
@@ -159,6 +165,14 @@ void build() {
   lv_obj_set_size(gap, 1, 1);
   lv_obj_set_flex_grow(gap, 1);
   w.hint = label(head, "", &small_font, kMuted);
+  lv_obj_t *vial = button(head, LV_SIZE_CONTENT, kHeadH, kRaised, onVial);
+  lv_obj_set_style_radius(vial, 8, 0);
+  lv_obj_set_style_pad_hor(vial, 12, 0);
+  lv_obj_set_style_margin_left(vial, 6, 0);
+  lv_obj_set_ext_click_area(vial, 6);
+  flexRow(vial, 6);
+  label(vial, LV_SYMBOL_EDIT, &lv_font_montserrat_14, kAccent);
+  label(vial, "Edit in Vial", &small_font, kText);
 
   w.area = box(w.root);
   lv_obj_set_pos(w.area, 0, kHeadH + 8);
