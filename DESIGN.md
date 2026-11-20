@@ -1894,12 +1894,26 @@ Gotchas found after phase 6:
   on 2026-11-15: "not good enough"), plus Microsoft To Do, the latest Obsidian daily note,
   and Jira and GitHub issues to look at and open (2026-11-15).
 - What differs per user or per PC is settings, not code (2026-11-17): profiles that can be
-  synced, `machine.json` per PC, sign-ins per PC. The deck keeps its six pages in a fixed
+  synced, `machine.json` per PC, sign-ins per PC. The deck keeps its pages in a fixed
   order: per-profile pages and a Panels page were built in 0.24.0 and taken out in 0.24.1
-  (not asked for; no extra tab wanted).
-- App integrations to become modules of their own (detection, context, actions, state
-  per app: VS Code, Chrome, Edge, Explorer, Teams, Zoom, Discord, OBS…), as the task
-  sources are; agreed 2026-11-15, to do once the Zoom work is in.
+  (not asked for; no extra tab wanted). Five pages since 0.26.1; the Numpad pops up from
+  the shortcuts instead.
+- App integrations are modules of their own (detection, context, actions, state per app:
+  VS Code, Chrome, Edge, Explorer, Teams, Zoom, Discord…, `companion/Integrations/<App>/`),
+  as the task sources are; agreed 2026-11-15, done in 0.21.0.
+- Layout (2026-11-19, 0.26.0): a page rail down the left with the clock at its top and the
+  shortcuts at its foot, the status line along the top, the context bar along the whole
+  bottom. Bolder rethinks were turned down; the layout before it is tagged `layout-0`.
+- The two cores (0.27.x): LVGL's one draw thread and the touch task on core 0, where the
+  Bluetooth controller and NimBLE will run too; the loop (the link, the UI, LVGL walking
+  the objects) and the panel's refills on core 1. The deck's own data lives in PSRAM
+  (0.25.1), so internal RAM is kept for what needs it (USB, a radio).
+- The deck builds ESP-IDF itself with its own settings (0.27.0): bigger caches and code in
+  PSRAM made drawing twice as fast, and the RGB driver's restart-in-vsync is off (a torn
+  picture rights itself). Kept in `platformio.ini` (`custom_sdkconfig`), built in
+  `~/.platformio-deck`.
+- The demo (0.28.0) is a show reel of the features with made-up data, from the
+  diagnostics' Demo button, not a graphics showcase of the hardware (the user's pick).
 - Keyboard layer = the layers of the Corne (QMK, programmed with Vial). The G915 TKL has
   no layers to show.
 - Changes are confirmed on the real board. Since 2026-11-08 there is also a simulator
@@ -1912,6 +1926,10 @@ Gotchas found after phase 6:
 
 ## Open questions
 
+- **A wireless link**: Bluetooth (NimBLE, on core 0) or Wi-Fi to the PC, so one deck
+  serves the home and work PCs. Internal RAM is what decides it: about 73 KB free and 42 KB
+  at its lowest on 0.28.1, against the 28 KB left in the 12 Nov phone test (firmware 0.17.0,
+  before the data moved to PSRAM). A session on the Bluetooth link started 2026-11-20.
 - **Corne details**: a wireless **W-CORNE** (USB ID 55D4:0461, serial `VIAL:F64C2B3C`);
   its receiver exposes Vial's raw-HID interface (usage page FF60) and answers read-only
   VIA queries, which is how phase 6 gets the layer without a firmware change. Layer
