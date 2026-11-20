@@ -77,38 +77,37 @@ void onTile(lv_event_t *e) {
 // Drawn in a 22 px square: the eyes 8 px squares at the top corners, the mouth an 8 px
 // square under the middle. Its moods, the first that applies:
 //   asleep    the PC is away: eyes shut, a small mouth, faded
-//   alert     Claude needs you (an approval, a question): wide eyes, an open mouth, amber,
-//             bobbing
+//   alert     Claude needs you (an approval, a question): wide eyes, an open mouth, amber
 //   glum      a build failed in the last minute: low eyes, a flat mouth
-//   busy      Claude is at work: eyes glancing side to side, a small mouth, in the accent
+//   busy      Claude is at work: now and then a look to one side, a small mouth, in the
+//             accent
 //   pleased   Claude finished in the last minute: squinting eyes, a wide mouth, green
 //   drowsy    the PC has had no input for 5 minutes: eyelids half down
 //   awake     the rest: the three squares
-// Awake and busy it blinks every few seconds. Only a change of pose redraws it, and only
-// its own few pixels.
+// Awake, busy and alert it blinks every few seconds. It never moves in a steady rhythm:
+// the blinks and glances come at gaps that vary, and otherwise it holds still. Only a
+// change of pose redraws it, and only its own few pixels.
 constexpr int kFace = 22, kEye = 8;
 constexpr uint32_t kRecentMs = 60 * 1000;      // pleased and glum last this long
 constexpr uint32_t kDrowsyS = 5 * 60;          // the PC idle this long
 constexpr uint32_t kBlinkMs = 130;
-constexpr uint32_t kGlanceMs = 700;            // busy: a glance this often
-constexpr uint32_t kBobMs = 450;               // alert: up, then down
 
 enum class Mood { Asleep, Alert, Glum, Busy, Pleased, Drowsy, Awake };
 
 // Where the parts are: the left eye's box (the right one mirrors it), the eyes moved
-// sideways together, the mouth's size and top (it stays centered), the whole moved up,
-// the color and the opacity.
+// sideways together, the mouth's size and top (it stays centered), the color and the
+// opacity.
 struct Pose {
-  int8_t ex, ey, ew, eh, glance, mw, mh, my, lift;
+  int8_t ex, ey, ew, eh, glance, mw, mh, my;
   uint32_t color;
   lv_opa_t opa;
   bool operator==(const Pose &o) const {
     return ex == o.ex && ey == o.ey && ew == o.ew && eh == o.eh && glance == o.glance && mw == o.mw && mh == o.mh &&
-           my == o.my && lift == o.lift && color == o.color && opa == o.opa;
+           my == o.my && color == o.color && opa == o.opa;
   }
 };
 
-Pose awake(uint32_t color) { return {0, 1, kEye, kEye, 0, kEye, kEye, 14, 0, color, LV_OPA_COVER}; }
+Pose awake(uint32_t color) { return {0, 1, kEye, kEye, 0, kEye, kEye, 14, color, LV_OPA_COVER}; }
 
 lv_obj_t *square(lv_obj_t *parent, uint32_t color) {
   lv_obj_t *s = card(parent, color, color);
@@ -129,14 +128,18 @@ void setPose(const Face &f, const Pose &p) {
   place(f.mouth, (kFace - p.mw) / 2, p.my, p.mw, p.mh);
   for (lv_obj_t *o : {f.eye[0], f.eye[1], f.mouth}) setBgColor(o, p.color);
   if (lv_obj_get_style_opa(f.root, LV_PART_MAIN) != p.opa) lv_obj_set_style_opa(f.root, p.opa, 0);
-  // Moved as a whole (the parts would be cut off at its top).
-  if (lv_obj_get_style_translate_y(f.root, LV_PART_MAIN) != -p.lift) lv_obj_set_style_translate_y(f.root, -p.lift, 0);
 }
 
 Face face(lv_obj_t *parent, uint32_t color) {
   Face f;
   f.root = box(parent);
   lv_obj_set_size(f.root, kFace, kFace);
+  // A glance takes an eye 2 px past the face's edge. LVGL lets children out only as far as
+  // the parent's extra draw size, so the face asks for that much.
+  lv_obj_set_overflow_visible(f.root, true);
+  lv_obj_add_event_cb(f.root, [](lv_event_t *e) { lv_event_set_ext_draw_size(e, 2); }, LV_EVENT_REFR_EXT_DRAW_SIZE,
+                      nullptr);
+  lv_obj_refresh_ext_draw_size(f.root);
   for (lv_obj_t *&eye : f.eye) eye = square(f.root, color);
   f.mouth = square(f.root, color);
   setPose(f, awake(color));
@@ -195,30 +198,42 @@ bool blinking(uint32_t now) {
   return true;
 }
 
+// Busy: now and then a look to one side, held a moment, then back. The gaps, the holds and
+// the side vary, so it doesn't sway like a metronome.
+int8_t glance(uint32_t now) {
+  static uint32_t next_ms = 2000, end_ms = 0, count = 0;
+  static int8_t side = 0;
+  if (int32_t(now - end_ms) < 0) return side;
+  if (int32_t(now - next_ms) < 0) return 0;
+  count++;
+  side = (count * 5) % 7 < 4 ? -2 : 2;
+  end_ms = now + 700 + (count * 433) % 800;
+  next_ms = end_ms + 3000 + (count * 1913) % 5000;
+  return side;
+}
+
 Pose pose(Mood m, bool open) {
   const uint32_t now = millis();
   const uint32_t base = open ? kText : kMuted;
   Pose p = awake(base);
   switch (m) {
     case Mood::Asleep:
-      p = {0, 5, kEye, 2, 0, 6, 3, 16, 0, kMuted, LV_OPA_50};
+      p = {0, 5, kEye, 2, 0, 6, 3, 16, kMuted, LV_OPA_50};
       break;
     case Mood::Alert:
-      p = {0, 0, 9, 9, 0, 6, 8, 13, int8_t((now / kBobMs) % 2 ? 2 : 0), kAmber, LV_OPA_COVER};
+      p = {0, 0, 9, 9, 0, 6, 8, 13, kAmber, LV_OPA_COVER};
       break;
     case Mood::Glum:
-      p = {0, 4, kEye, 5, 0, 12, 3, 17, 0, 0xFF9A70, LV_OPA_COVER};
+      p = {0, 4, kEye, 5, 0, 12, 3, 17, 0xFF9A70, LV_OPA_COVER};
       break;
-    case Mood::Busy: {
-      static const int8_t kGlances[] = {0, -2, 0, 2};
-      p = {0, 1, kEye, kEye, kGlances[(now / kGlanceMs) % 4], 6, 4, 16, 0, kAccent, LV_OPA_COVER};
+    case Mood::Busy:
+      p = {0, 1, kEye, kEye, glance(now), 6, 4, 16, kAccent, LV_OPA_COVER};
       break;
-    }
     case Mood::Pleased:
-      p = {0, 2, kEye, 4, 0, 14, 5, 15, 0, kGreen, LV_OPA_COVER};
+      p = {0, 2, kEye, 4, 0, 14, 5, 15, kGreen, LV_OPA_COVER};
       break;
     case Mood::Drowsy:
-      p = {0, 5, kEye, 4, 0, 6, 4, 16, 0, base, LV_OPA_COVER};
+      p = {0, 5, kEye, 4, 0, 6, 4, 16, base, LV_OPA_COVER};
       break;
     case Mood::Awake:
       break;

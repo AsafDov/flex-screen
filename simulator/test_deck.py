@@ -880,6 +880,15 @@ def test_face(d: Deck) -> None:
     d.settle()
     r, g, b = mouth_color()
     check('face: amber when Claude needs you', r > 180 and b < 120, str((r, g, b)))
+    # And holds still, no bobbing: the column down its middle is the mouth alone (the eyes
+    # blink beside it), the same over most of a second.
+    columns = []
+    for _ in range(6):
+        f = d.frame(settle=False)
+        columns.append([d.pixel(f, cx, y) for y in range(cy - 13, cy + 13)])
+        time.sleep(0.15)
+    check('face: alert holds still', all(c == columns[0] for c in columns),
+          str(sum(c != columns[0] for c in columns)) + ' of 6 frames differ')
     d.shot(os.path.join(OUT, 'face-alert.png'))
     d.state('approval', fixtures.day()['approval'])
     d.state('claude', dict(fixtures.day()['claude'], sessions=[]))

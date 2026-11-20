@@ -461,7 +461,13 @@ void build(lv_obj_t *screen, lv_obj_t *pages) {
   w.chip = chip;
   lv_obj_t *holder = box(chip);
   lv_obj_set_size(holder, icons::kSize, icons::kSize);
-  lv_obj_add_flag(holder, LV_OBJ_FLAG_OVERFLOW_VISIBLE);  // the lock badge sits over its corner
+  // The lock badge sits over its corner, 5 px out. LVGL lets children out only as far as the
+  // parent's extra draw size, so the holder asks for that much (without it the badge was
+  // cut flat on its right and bottom).
+  lv_obj_set_overflow_visible(holder, true);
+  lv_obj_add_event_cb(holder, [](lv_event_t *e) { lv_event_set_ext_draw_size(e, 5); }, LV_EVENT_REFR_EXT_DRAW_SIZE,
+                      nullptr);
+  lv_obj_refresh_ext_draw_size(holder);
   w.image = lv_image_create(holder);
   lv_obj_set_size(w.image, icons::kSize, icons::kSize);
   w.letter = card(holder, kRaised, kRaised);  // no icon (yet): the app's first letter

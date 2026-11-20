@@ -1939,7 +1939,7 @@ Gotchas found after phase 6:
   - **The face**: the launcher's four squares are three, two eyes over a mouth, posed from
     what's going on (`launcher.cpp`, `Mood`): asleep (PC away), alert (Claude needs you:
     a waiting session, an approval or a `deck_ask`), glum (a build failed, for a minute),
-    busy (Claude at work, glancing), pleased (Claude done, for a minute), drowsy (the PC idle
+    busy (Claude at work, a glance now and then), pleased (Claude done, for a minute), drowsy (the PC idle
     5 minutes), awake (blinking every few seconds). A pose is applied only when it changes,
     and redraws the face's 22 px; nothing under the idle clock.
   - **Suggested keys**: `ShortcutCounter`, a low-level keyboard hook on a thread of its own
@@ -1964,6 +1964,20 @@ Gotchas found after phase 6:
   - Checked: the simulator (see the commit), the companion's build and the ESP32 build. Not
     tried on the deck or with the real companion yet: the hook counting real keys, windows
     really moving.
+- The face without the rhythm, firmware 0.30.1 (2026-11-20; "the blinking is great but its
+  either bobbing up and down or looking side to side which isn't good. i don't like the
+  repetitive motion"): busy glanced left, back and right every 0.7 s and alert bobbed every
+  0.45 s, both nonstop. Now busy looks to one side now and then, timed like the blinks (a
+  hold of 0.7 to 1.5 s, then 3 to 8 s before the next, the side varying), and alert holds
+  still, amber and wide-eyed, blinking. The face is never moved as a whole any more.
+  - Watching the eyes showed a glance outward never moved an eye: LVGL 9.6 lets a child
+    draw past its parent only as far as the parent's extra draw size, even with overflow
+    visible, so the eye was cut 2 px narrower at the face's edge instead. The face now asks
+    for 2 px (`LV_EVENT_REFR_EXT_DRAW_SIZE`). The context bar's lock badge (0.29.0) had the
+    same flaw, its ring cut flat on the right and bottom; its holder now asks for 5 px.
+  - Checked: the simulator (a new check that alert holds still; the eyes watched for 30 s,
+    glancing 5 times, both ways, 0.7 to 1.2 s each; the lock badge's ring whole), the ESP32
+    build, and the deck (flashed, kept).
 
 ## Decisions
 

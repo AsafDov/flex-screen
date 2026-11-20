@@ -44,9 +44,9 @@ firmware or release.
   launcher at its foot. Swipe up for the next page and down for the one before (sideways
   works too); a drag on a list, a fader or a slider stays what it is.
 - The launcher's button is a face, the deck's familiar: two square eyes over a square
-  mouth. It blinks now and then and shows how things are going: glancing side to side, in
-  the accent color, while Claude works; wide-eyed, amber and bobbing when Claude needs you
-  (an approval or a question); pleased, green, for a minute after Claude finishes; glum,
+  mouth. It blinks now and then and shows how things are going: in the accent color, with
+  a look to one side now and then, while Claude works; wide-eyed and amber when Claude
+  needs you (an approval or a question); pleased, green, for a minute after Claude finishes; glum,
   for a minute after a build fails; drowsy when the PC has had no input for five minutes;
   eyes shut and faded while the PC is away.
 - The status line along the top:
