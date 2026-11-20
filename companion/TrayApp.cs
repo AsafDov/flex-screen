@@ -726,6 +726,7 @@ sealed class TrayApp : ApplicationContext
 
     [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LastInputInfo info);
     [DllImport("user32.dll")] static extern bool LockWorkStation();
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 
     static object KeyboardMessage(KeyboardState k) => new
     {
@@ -893,6 +894,8 @@ sealed class TrayApp : ApplicationContext
             shuffle = m.Shuffle,
             repeat = m.Repeat,
             art = m.ArtId,
+            seek = m.Seekable,
+            accent = m.Accent,
         },
     };
 
@@ -988,7 +991,8 @@ sealed class TrayApp : ApplicationContext
     void Act(string action, JsonNode message)
     {
         // Slider drags send a stream of these; logging each would drown everything else.
-        if (action is not ("vol.set" or "mixer.set")) Log.Write($"act: {action}");
+        if (action is not ("vol.set" or "mixer.set" or "vol.up" or "vol.down") && !(action == "shortcut.run" && _shortcuts.Steps((string?)message["id"] ?? "")))
+            Log.Write($"act: {action}");
         var app = (string?)message["app"] ?? "";
         var id = (string?)message["id"] ?? "";
         switch (action)
@@ -998,8 +1002,11 @@ sealed class TrayApp : ApplicationContext
             case "media.prev": _ = _media.PreviousAsync(); break;
             case "media.shuffle": _ = _media.ToggleShuffleAsync(); break;
             case "media.repeat": _ = _media.CycleRepeatAsync(); break;
+            case "media.seek": _ = _media.SeekAsync((double?)message["pos"] ?? 0); break;
             case "vol.set": _volume.SetLevel((int?)message["v"] ?? 0); break;
             case "vol.mute": _volume.ToggleMute(); break;
+            case "vol.up": _volume.Step(2); break;  // a shortcut tile, sent again every 100 ms while it's held
+            case "vol.down": _volume.Step(-2); break;
             case "mixer.set": _mixer.SetLevel(app, (int?)message["v"] ?? 0); break;
             case "mixer.mute": _mixer.ToggleMute(app); break;
             case "dev.out": _devices.RequestDefault(id, output: true); break;
@@ -1033,6 +1040,16 @@ sealed class TrayApp : ApplicationContext
             case "icon.need": if (_windows.FindIcon(id) is { } icon) SendIcon(icon); break;
             case "key.text": KeyInput.Type((string?)message["text"] ?? ""); break;
             case "pc.lock": LockWorkStation(); break;
+            case "screens.off":
+                // Every monitor to sleep (the deck isn't one); the mouse or a key wakes them.
+                // Posted, not sent: a hung window would hold up a broadcast SendMessage.
+                PostMessage(new IntPtr(0xFFFF) /* HWND_BROADCAST */, 0x0112 /* WM_SYSCOMMAND */, new IntPtr(0xF170) /* SC_MONITORPOWER */, new IntPtr(2));
+                break;
+            case "taskmgr.open":
+                // Task Manager runs once: starting it again brings up the open one.
+                try { Process.Start(new ProcessStartInfo("taskmgr.exe") { UseShellExecute = true }); }
+                catch (System.ComponentModel.Win32Exception e) { Log.Write($"taskmgr: {e.Message}"); }  // its elevation prompt turned down
+                break;
             case "call.mic": _calls.ToggleMic(); break;
             case "call.camera" when !_calls.Current.Active: SendToast(new Toast("attention", "Camera: not in a call")); break;
             case "call.camera": _ = Task.Run(_calls.ToggleCamera); break;  // Zoom's shortcuts wait on focus changes
@@ -1238,7 +1255,9 @@ sealed class TrayApp : ApplicationContext
     /// <summary>The launcher's tiles, when they changed (or <paramref name="force"/>, on the deck's hello).</summary>
     void SendShortcuts(bool force = false)
     {
-        var list = _shortcuts.Current.Select(s => new { id = s.Id, name = s.Name, icon = s.Icon, glyph = s.Look }).ToList();
+        // `act`: an action tile's action, so the deck can light a mute tile while muted and
+        // repeat a volume tile while it's held.
+        var list = _shortcuts.Current.Select(s => new { id = s.Id, name = s.Name, icon = s.Icon, glyph = s.Look, act = s.Kind == "action" ? s.Target : "" }).ToList();
         lock (_actionsGate)
         {
             var key = System.Text.Json.JsonSerializer.Serialize(list);

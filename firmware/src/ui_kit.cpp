@@ -225,6 +225,21 @@ void setHidden(lv_obj_t *o, bool hidden) {
   if (lv_obj_is_hidden(o) != hidden) lv_obj_set_hidden(o, hidden);
 }
 
+uint32_t mediaAccent(bool connected) {
+  const model::Media &m = model::media;
+  return connected && m.present && m.accent ? m.accent : kAccent;
+}
+
+uint32_t mixColor(uint32_t color, uint32_t base, uint8_t amount) {
+  return lv_color_to_u32(lv_color_mix(hex(color), hex(base), amount)) & 0xFFFFFF;
+}
+
+void tintMediaCard(lv_obj_t *card, uint32_t accent) {
+  const bool theme = accent == kAccent;  // no cover color: the plain card
+  setBgColor(card, theme ? kSurface : mixColor(accent, kSurface, 26));
+  setBorderColor(card, theme ? kBorder : mixColor(accent, kBorder, 90));
+}
+
 namespace {
 
 constexpr int kHoldRingD = 92, kHoldRingW = 6;  // round a fingertip, so it shows past it

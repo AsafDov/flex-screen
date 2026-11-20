@@ -50,7 +50,7 @@ struct {
 bool is_open = false;
 bool open_seen = true;
 uint32_t shortcuts_seen = UINT32_MAX, icons_seen = UINT32_MAX, tick_ms = 0;
-int link_seen = -1;
+int link_seen = -1, lit_seen = -1;
 int64_t day_seen = -1;
 
 void setOpen(bool open) {
@@ -66,10 +66,30 @@ void onNumpad(lv_event_t *) {
   numpad::open();
 }
 
+// Volume up and down step at the press, then again every 100 ms while held (LVGL's long
+// press repeat), as a keyboard's volume keys do; the panel stays open for more.
+bool repeats(const model::Shortcut &x) { return x.action == "vol.up" || x.action == "vol.down"; }
+
+// A mute tile lights up while it's muted, like the status line's volume and mic.
+bool lit(const model::Shortcut &x) {
+  return (x.action == "vol.mute" && model::volume.muted) || (x.action == "mic.mute" && model::mic.muted);
+}
+int litKey() { return (model::volume.muted ? 1 : 0) | (model::mic.muted ? 2 : 0); }
+
 void onTile(lv_event_t *e) {
   const int i = int(intptr_t(lv_event_get_user_data(e)));
-  if (i < model::shortcuts.count && pc::connected()) pc::runShortcut(model::shortcuts.list[i].id.c_str());
+  if (i >= model::shortcuts.count) return;
+  const model::Shortcut &x = model::shortcuts.list[i];
+  if (repeats(x)) return;  // stepped as it was pressed
+  if (pc::connected()) pc::runShortcut(x.id.c_str());
   setOpen(false);
+}
+
+void onTileStep(lv_event_t *e) {
+  const int i = int(intptr_t(lv_event_get_user_data(e)));
+  if (i < model::shortcuts.count && repeats(model::shortcuts.list[i]) && pc::connected()) {
+    pc::runShortcut(model::shortcuts.list[i].id.c_str());
+  }
 }
 
 // ---- the face
@@ -260,6 +280,10 @@ Look look(const String &glyph) {
   if (glyph == "code") return {"</>", 0x10273D, kAccent};
   if (glyph == "music" || glyph == "media") return {LV_SYMBOL_PLAY, 0x143A2E, kGreen};
   if (glyph == "volume") return {LV_SYMBOL_VOLUME_MAX, kHighlight, kAccent};
+  if (glyph == "volume-up") return {LV_SYMBOL_VOLUME_MID LV_SYMBOL_PLUS, kHighlight, kAccent};
+  if (glyph == "volume-down") return {LV_SYMBOL_VOLUME_MID LV_SYMBOL_MINUS, kHighlight, kAccent};
+  if (glyph == "screen-off") return {LV_SYMBOL_EYE_CLOSE, kSurface, kSoftText};
+  if (glyph == "taskmgr") return {LV_SYMBOL_LIST, 0x10273D, kAccent};
   if (glyph == "lock") return {LV_SYMBOL_POWER, 0x3A1A1A, 0xFF8A80};
   if (glyph == "desktop") return {LV_SYMBOL_HOME, kSurface, kText};
   if (glyph == "folder") return {LV_SYMBOL_DIRECTORY, 0x3A2A10, kAmber};
@@ -275,6 +299,8 @@ void buildTiles() {
     Tile &t = w.tiles[i];
     t.asked_ms = 0;
     t.root = button(w.grid, kTile, kTile, kRaised, onTile, reinterpret_cast<void *>(intptr_t(i)));
+    lv_obj_add_event_cb(t.root, onTileStep, LV_EVENT_PRESSED, reinterpret_cast<void *>(intptr_t(i)));
+    lv_obj_add_event_cb(t.root, onTileStep, LV_EVENT_LONG_PRESSED_REPEAT, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_set_style_radius(t.root, 14, 0);
     lv_obj_set_style_pad_ver(t.root, 6, 0);
     lv_obj_set_style_pad_hor(t.root, kTilePadHor, 0);
@@ -338,6 +364,9 @@ void fill() {
       lv_label_set_text(t.name, "");  // cut again for the new height
     }
     setText(t.name, x.name.c_str());
+    const bool on = lit(x);
+    setBgColor(t.root, on ? kAmberBg : kRaised);
+    setTextColor(t.name, on ? kAmber : kText);
     const lv_image_dsc_t *icon = icons::get(x.icon);
     if (!icon && x.icon.length() && millis() - t.asked_ms >= kIconRetryMs) {
       t.asked_ms = millis();
@@ -353,9 +382,9 @@ void fill() {
     const Look l = look(x.glyph);
     char letter[2] = {x.name.length() ? char(toupper(x.name[0])) : '?', 0};
     const bool calendar = x.glyph == "calendar" && day[0];
-    setText(t.glyph, calendar ? day : l.glyph[0] ? l.glyph : letter);
-    setTextColor(t.glyph, l.fg);
-    setBgColor(t.badge, l.bg);
+    setText(t.glyph, calendar ? day : on && x.action == "vol.mute" ? LV_SYMBOL_MUTE : l.glyph[0] ? l.glyph : letter);
+    setTextColor(t.glyph, on ? kAmber : l.fg);
+    setBgColor(t.badge, on ? kAmberBg : l.bg);
   }
 }
 
@@ -446,9 +475,12 @@ void update() {
   const int online = pc::connected();
   const int64_t day = model::localNow() / 86400;
   const bool icon_due = millis() - tick_ms >= kIconRetryMs;
-  if (model::shortcuts.version == shortcuts_seen && icons::version() == icons_seen && online == link_seen && day == day_seen && !icon_due) {
+  const int lit_now = litKey();
+  if (model::shortcuts.version == shortcuts_seen && icons::version() == icons_seen && online == link_seen && day == day_seen &&
+      lit_now == lit_seen && !icon_due) {
     return;
   }
+  lit_seen = lit_now;
   shortcuts_seen = model::shortcuts.version;
   icons_seen = icons::version();
   link_seen = online;

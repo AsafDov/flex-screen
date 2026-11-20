@@ -282,6 +282,107 @@ def test_audio(d: Deck) -> None:
     d.shot(os.path.join(OUT, 'audio.png'))
 
 
+def seek_bar(d: Deck) -> dict | None:
+    """Audio's progress bar: the slider in the Now Playing band, between the two times."""
+    return next((n for n in shown(d) if n.get('c') == 'slider' and n['y'] < 180 and n['w'] > 200), None)
+
+
+def near(a: tuple[int, int, int], b: int, tolerance: int = 12) -> bool:
+    """A frame's pixel against 0xRRGGBB, give or take RGB565's rounding."""
+    return all(abs(a[i] - (b >> (16 - 8 * i) & 0xFF)) <= tolerance for i in range(3))
+
+
+def elapsed_s(d: Deck, bar: dict) -> int | None:
+    """The time left of Audio's progress bar, in seconds."""
+    n = next((n for n in shown(d) if n.get('text', '').count(':') == 1 and n['y'] < 180 and n['x'] < bar['x']), None)
+    if not n:
+        return None
+    m, sec = n['text'].split(':')
+    return int(m) * 60 + int(sec)
+
+
+def test_seek(d: Deck) -> None:
+    d.page(1)
+    bar = seek_bar(d)
+    if not bar:
+        check('seek: the progress bar is there', False, 'no slider in Now Playing')
+        return
+    y = bar['y'] + bar['h'] // 2
+    x0, x1 = bar['x'] + bar['w'] // 2, bar['x'] + bar['w'] * 3 // 4
+    want = 0.75 * 489
+    mark = d.mark()
+    d.touch(x0, y, True)
+    for i in range(1, 9):
+        time.sleep(0.03)
+        d.touch(x0 + (x1 - x0) * i // 8, y, True)
+    d.settle()
+    shown_s = elapsed_s(d, bar)
+    check('seek: dragging shows the time it would go to', shown_s is not None and abs(shown_s - want) < 15, str(shown_s))
+    check('seek: and sends nothing until the finger lifts', d.took('media.seek', since=mark) is None, str(d.acts(mark)))
+    d.shot(os.path.join(OUT, 'seek-drag.png'))
+    d.touch(x1, y, False)
+    hit = did(d, mark, 'media.seek')
+    check('seek: letting go goes there', hit is not None and abs(hit.get('pos', 0) - want) < 15, str(hit))
+    check("seek: and stays on Audio (it isn't a swipe)", on_screen(d, 'Microphone Array'))
+    # The PC's next report still has the old place (the app takes a moment): the bar holds.
+    d.state('media', dict(fixtures.day()['media'], pos=192))
+    d.settle()
+    shown_s = elapsed_s(d, bar)
+    check("seek: a late report doesn't pull the bar back", shown_s is not None and abs(shown_s - want) < 15, str(shown_s))
+
+    mark = d.mark()
+    tap_x = bar['x'] + bar['w'] // 4
+    d.tap(tap_x, y)
+    hit = did(d, mark, 'media.seek')
+    check('seek: a tap on the bar jumps there', hit is not None and abs(hit.get('pos', 0) - 0.25 * 489) < 15, str(hit))
+
+    d.state('media', dict(fixtures.day()['media'], seek=False))
+    d.settle()
+    d.page(1)
+    mark = d.mark()
+    d.tap(tap_x, y)
+    time.sleep(0.3)
+    check("seek: an app that can't seek gets a plain bar", d.took('media.seek', since=mark) is None, str(d.acts(mark)))
+    d.page(1)
+
+
+def test_media_accent(d: Deck) -> None:
+    """Now Playing in the cover's color: the card's tint, Audio's bar and app name, Today's volume."""
+    accent = fixtures.day()['media']['accent']
+    d.page(1)
+    bar = seek_bar(d)
+    if not bar:
+        check('accent: the progress bar is there', False)
+        return
+    at = (bar['x'] + 4, bar['y'] + bar['h'] // 2)
+    card_at = (bar['x'] + bar['w'] // 2, bar['y'] + 20)  # Now Playing's card, under the bar
+    frame = d.frame()
+    fill, card_with = d.pixel(frame, *at), d.pixel(frame, *card_at)
+    check("accent: Audio's progress is in the cover's color", near(fill, accent), f'{fill} vs {accent:06X}')
+    d.shot(os.path.join(OUT, 'audio-accent.png'))
+    d.state('media', dict(fixtures.day()['media'], accent=0))
+    frame = d.frame()
+    fill, card_without = d.pixel(frame, *at), d.pixel(frame, *card_at)
+    check("accent: none from the PC keeps the theme's", not near(fill, accent), f'{fill}')
+    check('accent: the card is tinted with it, and plain without',
+          card_with != card_without and card_with[2] > card_without[2], f'{card_with} vs {card_without}')
+    d.state('media', fixtures.day()['media'])
+    d.page(0)
+    d.shot(os.path.join(OUT, 'today-accent.png'))
+    slider = next((n for n in shown(d) if n.get('c') == 'slider' and n['x'] < 400), None)
+    if not slider:
+        check("accent: Today's volume slider is there", False)
+        return
+    at = (slider['x'] + 4, slider['y'] + slider['h'] // 2)
+    fill = d.pixel(d.frame(), *at)
+    check("accent: Today's volume is in the cover's color", near(fill, accent), f'{fill} vs {accent:06X}')
+    d.offline()
+    fill = d.pixel(d.frame(), *at)
+    check("accent: offline it's the theme's again", not near(fill, accent), f'{fill}')
+    d.online()
+    d.sync()
+
+
 def test_dev(d: Deck) -> None:
     d.page(2)
     expect_act(d, 'dev: a command row runs it again', 'npm run lint', 'term.replay', cmd='npm run lint')
@@ -1024,6 +1125,79 @@ def overlapping_bar(d: Deck) -> list[str]:
         if n['y'] < BAR_TOP - 2 and n['y'] + n['h'] > BAR_TOP + 2:
             out.append(f"{n.get('text') or n['c']}@{n['y']}+{n['h']}")
     return out
+
+
+ACTION_TILES = {'list': [
+    {'id': 't1', 'name': 'Volume down', 'icon': '', 'glyph': 'volume-down', 'act': 'vol.down'},
+    {'id': 't2', 'name': 'Volume up', 'icon': '', 'glyph': 'volume-up', 'act': 'vol.up'},
+    {'id': 't3', 'name': 'Mute', 'icon': '', 'glyph': 'volume', 'act': 'vol.mute'},
+    {'id': 't4', 'name': 'Mic', 'icon': '', 'glyph': 'call', 'act': 'mic.mute'},
+    {'id': 't5', 'name': 'Screens off', 'icon': '', 'glyph': 'screen-off', 'act': 'screens.off'},
+    {'id': 't6', 'name': 'Task Manager', 'icon': '', 'glyph': 'taskmgr', 'act': 'taskmgr.open'},
+    {'id': 't7', 'name': 'Gmail', 'icon': 'ic-gmail', 'glyph': 'mail', 'act': ''},
+]}
+
+
+def tile_at(d: Deck, name: str) -> tuple[int, int] | None:
+    """A launcher tile's badge, found by the tile's name (the panel's labels come last)."""
+    names = [n for n in shown(d) if n.get('text') == name]
+    if not names:
+        return None
+    n = names[-1]
+    return n['x'] + n['w'] // 2, n['y'] - 26
+
+
+def tile_bg(d: Deck, frame: bytes, name: str) -> tuple[int, int, int]:
+    """A tile's own color: its corner, beside the badge."""
+    x, y = tile_at(d, name)
+    return d.pixel(frame, x - 42, y + 2)
+
+
+def test_shortcut_actions(d: Deck) -> None:
+    d.page(0)
+    d.state('shortcuts', ACTION_TILES)
+    d.tap(*fixtures.LAUNCHER)
+    d.settle()
+    d.shot(os.path.join(OUT, 'launcher-actions.png'))
+    up = tile_at(d, 'Volume up')
+    if not up:
+        check('tiles: the volume tiles are there', False)
+        return
+    mark = d.mark()
+    d.tap(*up)
+    time.sleep(0.3)
+    runs = [a for a in d.acts(mark) if a.get('a') == 'shortcut.run']
+    check('tiles: a tap on Volume up steps it once', len(runs) == 1 and runs[0].get('id') == 't2', str(runs))
+    check('tiles: and the panel stays open for more', launcher_open(d))
+    mark = d.mark()
+    d.hold(*up, ms=1200)
+    time.sleep(0.2)
+    runs = [a for a in d.acts(mark) if a.get('a') == 'shortcut.run' and a.get('id') == 't2']
+    check('tiles: holding it keeps stepping', len(runs) >= 5, f'{len(runs)} steps')
+    mark = d.mark()
+    time.sleep(0.4)
+    check('tiles: and stops when it lets go', not d.acts(mark), str(d.acts(mark)))
+    check('tiles: still open after the hold', launcher_open(d))
+
+    frame = d.frame()
+    plain = tile_bg(d, frame, 'Mute')
+    d.state('vol', {'v': 42, 'muted': True})
+    d.state('mic', {'available': True, 'muted': True})
+    frame = d.frame()
+    lit, mic_lit, other = tile_bg(d, frame, 'Mute'), tile_bg(d, frame, 'Mic'), tile_bg(d, frame, 'Gmail')
+    check('tiles: Mute lights up while the sound is muted', lit != plain and lit[0] > lit[2], f'{plain} -> {lit}')
+    check('tiles: Mic lights up while the mic is muted', mic_lit == lit, f'{mic_lit} vs {lit}')
+    check('tiles: other tiles stay as they were', other == plain, f'{other} vs {plain}')
+    d.shot(os.path.join(OUT, 'launcher-muted.png'))
+    d.state('vol', {'v': 42, 'muted': False})
+    check('tiles: and goes back when unmuted', tile_bg(d, d.frame(), 'Mute') == plain)
+    d.state('mic', {'available': True, 'muted': False})
+
+    mark = d.mark()
+    d.tap(*tile_at(d, 'Screens off'))
+    check('tiles: Screens off runs', did(d, mark, 'shortcut.run', id='t5') is not None, str(d.acts(mark)))
+    check('tiles: and closes the panel, as other tiles do', not launcher_open(d))
+    d.state('shortcuts', fixtures.day()['shortcuts'])
 
 
 def test_context_bar(d: Deck) -> None:
@@ -1917,8 +2091,8 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_dev, test_windows, test_desktop_map, test_capture, test_tasks, test_task_sources, test_numpad,
-                     test_toast, test_call, test_zoom, test_cheat_sheet, test_face, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_scripts, test_hold_ring, test_context_lock, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
+        for test in (test_today, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_seek, test_media_accent, test_dev, test_windows, test_desktop_map, test_capture, test_tasks, test_task_sources, test_numpad,
+                     test_toast, test_call, test_zoom, test_cheat_sheet, test_face, test_launcher, test_shortcut_actions, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_scripts, test_hold_ring, test_context_lock, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)

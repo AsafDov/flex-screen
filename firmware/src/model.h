@@ -18,6 +18,9 @@ struct Media {
   int8_t shuffle = -1;  // -1: the app has no shuffle, 0: off, 1: on
   String repeat;        // "none", "one", "all", or "" when the app has no repeat
   String art;           // id of this track's Art, or ""
+  bool seekable = false;  // the app takes a new position (media.seek)
+  uint32_t accent = 0;    // 0xRRGGBB picked from the cover for Now Playing; 0: none (the theme's)
+  uint32_t seek_ms = 0;   // when the deck last moved the position itself; 0: not lately
   uint32_t version = 0;
 
   // Where playback is now, extrapolated from the last report.
@@ -177,6 +180,7 @@ struct Shortcut {
   String name;
   String icon;   // an app's or site's icon id, else ""
   String glyph;  // the symbol without an icon: mail, calendar, note, terminal, … or "" (the first letter)
+  String action;  // an action tile's action ("vol.mute", "vol.up"), else ""
 };
 
 struct Shortcuts {

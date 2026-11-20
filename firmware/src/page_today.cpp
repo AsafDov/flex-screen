@@ -30,6 +30,7 @@ struct {
   lv_obj_t *clock;
   lv_obj_t *clock_secs;
   lv_obj_t *date;
+  lv_obj_t *media_card;
   lv_obj_t *art_icon;
   lv_obj_t *art;
   lv_obj_t *title;
@@ -92,7 +93,7 @@ void buildClock(lv_obj_t *parent) {
 }
 
 void buildNowPlaying(lv_obj_t *parent) {
-  lv_obj_t *np = card(parent);
+  lv_obj_t *np = w.media_card = card(parent);
   lv_obj_set_size(np, LV_PCT(100), LV_SIZE_CONTENT);
   flexCol(np, 8);
 
@@ -398,6 +399,11 @@ void updateMedia() {
   const model::Media &m = model::media;
   if (m.version == media_seen) return;
   media_seen = m.version;
+  const uint32_t accent = mediaAccent(up);
+  tintMediaCard(w.media_card, accent);
+  if (!lv_color_eq(lv_obj_get_style_bg_color(w.vol_slider, LV_PART_INDICATOR), hex(accent))) {
+    lv_obj_set_style_bg_color(w.vol_slider, hex(accent), LV_PART_INDICATOR);
+  }
   if (!up) {
     // Without the companion the buttons still work, as plain media keys.
     lv_label_set_text(w.title, "PC offline");

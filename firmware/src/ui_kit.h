@@ -95,6 +95,14 @@ const lv_image_dsc_t *artFor(const String &id);
 bool installPendingArt();
 void releaseOldArt();
 
+// Now Playing in the album's color: the accent the PC picked from the cover, or the theme's
+// own when there's none (no cover, a grey one, the PC offline).
+uint32_t mediaAccent(bool connected);
+// `color` laid over `base`, `amount` of 255.
+uint32_t mixColor(uint32_t color, uint32_t base, uint8_t amount);
+// A Now Playing card in that color: a faint tint over the card, a stronger one on its border.
+void tintMediaCard(lv_obj_t *card, uint32_t accent);
+
 // A microphone drawn from shapes (LVGL's symbol font has none), 18x20 px.
 struct MicIcon {
   lv_obj_t *root;

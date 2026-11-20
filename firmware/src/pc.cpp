@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <Update.h>
+#include <math.h>
 #include <stdarg.h>
 
 #include "USB.h"
@@ -201,13 +202,26 @@ void consumerKey(uint16_t usage) {
 void handleMedia(JsonObjectConst d) {
   model::Media &m = model::media;
   m.present = d["present"] | false;
-  m.title = d["title"] | "";
   m.artist = d["artist"] | "";
   m.app = d["app"] | "";
+  const String title = d["title"] | "";
+  const bool same_track = title == m.title;
+  m.title = title;
   m.playing = d["playing"] | false;
-  m.pos = d["pos"] | 0.0f;
+  const float pos = d["pos"] | 0.0f;
+  // After a seek from the deck the app takes a moment to move, and a report sent meanwhile
+  // still says where it was: the deck keeps its own place until a report agrees with it (or
+  // 3 s pass), so the bar doesn't jump back and forth.
+  constexpr uint32_t kSeekHoldMs = 3000;
+  const bool held = m.seek_ms && same_track && millis() - m.seek_ms < kSeekHoldMs && fabsf(pos - m.positionNow()) > 2.5f;
+  if (!held) {
+    m.pos = pos;
+    m.pos_at_ms = millis();
+    m.seek_ms = 0;
+  }
   m.len = d["len"] | 0.0f;
-  m.pos_at_ms = millis();
+  m.seekable = d["seek"] | false;
+  m.accent = d["accent"] | 0u;
   m.shuffle = d["shuffle"].isNull() ? -1 : (d["shuffle"] | false) ? 1 : 0;
   m.repeat = d["repeat"] | "";
   m.art = d["art"] | "";
@@ -467,6 +481,7 @@ void handleState(const char *topic, JsonObjectConst d) {
       out.name = x["name"] | "";
       out.icon = x["icon"] | "";
       out.glyph = x["glyph"] | "";
+      out.action = x["act"] | "";
     }
     s.version++;
   } else if (!strcmp(topic, "approval")) {
@@ -1266,6 +1281,21 @@ void media(MediaCmd cmd) {
   consumerKey(cmd == MediaCmd::Toggle ? CONSUMER_CONTROL_PLAY_PAUSE
               : cmd == MediaCmd::Next ? CONSUMER_CONTROL_SCAN_NEXT
                                       : CONSUMER_CONTROL_SCAN_PREVIOUS);
+}
+
+void seek(float seconds) {
+  model::Media &m = model::media;
+  if (!connected() || !m.seekable) return;
+  m.pos = seconds;  // there at once; the PC's reports catch up
+  m.pos_at_ms = millis();
+  m.seek_ms = millis() | 1;
+  m.version++;
+  if (demo_on) return;
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "media.seek";
+  doc["pos"] = roundf(seconds * 10) / 10;
+  send(doc);
 }
 
 void toggleShuffle() { act("media.shuffle"); }

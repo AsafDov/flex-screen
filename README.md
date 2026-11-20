@@ -259,10 +259,17 @@ the first site that matches wins (yours before the built-in ones).
   found by their Start menu name, Store apps (Spotify, Terminal) included.
 - Out of the box: Gmail, Calendar, Today's note, Spotify, VS Code and Terminal. Change
   them per PC from the tray icon's **Shortcuts…** (see [Settings](#settings)).
+- Tiles for the PC itself: **Volume up** and **Volume down** step it as the keyboard's
+  volume keys do, and keep going while held (the panel stays open for more); **Mute** and
+  the microphone's tile light up amber while muted, like the status line; **Screens off**
+  puts the monitors to sleep (the mouse wakes them); **Task Manager** opens it, with its
+  own icon. Add them as actions (`vol.up`, `vol.down`, `vol.mute`, `mic.mute`,
+  `screens.off`, `taskmgr.open`).
 
 ### Today
 - Big clock.
-- Now playing: album art, title, artist and app, play/pause, next/previous, volume.
+- Now playing: album art, title, artist and app, play/pause, next/previous, volume. The
+  card takes on the color of the album's cover, as Audio's does.
 - Up next: the next calendar event, from every calendar you put on the deck (see
   [Calendars](#calendars)), with a **Join** button for Meet, Zoom or Teams links.
   Tap it for the whole day: today's events in order, those over dimmed above a line at
@@ -283,6 +290,13 @@ the first site that matches wins (yours before the built-in ones).
 
 - Now playing across the top: the keys on the left (play/pause, next/previous, shuffle,
   repeat), the track and its progress in the middle, the album art on the right.
+- Drag the progress bar to go to another part of the track (the time shows as you drag,
+  and it goes there when you let go), or tap the bar to jump there. Only where the player
+  allows it (Windows says which do); for the rest it stays a plain bar.
+- In the cover's color: the card is tinted with the album's own color, and the progress bar,
+  the player's name and the shuffle and repeat keys take it on. The companion picks it from
+  the cover (the hue its vivid parts share most, made light enough to read); a grey or
+  black-and-white cover keeps the theme's color.
 - Output and input devices as lists down the left; a tap sets the Windows default device.
 - Per-app mixer beside them: a fader for each app playing sound; tap the app's name under
   it to mute it (amber while muted). Teams, Discord and Zoom have a fader whenever they're
@@ -634,10 +648,11 @@ gives editors that read it (VS Code) completion and checks for everything here
 ```
 
 A shortcut can also have `"glyph"` (the symbol shown without an icon: `mail`, `calendar`,
-`note`, `terminal`, `code`, `music`, `lock`, `desktop`, `folder`, `keys`, `git`, `call`)
-and `"icon"` (a picture or program whose icon to use). Actions: `obs.today`, `mail.open`,
-`pc.lock`, `desktop.show`, `media.toggle`, `media.next`, `media.prev`, `vol.mute`,
-`mic.mute`, `term.focus`, `git.commit`, `git.fetch`, `git.pull`, `git.push`, `git.stash`,
+`note`, `terminal`, `code`, `music`, `lock`, `desktop`, `folder`, `keys`, `git`, `call`,
+`volume`, `volume-up`, `volume-down`, `screen-off`, `taskmgr`) and `"icon"` (a picture or
+program whose icon to use). Actions: `obs.today`, `mail.open`, `pc.lock`, `desktop.show`,
+`screens.off`, `taskmgr.open`, `media.toggle`, `media.next`, `media.prev`, `vol.mute`,
+`vol.up`, `vol.down`, `mic.mute`, `term.focus`, `git.commit`, `git.fetch`, `git.pull`, `git.push`, `git.stash`,
 `call.mic`, `call.camera`, `call.hand`, `call.leave`, `call.focus`. The tray icon's
 **Shortcuts…** opens this file, with the default list written in if it has none.
 

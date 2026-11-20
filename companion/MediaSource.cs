@@ -7,10 +7,13 @@ namespace FlexScreen.Companion;
 /// <param name="Shuffle">null when the app doesn't support shuffle.</param>
 /// <param name="Repeat">"none", "one" or "all"; null when the app doesn't support repeat.</param>
 /// <param name="ArtId">The <see cref="Art"/> for this track, or "" when there's none.</param>
+/// <param name="Seekable">The app takes a new position (<see cref="MediaSource.SeekAsync"/>).</param>
+/// <param name="Accent">The cover's color for Now Playing, 0xRRGGBB; 0 for none.</param>
 record MediaState(bool Present, string Title, string Artist, string App, bool Playing,
-                  double Position, double Length, bool? Shuffle, string? Repeat, string ArtId)
+                  double Position, double Length, bool? Shuffle, string? Repeat, string ArtId,
+                  bool Seekable, int Accent)
 {
-    public static readonly MediaState None = new(false, "", "", "", false, 0, 0, null, null, "");
+    public static readonly MediaState None = new(false, "", "", "", false, 0, 0, null, null, "", false, 0);
 }
 
 /// <summary>
@@ -71,6 +74,21 @@ sealed class MediaSource
         };
         return s.TryChangeAutoRepeatModeAsync(next).AsTask();
     });
+
+    /// <summary>To <paramref name="seconds"/> into the track (the deck's progress bar, dragged).</summary>
+    public async Task SeekAsync(double seconds)
+    {
+        await Control(s =>
+        {
+            var timeline = s.GetTimelineProperties();
+            var at = timeline.StartTime + TimeSpan.FromSeconds(Math.Max(0, seconds));
+            if (timeline.EndTime > timeline.StartTime && at > timeline.EndTime) at = timeline.EndTime;
+            return s.TryChangePlaybackPositionAsync(at.Ticks).AsTask();
+        });
+        // Some apps move without saying so (no timeline event): look again.
+        await Task.Delay(400);
+        await RefreshAsync(reloadArt: false);
+    }
 
     async Task Control(Func<GlobalSystemMediaTransportControlsSession, Task<bool>> action)
     {
@@ -208,10 +226,12 @@ sealed class MediaSource
                 }
                 : null;
 
+            var seekable = controls?.IsPlaybackPositionEnabled == true && length > 0;
+
             Publish(new MediaState(true, props.Title ?? "", props.Artist ?? "",
                                    AppName(session.SourceAppUserModelId), playing,
                                    Math.Round(position, 1), Math.Round(length, 1), shuffle, repeat,
-                                   CurrentArt?.Id ?? ""));
+                                   CurrentArt?.Id ?? "", seekable, CurrentArt?.Accent ?? 0));
         }
         catch (Exception e)
         {

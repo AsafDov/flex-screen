@@ -5,7 +5,8 @@ using Windows.Storage.Streams;
 namespace FlexScreen.Companion;
 
 /// <summary>A square RGB565 image ready for the deck. <c>Id</c> is a content hash.</summary>
-record Art(string Id, int Width, int Height, byte[] Pixels);
+/// <param name="Accent">The cover's color for Now Playing (<see cref="CoverColor"/>), 0xRRGGBB; 0 for none.</param>
+record Art(string Id, int Width, int Height, byte[] Pixels, int Accent);
 
 static class AlbumArt
 {
@@ -36,9 +37,10 @@ static class AlbumArt
             var data = await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore, transform,
                                                        ExifOrientationMode.RespectExifOrientation,
                                                        ColorManagementMode.DoNotColorManage);
-            var pixels = ToRgb565(data.DetachPixelData());
+            var bgra = data.DetachPixelData();
+            var pixels = ToRgb565(bgra);
             var id = Convert.ToHexString(SHA1.HashData(pixels))[..12].ToLowerInvariant();
-            return new Art(id, size, size, pixels);
+            return new Art(id, size, size, pixels, CoverColor.Pick(bgra));
         }
         catch (Exception e)
         {

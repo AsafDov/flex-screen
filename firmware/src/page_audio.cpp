@@ -28,6 +28,7 @@ struct Channel {
 };
 
 struct {
+  lv_obj_t *card;
   lv_obj_t *art_icon;
   lv_obj_t *art;
   lv_obj_t *app;
@@ -57,6 +58,7 @@ uint32_t mixer_seen = UINT32_MAX;
 uint32_t volume_seen = UINT32_MAX;
 int connected_seen = -1;
 uint32_t progress_ms = 0;
+uint32_t accent = 0;  // Now Playing's color as drawn
 int shown_output = -1;  // which device button is lit, which may be ahead of the PC
 int shown_input = -1;
 uint32_t switch_pending_ms = 0;
@@ -65,6 +67,21 @@ void onPrev(lv_event_t *) { pc::media(pc::MediaCmd::Prev); }
 void onToggle(lv_event_t *) { pc::media(pc::MediaCmd::Toggle); }
 void onNext(lv_event_t *) { pc::media(pc::MediaCmd::Next); }
 void onShuffle(lv_event_t *) { pc::toggleShuffle(); }
+
+// The progress bar is a slider when the app can seek: dragging it shows the time it would
+// go to, and letting go goes there. (A tap on the bar jumps there.)
+void onSeek(lv_event_t *e) {
+  const model::Media &m = model::media;
+  if (m.len <= 0) return;
+  const float to = lv_slider_get_value(w.progress) / 1000.0f * m.len;
+  if (lv_event_get_code(e) == LV_EVENT_RELEASED) {
+    pc::seek(to);
+    return;
+  }
+  char buf[16];
+  formatTime(buf, sizeof(buf), to);
+  lv_label_set_text(w.elapsed, buf);
+}
 void onRepeat(lv_event_t *) { pc::cycleRepeat(); }
 
 void styleDevice(lv_obj_t *button, bool selected) {
@@ -124,7 +141,7 @@ void onChannelMute(lv_event_t *e) {
 // with its progress on one line (times either side of the bar), and the album on the right.
 // (The art first and the keys at the far end spread it across the band.)
 void buildNowPlaying(lv_obj_t *parent) {
-  lv_obj_t *c = card(parent);
+  lv_obj_t *c = w.card = card(parent);
   lv_obj_set_size(c, LV_PCT(100), LV_SIZE_CONTENT);
   lv_obj_set_style_pad_all(c, 12, 0);
   lv_obj_set_style_pad_left(c, 16, 0);
@@ -171,12 +188,21 @@ void buildNowPlaying(lv_obj_t *parent) {
   lv_obj_set_style_margin_top(times, 8, 0);
   flexRow(times, 10);
   w.elapsed = label(times, "", &lv_font_montserrat_14, kMuted);
-  w.progress = lv_bar_create(times);
+  w.progress = lv_slider_create(times);
   lv_obj_set_size(w.progress, 1, 6);
   lv_obj_set_flex_grow(w.progress, 1);
-  lv_bar_set_range(w.progress, 0, 1000);
+  lv_slider_set_range(w.progress, 0, 1000);
   lv_obj_set_style_bg_color(w.progress, hex(kTrack), LV_PART_MAIN);
   lv_obj_set_style_bg_color(w.progress, hex(kAccent), LV_PART_INDICATOR);
+  lv_obj_set_style_bg_color(w.progress, hex(kText), LV_PART_KNOB);
+  lv_obj_set_style_pad_all(w.progress, 4, LV_PART_KNOB);  // a 14 px dot
+  lv_obj_set_style_pad_all(w.progress, 7, LV_PART_KNOB | LV_STATE_PRESSED);  // bigger under the finger
+  lv_obj_set_ext_click_area(w.progress, 16);     // fingers are bigger than the 6 px track
+  lv_obj_set_gesture_bubble(w.progress, false);  // dragging it isn't a page swipe
+  lv_obj_add_event_cb(w.progress, onSeek, LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_add_event_cb(w.progress, onSeek, LV_EVENT_RELEASED, nullptr);
+  lv_obj_remove_flag(w.progress, LV_OBJ_FLAG_CLICKABLE);  // until an app that can seek plays
+  lv_obj_set_style_bg_opa(w.progress, LV_OPA_TRANSP, LV_PART_KNOB);
   w.total = label(times, "", &lv_font_montserrat_14, kMuted);
 
   lv_obj_t *holder = card(c, kArtBg, kArtBg);
@@ -384,8 +410,19 @@ void updateDevices() {
   lv_label_set_text(w.device, out ? out->name.c_str() : "");
 }
 
+// A plain bar (no dot, no touch: a swipe there turns the page) unless the app can seek.
+void setSeekable(bool on) {
+  if (on == lv_obj_has_flag(w.progress, LV_OBJ_FLAG_CLICKABLE)) return;
+  if (on) {
+    lv_obj_add_flag(w.progress, LV_OBJ_FLAG_CLICKABLE);
+  } else {
+    lv_obj_remove_flag(w.progress, LV_OBJ_FLAG_CLICKABLE);
+  }
+  lv_obj_set_style_bg_opa(w.progress, on ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_KNOB);
+}
+
 void setToggle(lv_obj_t *icon, lv_obj_t *button, bool supported, bool on) {
-  lv_obj_set_style_text_color(icon, hex(on ? kAccent : kMuted), 0);
+  lv_obj_set_style_text_color(icon, hex(on ? accent : kMuted), 0);
   lv_obj_set_style_opa(button, supported ? LV_OPA_COVER : LV_OPA_30, 0);
   lv_obj_set_clickable(button, supported);
 }
@@ -393,14 +430,15 @@ void setToggle(lv_obj_t *icon, lv_obj_t *button, bool supported, bool on) {
 void updateProgress() {
   const model::Media &m = model::media;
   progress_ms = millis();
+  if (lv_obj_has_state(w.progress, LV_STATE_PRESSED)) return;  // the finger has it
   if (!pc::connected() || !m.present || m.len <= 0) {
-    lv_bar_set_value(w.progress, 0, LV_ANIM_OFF);
+    lv_slider_set_value(w.progress, 0, LV_ANIM_OFF);
     lv_label_set_text(w.elapsed, "");
     lv_label_set_text(w.total, "");
     return;
   }
   const float pos = m.positionNow();
-  lv_bar_set_value(w.progress, int(pos / m.len * 1000), LV_ANIM_OFF);
+  lv_slider_set_value(w.progress, int(pos / m.len * 1000), LV_ANIM_OFF);
   char buf[16];
   formatTime(buf, sizeof(buf), pos);
   lv_label_set_text(w.elapsed, buf);
@@ -417,6 +455,13 @@ void updateMedia() {
   const model::Media &m = model::media;
   if (m.version != media_seen) {
     media_seen = m.version;
+    setSeekable(up && m.present && m.seekable && m.len > 0);
+    accent = mediaAccent(up);
+    tintMediaCard(w.card, accent);
+    setTextColor(w.app, accent);
+    if (!lv_color_eq(lv_obj_get_style_bg_color(w.progress, LV_PART_INDICATOR), hex(accent))) {
+      lv_obj_set_style_bg_color(w.progress, hex(accent), LV_PART_INDICATOR);
+    }
     if (!up) {
       lv_label_set_text(w.title, "PC offline");
       lv_label_set_text(w.artist, "Buttons send media keys");

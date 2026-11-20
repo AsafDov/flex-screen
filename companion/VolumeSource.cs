@@ -43,6 +43,25 @@ sealed class VolumeSource : IMMNotificationClient
         }
     }
 
+    /// <summary>
+    /// Up or down by <paramref name="delta"/> points from where it is, as the keyboard's volume
+    /// keys do (and like them, unmuting). The deck repeats it while a tile is held.
+    /// </summary>
+    public void Step(int delta)
+    {
+        lock (_gate)
+        {
+            var volume = _device?.AudioEndpointVolume;
+            if (volume == null) return;
+            var level = (int)Math.Round(volume.MasterVolumeLevelScalar * 100);
+            // To the next multiple of the step, as Windows' keys do: 41 goes to 42 or 40.
+            var step = Math.Max(1, Math.Abs(delta));
+            var next = delta > 0 ? (level / step + 1) * step : ((level + step - 1) / step - 1) * step;
+            volume.MasterVolumeLevelScalar = Math.Clamp(next, 0, 100) / 100f;
+            if (volume.Mute) volume.Mute = false;
+        }
+    }
+
     public void ToggleMute()
     {
         lock (_gate)

@@ -27,7 +27,7 @@ sealed class Shortcuts
 
     /// <param name="Kind">url, app, path, action or keys.</param>
     /// <param name="Target">The url, the app's id (once found), the path, the action or the keys.</param>
-    /// <param name="Look">The deck's symbol when there's no icon: mail, calendar, note, terminal, code, music, media, volume, lock, desktop, folder, keys, git, call, or "" for the name's first letter.</param>
+    /// <param name="Look">The deck's symbol when there's no icon: mail, calendar, note, terminal, code, music, media, volume, volume-up, volume-down, screen-off, taskmgr, lock, desktop, folder, keys, git, call, or "" for the name's first letter.</param>
     /// <param name="Icon">The icon's id, once the deck can be sent one.</param>
     public record Item(string Id, string Name, string Kind, string Target, string Args, string AppName, string Look, string Icon);
 
@@ -36,9 +36,16 @@ sealed class Shortcuts
     {
         ["obs.today"] = "note", ["mail.open"] = "mail", ["pc.lock"] = "lock", ["desktop.show"] = "desktop",
         ["media.toggle"] = "media", ["media.next"] = "media", ["media.prev"] = "media", ["vol.mute"] = "volume",
+        ["vol.up"] = "volume-up", ["vol.down"] = "volume-down", ["screens.off"] = "screen-off", ["taskmgr.open"] = "taskmgr",
         ["mic.mute"] = "call", ["term.focus"] = "terminal", ["term.interrupt"] = "terminal", ["git.commit"] = "git",
         ["git.fetch"] = "git", ["git.pull"] = "git", ["git.push"] = "git", ["git.stash"] = "git",
         ["call.mic"] = "call", ["call.camera"] = "call", ["call.hand"] = "call", ["call.leave"] = "call", ["call.focus"] = "call",
+    };
+
+    /// <summary>A tile's name when its entry gives none.</summary>
+    static readonly Dictionary<string, string> ActionNames = new()
+    {
+        ["vol.up"] = "Volume up", ["vol.down"] = "Volume down", ["screens.off"] = "Screens off", ["taskmgr.open"] = "Task Manager",
     };
 
     /// <summary>What a PC gets before its settings say otherwise.</summary>
@@ -205,7 +212,8 @@ sealed class Shortcuts
             }
             (kind, target, key) = ("action", action, action);
             look ??= actionLook;
-            if (name.Length == 0) name = action;
+            if (name.Length == 0) name = ActionNames.GetValueOrDefault(action, action);
+            if (action == "taskmgr.open") image = ShellApps.Image(Path.Combine(Environment.SystemDirectory, "Taskmgr.exe"), WindowSource.IconSize);
         }
         else if ((string?)e["keys"] is { Length: > 0 } keys)
         {
@@ -236,6 +244,9 @@ sealed class Shortcuts
     }
 
     static bool IsPicture(string path) => Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif";
+
+    /// <summary>A volume tile, which the deck repeats while it's held (so it isn't logged each time).</summary>
+    public bool Steps(string id) => Current.FirstOrDefault(i => i.Id == id) is { Kind: "action", Target: "vol.up" or "vol.down" };
 
     /// <summary>A tile tapped on the deck.</summary>
     public void Run(string id)

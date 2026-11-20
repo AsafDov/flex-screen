@@ -140,7 +140,8 @@ def day() -> dict[str, dict]:
     """Every topic, as a normal working morning."""
     return {
         'media': {'present': True, 'title': 'Weightless', 'artist': 'Marconi Union', 'app': 'Spotify', 'playing': True,
-                  'pos': 192, 'len': 489, 'shuffle': False, 'repeat': 'none', 'art': 'art-1'},
+                  'pos': 192, 'len': 489, 'shuffle': False, 'repeat': 'none', 'art': 'art-1',
+                  'seek': True, 'accent': 0x8177E9},  # what the companion picks from deck.art()'s gradient
         'vol': {'v': 42, 'muted': False},
         'mixer': {'apps': [
             {'id': 'spotify', 'name': 'Spotify', 'v': 47, 'muted': False},

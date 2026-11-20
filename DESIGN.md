@@ -1978,6 +1978,53 @@ Gotchas found after phase 6:
   - Checked: the simulator (a new check that alert holds still; the eyes watched for 30 s,
     glancing 5 times, both ways, 0.7 to 1.2 s each; the lock badge's ring whole), the ESP32
     build, and the deck (flashed, kept).
+- Three picks from the ClawPal comparison, firmware 0.31.0 (2026-11-20; ClawPal,
+  github.com/Kaayoos/clawpal, is an ESP32-S3 desk display with a Windows companion, looked
+  through for ideas; the user picked "the more shortcut actions", "draggable seek bar" and
+  "accent color for now playing"):
+  - **Shortcut actions**: `vol.up` and `vol.down` (`VolumeSource.Step`: to the next multiple
+    of 2, unmuting, as Windows' volume keys do), `screens.off` (`SC_MONITORPOWER` posted to
+    `HWND_BROADCAST`; posted, since a hung window holds up a broadcast SendMessage) and
+    `taskmgr.open` (Task Manager is single-instance, so starting it again brings up the open
+    one; its tile gets Taskmgr.exe's icon). Default names when the entry gives none, and
+    glyphs `volume-up`, `volume-down`, `screen-off`, `taskmgr`. The `shortcuts` list now
+    says each tile's action (`act`): a volume tile steps at the press (`LV_EVENT_PRESSED`)
+    and on LVGL's long-press repeat (every 100 ms after 400 ms), takes no hold ring, and
+    leaves the panel open; a `vol.mute` or `mic.mute` tile is amber while muted (the
+    status line's colors; the sound's shows the mute symbol), refilled when the mute states
+    change, not on every volume step.
+  - **Seek**: `media.seek` (`pos` in seconds) → `TryChangePlaybackPositionAsync`, from the
+    timeline's start; offered (the `media` state's `seek`) only where Windows says the
+    session takes a position and the track has a length. Audio's progress bar is an
+    `lv_slider` (it was an `lv_bar`): a 14 px dot, 20 px under the finger, 16 px of extra
+    touch area, no page swipe; dragging shows the time it would go to and sends on release
+    only (a stream of seeks makes players stutter), and a tap on the bar jumps. Without
+    `seek` it's not clickable and has no dot, so it looks as before and a swipe there still
+    turns the page (not LVGL's disabled state, which the default theme greys out). After a
+    seek the deck keeps its own place for up to 3 s unless a report agrees within 2.5 s:
+    a report sent before the app moved would pull the bar back. The companion reads the
+    session again 400 ms after seeking, for apps that move without a timeline event.
+  - **The cover's color**: `CoverColor.Pick` on the cover's BGRA pixels (180 px, already
+    decoded for the art): pixels that are neither near black nor grey vote for one of 24 hue
+    bins, weighted saturation² × value, so a vivid title on a dull cover still wins; the
+    best bin with half of each neighbour's votes, if it has 2% of the pixels' worth, is
+    averaged and set to saturation 0.45-0.85 and lightness 0.55-0.72, then lightened until
+    its luminance is 0.22 (blues read darker than yellows). 0 otherwise, and the deck keeps
+    the theme's accent. Sent as the `media` state's `accent`; it rides on `Art`, whose id is the cover's
+    hash. On the deck `ui::mediaAccent` gives it (or the theme's, offline or with nothing
+    playing), and `tintMediaCard` lays it over the card at 10% and over its border at 35%:
+    Today's card and volume slider, Audio's card, progress, app name and lit shuffle and
+    repeat. Mixer faders keep the theme's (not picked).
+  - Checked: the simulator, 447 checks, all passing, with new ones for seeking (the time
+    while dragging, nothing sent until the release, a late report not pulling the bar back,
+    a tap jumping, a plain bar without `seek`), the tint (bar, card, Today's volume, the
+    theme's again offline and without an accent) and the tiles (one step a tap, steps while
+    held and none after, the panel open, mute and mic lit and back); the cover picker on
+    made-up covers (grey and black-and-white give 0); the companion's and the ESP32 builds;
+    on the deck, flashed and kept on top of 0.30.1, with YouTube in Chrome playing: the seek
+    dot, the cards and bars in the cover's orange. Not tried on the deck: seeking, the volume,
+    screens-off and Task Manager tiles by finger (they'd have moved the user's music,
+    volume and screens).
 
 ## Decisions
 

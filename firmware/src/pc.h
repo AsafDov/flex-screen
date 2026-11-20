@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.30.1";
+constexpr const char *kFirmwareVersion = "0.31.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -28,6 +28,7 @@ void play(const char *line);
 
 enum class MediaCmd { Toggle, Next, Prev };
 void media(MediaCmd cmd);
+void seek(float seconds);  // to that point of the track, when the app allows it
 void toggleShuffle();
 void cycleRepeat();
 

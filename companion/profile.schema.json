@@ -324,7 +324,7 @@
         },
         "glyph": {
           "type": "string",
-          "description": "The symbol shown without an icon: mail, calendar, note, terminal, code, music, media, volume, lock, desktop, folder, keys, git, call."
+          "description": "The symbol shown without an icon: mail, calendar, note, terminal, code, music, media, volume, volume-up, volume-down, screen-off, taskmgr, lock, desktop, folder, keys, git, call."
         },
         "icon": {
           "type": "string",
@@ -381,6 +381,10 @@
         "media.next",
         "media.prev",
         "vol.mute",
+        "vol.up",
+        "vol.down",
+        "screens.off",
+        "taskmgr.open",
         "mic.mute",
         "term.focus",
         "term.interrupt",
