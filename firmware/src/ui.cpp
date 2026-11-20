@@ -629,6 +629,8 @@ struct {
 // past in about a second.
 void bench() {
   load::report();  // first: the cores and the loop since the last one, before these redraws
+  uint32_t vsyncs0, refilled0;
+  display::panelCounts(vsyncs0, refilled0);
   const uint32_t tab = lv_tabview_get_tab_active(tabview);
   const uint32_t n = lv_tabview_get_tab_count(tabview);
   char line[200];
@@ -650,6 +652,8 @@ void bench() {
   }
   lv_tabview_set_active(tabview, tab, LV_ANIM_OFF);
   lv_obj_invalidate(lv_screen_active());
+  uint32_t vsyncs1, refilled1;
+  display::panelCounts(vsyncs1, refilled1);
 
   // PSRAM: fill and copy 384 KB (half a frame).
   constexpr size_t kBytes = 384 * 1024;
@@ -679,6 +683,15 @@ void bench() {
           unsigned(lines.lines ? lines.us / lines.lines : 0), unsigned(lines.worst_us), unsigned(update_timing.count),
           unsigned(update_timing.count ? update_timing.us / update_timing.count : 0), unsigned(update_timing.worst_us));
   update_timing = {};
+  // The panel's frames: refilled all the way through against vsyncs, since the last
+  // benchmark and during these redraws. Short is a frame whose refills fell behind.
+  static uint32_t vsyncs_last = 0, refilled_last = 0;
+  const uint32_t before_v = vsyncs0 - vsyncs_last, before_f = refilled0 - refilled_last;
+  const uint32_t during_v = vsyncs1 - vsyncs0, during_f = refilled1 - refilled0;
+  pc::log("bench: panel %u frames, %d short since the last; %u frames, %d short in the redraws", unsigned(before_v),
+          int(before_v) - int(before_f), unsigned(during_v), int(during_v) - int(during_f));
+  vsyncs_last = vsyncs1;
+  refilled_last = refilled1;
 }
 
 }  // namespace

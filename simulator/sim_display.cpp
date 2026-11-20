@@ -37,6 +37,7 @@ uint32_t tick() { return millis(); }
 }  // namespace
 
 uint32_t vsyncWaitUs() { return 0; }
+void panelCounts(uint32_t &vsyncs, uint32_t &frames) { vsyncs = frames = 0; }
 uint32_t lastTouchMs() { return last_touch_ms; }
 const void *frontBuffer() { return front; }
 

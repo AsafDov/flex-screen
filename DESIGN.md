@@ -1787,6 +1787,27 @@ Gotchas found after phase 6:
     lowest 4.0 MB; the screen clean after the update (the user). The simulator: 355 checks,
     all passed. Not seen: a missed refill healing (none forced). The deck still sometimes
     reports a watchdog restart after an update, as before.
+- Drawing on core 0, firmware 0.27.1 (2026-11-20; the user asked to try it again on 0.27.0,
+  used it, "works great"):
+  - LVGL runs on FreeRTOS (`LV_OS_FREERTOS`) with one draw thread, which display.cpp pins to
+    core 0 (LVGL creates it with plain `xTaskCreate`; `--wrap=xTaskCreatePinnedToCore` routes
+    the call there). The loop on core 1 walks the objects and queues draw tasks while it
+    draws. The simulator still draws on its one thread (`LV_OS_NONE`).
+  - Against 0.27.0: drawing time per full redraw 107/110/90/98/93 ms became 86-91/95/78/86/91
+    (the totals mostly land on 100 ms, four frames, either way); core 1 while changing pages
+    17.5% busy became 12.4%, core 0 7.6%. Internal RAM free 83 KB became 73, lowest 66 became
+    42 (the thread's 8 KB stack, and draw buffers it takes from internal RAM while a frame
+    renders).
+  - The refills: a 16 KB read from PSRAM on core 1 took 266 us on average with core 0 idle
+    and 470-651 us while it drew; a refill reads 32 KB in the ~1025 us the panel takes to send
+    the other bounce buffer, so under heavy redraws some run late, and one frame in 61 was
+    short during the benchmark's back-to-back redraws (none in ~4,100 on 0.27.0). On 0.26.0's
+    memory settings that flickered by eye; on 0.27.0's it doesn't show (the user, on page
+    changes, the shortcuts, the Numpad and Audio's faders, over normal use).
+  - `bench` logs the panel's frames: vsyncs against frames refilled all the way through,
+    since the last benchmark and during its redraws (`display::panelCounts()`). A missed
+    refill shows as a short frame; a late one doesn't.
+  - Checked: the deck, as above; the simulator, 355 checks.
 
 ## Decisions
 

@@ -12,6 +12,11 @@ void begin();
 // Microseconds spent waiting for vsync since boot (the benchmark subtracts it).
 uint32_t vsyncWaitUs();
 
+// Since boot: the panel's vsyncs, and frames its bounce buffers were refilled all the way
+// through. Fewer frames than vsyncs means refills fell behind the scan (a torn or
+// flickering frame); the benchmark logs both.
+void panelCounts(uint32_t &vsyncs, uint32_t &frames);
+
 // millis() at the last touch, for the idle screen.
 uint32_t lastTouchMs();
 

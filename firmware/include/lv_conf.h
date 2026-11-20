@@ -104,7 +104,9 @@
  *  - LV_OS_SDL2
  *  - LV_OS_CUSTOM
  */
-#define LV_USE_OS LV_OS_NONE
+/* FreeRTOS, for LVGL's draw thread on core 0 (display.cpp). Only the loop calls LVGL; the
+ * draw thread runs its draw tasks and nothing else. */
+#define LV_USE_OS LV_OS_FREERTOS
 
 #if LV_USE_OS == LV_OS_CUSTOM
 /** Custom OS include header */

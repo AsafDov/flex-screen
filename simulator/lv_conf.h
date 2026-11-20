@@ -10,6 +10,10 @@
 #undef LV_USE_STDLIB_MALLOC
 #define LV_USE_STDLIB_MALLOC LV_STDLIB_CLIB
 
+/* The deck draws with a FreeRTOS thread on core 0; the simulator draws on its one thread. */
+#undef LV_USE_OS
+#define LV_USE_OS LV_OS_NONE
+
 #undef LV_USE_LOG
 #define LV_USE_LOG 1
 #undef LV_LOG_LEVEL

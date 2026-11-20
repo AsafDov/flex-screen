@@ -10,12 +10,29 @@
 #include "load.h"
 #include "lv_mem_psram.h"
 
-// LVGL draws on the loop, on core 1, with the panel's refills. Drawing on core 0 as well was
-// tried (0.26.0+cores, LV_OS_FREERTOS): two draw threads, one on each core, made full redraws
-// ~15% slower (most of a redraw is the loop walking the objects, which can't be split); one
-// draw thread on core 0 made them 7-10% faster but the picture flickered, as when the
-// panel's interrupt ran on core 0 (board.cpp, createPanel()): PSRAM traffic from the other
-// core starves the refills. Only touch moved to core 0 (board::startTouch()).
+// LVGL's one draw thread runs on core 0; the loop, LVGL's object walk and the panel's refills
+// stay on core 1 (0.27.1). Its PSRAM traffic slows the refills (a refill-sized read took
+// about twice as long), which flickered with 0.26.0's memory settings; with 0.27.0's caches
+// and code in PSRAM it doesn't show, and draw time is 12-17% less. Two draw threads, one on
+// each core, were ~15% slower: most of a redraw is the loop walking the objects, which can't
+// be split. Touch has its own task on core 0 too (board::startTouch()).
+
+// LVGL starts its draw thread ("swdraw", lv_draw_sw.c) with plain xTaskCreate, on no core in
+// particular, and ESP-IDF pins an unpinned task to the core it's on the first time it uses
+// the FPU. The linker routes every xTaskCreatePinnedToCore here (platformio.ini: --wrap): the
+// draw thread goes to core 0, so it draws while the loop on core 1 walks the screen's objects
+// and queues the next draw tasks. Every other task is created exactly as asked.
+extern "C" BaseType_t __real_xTaskCreatePinnedToCore(TaskFunction_t code, const char *const name, const uint32_t stack,
+                                                     void *const arg, UBaseType_t priority, TaskHandle_t *const created,
+                                                     const BaseType_t core);
+
+extern "C" BaseType_t __wrap_xTaskCreatePinnedToCore(TaskFunction_t code, const char *const name, const uint32_t stack,
+                                                     void *const arg, UBaseType_t priority, TaskHandle_t *const created,
+                                                     const BaseType_t core) {
+  BaseType_t pin = core;
+  if (core == tskNO_AFFINITY && name && strcmp(name, "swdraw") == 0) pin = 0;
+  return __real_xTaskCreatePinnedToCore(code, name, stack, arg, priority, created, pin);
+}
 
 namespace display {
 namespace {
@@ -25,8 +42,16 @@ lv_display_t *disp = nullptr;
 const void *front = nullptr;
 uint32_t vsync_wait_us = 0;  // total spent waiting for vsync, for the benchmark
 volatile bool resync_wanted = false;
+volatile uint32_t vsyncs = 0;
+volatile uint32_t frames_refilled = 0;
+
+bool IRAM_ATTR onFrameRefilled(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t *, void *) {
+  frames_refilled = frames_refilled + 1;
+  return false;
+}
 
 bool IRAM_ATTR onVsync(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t *, void *) {
+  vsyncs = vsyncs + 1;
   BaseType_t woken = pdFALSE;
   xSemaphoreGiveFromISR(vsync, &woken);
   return woken == pdTRUE;
@@ -72,6 +97,7 @@ void onRefresh(lv_event_t *e) { lv_heap_set_rendering(lv_event_get_code(e) == LV
 void attachPanel() {
   esp_lcd_rgb_panel_event_callbacks_t cbs = {};
   cbs.on_vsync = onVsync;
+  cbs.on_frame_buf_complete = onFrameRefilled;
   esp_lcd_rgb_panel_register_event_callbacks(board::panel(), &cbs, nullptr);
   void *fb0 = nullptr;
   void *fb1 = nullptr;
@@ -97,6 +123,10 @@ void resyncIfNeeded() {
 }
 
 uint32_t vsyncWaitUs() { return vsync_wait_us; }
+void panelCounts(uint32_t &v, uint32_t &f) {
+  v = vsyncs;
+  f = frames_refilled;
+}
 uint32_t lastTouchMs() { return last_touch_ms; }
 const void *frontBuffer() { return front; }
 
