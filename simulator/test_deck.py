@@ -1314,17 +1314,18 @@ def test_demo(d: Deck) -> None:
     time.sleep(0.4)
     texts = texts_now(d)
     check('demo: it starts, the diagnostics closed', 'DEMO' in texts and 'Deck diagnostics' not in texts)
-    check('demo: a caption says what the step shows', has(texts, 'Your day at a glance') and '1/12' in texts)
+    check('demo: a caption says what the step shows', has(texts, 'Your day at a glance') and '1/14' in texts)
     check('demo: Today, with its own made-up day', 'Low Orbit' in texts and 'Weightless' not in texts)
     d.state('media', {**fixtures.day()['media'], 'title': 'Sent meanwhile'})
     d.toast('Toast meanwhile')
     time.sleep(0.3)
     texts = texts_now(d)
     check('demo: what the PC sends waits', not has(texts, 'Sent meanwh') and 'Toast meanwhile' not in texts)
-    time.sleep(max(0.0, started + 7.5 - time.time()))
+    time.sleep(max(0.0, started + 8.5 - time.time()))
     texts = texts_now(d)
-    check('demo: then Audio, by itself', has(texts, "Every app's volume") and '2/12' in texts, f'{time.time() - started:.1f} s in')
-    d.tap(450, 240)  # over a fader: it isn't moved
+    check('demo: then the day, opened from Up next by itself', has(texts, 'Tap Up next') and '2/14' in texts
+          and 'Coffee with Noa' in texts and 'Sprint planning' in texts, f'{time.time() - started:.1f} s in')
+    d.tap(450, 240)  # over the day view: it doesn't take it
     d.settle()
     check('demo: a touch ends it', not on_screen(d, 'DEMO', exact=True))
     check('demo: back on the page it started from', on_screen(d, 'PrusaSlicer', exact=True))

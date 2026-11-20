@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "cheat.h"
+#include "dayview.h"
 #include "idle.h"
 #include "launcher.h"
 #include "model.h"
@@ -94,6 +95,11 @@ const char kContextSpotify[] = R"j({"app":"Spotify","key":"spotify","icon":"","c
   {"id":"next","name":"Next","glyph":"next-track"},{"id":"like","name":"Like","glyph":"heart"},
   {"id":"shuffle","name":"Shuffle","glyph":"shuffle"},{"id":"search","name":"Search","glyph":"search"}]})j";
 
+const char kContextExplorer[] = R"j({"app":"Explorer","key":"explorer","icon":"","color":15777320,"keys":[
+  {"id":"up","name":"Up","glyph":"up"},{"id":"new-folder","name":"New folder","glyph":"folder-plus"},
+  {"id":"rename","name":"Rename","glyph":"cursor"},{"id":"copy-path","name":"Copy path","glyph":"copy"},
+  {"id":"terminal-here","name":"Terminal here","glyph":"terminal"},{"id":"code-here","name":"VS Code here","glyph":"code"}]})j";
+
 const char kNoApproval[] = R"j({"id":"","count":0})j";
 const char kApproval[] = R"j({"id":"demo-p1","project":"flex-screen","tool":"Bash","detail":"Bash: npm run build",
   "always":true,"count":1})j";
@@ -122,10 +128,16 @@ const char kObsidian[] = R"j({"found":true,"vault":"Notes","recent":[{"name":"Da
   {"name":"flex-screen ideas","path":"Projects/flex-screen ideas.md"},{"name":"Reading list","path":"Reading list.md"},
   {"name":"Inbox","path":"Inbox.md"},{"name":"Groceries","path":"Home/Groceries.md"}]})j";
 
+// The day: two meetings done, Standup in a few minutes (the status bar's countdown, Up next),
+// the afternoon, and tomorrow's first, in three calendars' colors (Work, Team, Personal).
 const char kCalendar[] = R"j({"status":"ok","events":[
-  {"id":"e1","title":"Standup","start":$U+270,"end":$U+1170,"allday":false,"join":true},
-  {"id":"e2","title":"Design review","start":$U+10800,"end":$U+14400,"allday":false,"join":true},
-  {"id":"e3","title":"1:1 with Dana","start":$U+18000,"end":$U+19800,"allday":false,"join":true}]})j";
+  {"id":"e5","title":"Focus time","cal":"Work","color":5017087,"start":$U-12600,"end":$U-9000,"allday":false,"join":false},
+  {"id":"e6","title":"Coffee with Noa","cal":"Personal","color":3982474,"start":$U-5400,"end":$U-3600,"allday":false,"join":false},
+  {"id":"e1","title":"Standup","cal":"Team","color":10976255,"start":$U+270,"end":$U+1170,"allday":false,"join":true},
+  {"id":"e2","title":"Design review","cal":"Work","color":5017087,"start":$U+10800,"end":$U+14400,"allday":false,"join":true},
+  {"id":"e3","title":"1:1 with Dana","cal":"Work","color":5017087,"start":$U+18000,"end":$U+19800,"allday":false,"join":true},
+  {"id":"e7","title":"Gym","cal":"Personal","color":3982474,"start":$U+25200,"end":$U+28800,"allday":false,"join":false},
+  {"id":"e8","title":"Sprint planning","cal":"Team","color":10976255,"start":$U+86400,"end":$U+90000,"allday":false,"join":true}]})j";
 
 const char kTasks[] = R"j({"rev":1,"status":"ok","lists":[{"src":"google","id":"L1","name":"My Tasks","show":true},
   {"src":"google","id":"L2","name":"Home","show":true},{"src":"google","id":"L3","name":"Work","show":true}],"tasks":[
@@ -138,8 +150,10 @@ const char kTasks[] = R"j({"rev":1,"status":"ok","lists":[{"src":"google","id":"
   {"src":"google","list":"L2","id":"t7","title":"Fix the balcony light","sub":"","due":"","done":false,"child":false}],
   "open":7,"sched":6})j";
 
-// A small split keyboard (3x5 a side, three thumb keys each) with three layers. The left
-// thumb's middle key holds NAV (key 16), the right's SYMBOL (key 34).
+// A small split keyboard (3x5 a side, three thumb keys each) with three layers, every key
+// labelled (an empty one draws as a blank key). The left thumb's middle key holds NAV (key
+// 16), the right's SYMBOL (key 34). Arrows and media keys are the symbol font's icons, which
+// the cheat sheet draws large.
 const char kKeymap[] = R"j({"keys":[[50,50,100,100],[150,50,100,100],[250,50,100,100],[350,50,100,100],[450,50,100,100],
   [50,150,100,100],[150,150,100,100],[250,150,100,100],[350,150,100,100],[450,150,100,100],[50,250,100,100],
   [150,250,100,100],[250,250,100,100],[350,250,100,100],[450,250,100,100],[250,360,100,100],[350,360,100,100],
@@ -150,10 +164,13 @@ const char kKeymap[] = R"j({"keys":[[50,50,100,100],[150,50,100,100],[250,50,100
   {"n":0,"name":"BASE","keys":["Q","W","E","R","T","A","S","D","F","G","Z","X","C","V","B","Esc","Spc\n\nNAV","Tab",
    "Y","U","I","O","P","H","J","K","L",";","N","M",",",".","/","Ent","Bsp\n\nSYM","Del"],
    "dim":"000000000000000000000000000000000000"},
-  {"n":1,"name":"NAV","keys":["","Home","↑","End","PgUp","","←","↓","→","PgDn","","","","","","","","","Ctrl\nC","Ctrl\nV",
-   "","","","","","","","","","","","","","","",""],"dim":"100001000011111111001111111111111111"},
-  {"n":2,"name":"SYMBOL","keys":["!","@","#","$","%","^","&","*","(",")","[","]","{","}","\\","","","","1","2","3","4",
-   "5","6","7","8","9","0","-","=","+","_","|","","",""],"dim":"000000000000000111000000000000000111"}]})j";
+  {"n":1,"name":"NAV","keys":["Esc","Home","","End","PgUp","Tab","","","","PgDn",
+   "Undo","Cut","Copy","Paste","Redo","Ctrl","NAV","Shift",
+   "","","","","","","Win","Alt","Lock","Snip",
+   "F1","F2","F3","F4","F5","Ent","Bsp","Del"],"dim":"000000000000000000000000000000000000"},
+  {"n":2,"name":"SYMBOL","keys":["!","@","#","$","%","^","&","*","(",")","[","]","{","}","\\","Esc","Spc","Tab",
+   "1","2","3","4","5","6","7","8","9","0","-","=","+","_","|","Ent","SYM","Del"],
+   "dim":"000000000000000000000000000000000000"}]})j";
 
 // The made-up line's times, from now (see above).
 String expand(const char *s) {
@@ -297,6 +314,31 @@ void inCall(bool muted, int hand) {
   state("call", d);
 }
 
+// Zoom, annotating a shared screen: the pen or the marker in a color (`color`, an index), or
+// the laser's spotlight (`color` -1: the laser has its kinds, not colors).
+void zoomDrawing(const char *tool, int color) {
+  char draw[460];
+  if (color >= 0) {
+    snprintf(draw, sizeof(draw),
+             "\"colors\":[\"FFFFFF\",\"F42E2E\",\"FFD43C\",\"3BC255\",\"1A73E8\",\"B57CF2\",\"FF5BB4\",\"FF8A1F\","
+             "\"A6D93A\",\"62D3F5\",\"5A5A5A\",\"9E1B1B\",\"8A5A2B\",\"1E7A35\",\"1D3E9E\"],\"color\":%d,"
+             "\"kinds\":[],\"kind\":\"\",\"can_color\":true,\"can_width\":true",
+             color);
+  } else {
+    snprintf(draw, sizeof(draw),
+             "\"colors\":[],\"color\":-1,\"kinds\":[{\"id\":\"spotlight\",\"name\":\"Spotlight\"},"
+             "{\"id\":\"arrow\",\"name\":\"Arrow\"}],\"kind\":\"spotlight\",\"can_color\":false,\"can_width\":false");
+  }
+  char d[900];
+  snprintf(d, sizeof(d),
+           "{\"app\":\"zoom\",\"name\":\"Zoom\",\"secs\":1520,\"mic_muted\":false,\"camera\":1,\"hand\":0,"
+           "\"deafened\":false,\"can\":[\"mic\",\"camera\",\"hand\",\"annotate\",\"leave\"],\"note\":\"\",\"volume\":70,"
+           "\"draw\":{\"mode\":\"annotate\",\"tools\":[\"spotlight\",\"pen\",\"highlighter\",\"vanish\",\"eraser\","
+           "\"select\"],\"tool\":\"%s\",%s,\"width\":1,\"undo\":true,\"redo\":false,\"save\":true}}",
+           tool, draw);
+  state("call", d);
+}
+
 // The keyboard on `layer`, its key held for a minute already (the cheat sheet's wait is
 // over), or none held (-1).
 void keyboard(int layer, const char *name, int key) {
@@ -334,6 +376,71 @@ void loadDay() {
   state("tasks", kTasks);
 }
 
+// ---- Touches ----
+// A made-up tap where a finger would go: a ring over the thing tapped, which shows as pressed
+// for a moment. Only the look: no event reaches it, so nothing happens but what the step does.
+
+struct {
+  lv_obj_t *scrim, *pill, *count, *text, *ring;
+} w;
+lv_obj_t *pressed = nullptr;  // what the ring is on, shown as pressed
+uint32_t touch_ms = 0;        // when; 0: no touch showing
+constexpr uint32_t kTouchMs = 350;
+constexpr int kRing = 54;
+
+// The topmost label showing under `root` that starts with `text` (one cut short with "…"
+// still starts the same). The demo's own caption doesn't count.
+lv_obj_t *findLabel(lv_obj_t *root, const char *text) {
+  if (root == w.pill || lv_obj_has_flag(root, LV_OBJ_FLAG_HIDDEN)) return nullptr;
+  if (lv_obj_check_type(root, &lv_label_class)) {
+    const char *t = lv_label_get_text(root);
+    return t && !strncmp(t, text, strlen(text)) && lv_obj_is_visible(root) ? root : nullptr;
+  }
+  for (int32_t i = int32_t(lv_obj_get_child_count(root)) - 1; i >= 0; i--) {
+    if (lv_obj_t *found = findLabel(lv_obj_get_child(root, i), text)) return found;
+  }
+  return nullptr;
+}
+
+void endTouch() {
+  if (pressed) lv_obj_remove_state(pressed, LV_STATE_PRESSED);
+  pressed = nullptr;
+  touch_ms = 0;
+  lv_obj_set_hidden(w.ring, true);
+}
+
+// The demo's caption, and a touch showing, over whatever came forward meanwhile (the day view
+// brings itself forward when it opens).
+void onTop() {
+  lv_obj_move_foreground(w.scrim);
+  lv_obj_move_foreground(w.pill);
+  lv_obj_move_foreground(w.ring);
+}
+
+// Taps what shows `text`: the overlays first, then the page.
+void touch(const char *text) {
+  endTouch();
+  lv_obj_t *l = findLabel(lv_layer_top(), text);
+  if (!l) l = findLabel(lv_screen_active(), text);
+  if (!l) {
+    pc::log("demo: nothing showing says \"%s\"", text);
+    return;
+  }
+  lv_obj_t *target = l;  // the button, tile or card it's on
+  while (target && !lv_obj_has_flag(target, LV_OBJ_FLAG_CLICKABLE)) target = lv_obj_get_parent(target);
+  lv_area_t a;
+  lv_obj_get_coords(target ? target : l, &a);
+  if (lv_area_get_width(&a) > 600) lv_obj_get_coords(l, &a);  // a whole panel: the words themselves
+  lv_obj_set_pos(w.ring, (a.x1 + a.x2) / 2 - kRing / 2, (a.y1 + a.y2) / 2 - kRing / 2);
+  lv_obj_set_hidden(w.ring, false);
+  onTop();
+  if (target) {
+    lv_obj_add_state(target, LV_STATE_PRESSED);
+    pressed = target;
+  }
+  touch_ms = millis() | 1;
+}
+
 // ---- The steps ----
 
 uint32_t at = 0, prev = 0;  // ms into the step, this pass and the last
@@ -341,6 +448,16 @@ bool passed(uint32_t ms) { return prev < ms && at >= ms; }
 bool every(uint32_t ms) { return at / ms != prev / ms; }
 
 void todayStep() { showPage(kTodayPage); }
+
+void dayStep() { showPage(kTodayPage); }
+void dayTick() {
+  if (passed(1000)) touch("UP NEXT");
+  if (passed(1350)) {
+    day::open();
+    onTop();
+  }
+}
+void dayEnd() { day::close(); }
 
 void audioStep() { showPage(kAudioPage); }
 void audioTick() {
@@ -366,7 +483,8 @@ void approvalStep() {
   state("approval", kApproval);
 }
 void approvalTick() {
-  if (!passed(3800)) return;
+  if (passed(3200)) touch("Approve");
+  if (!passed(3550)) return;
   state("approval", kNoApproval);
   oneSession("working", "Bash: npm run build", -1);
   toast("Approved: npm run build");
@@ -374,7 +492,8 @@ void approvalTick() {
 
 void questionStep() { state("question", kAsk); }
 void questionTick() {
-  if (passed(4000)) state("question", kNote);
+  if (passed(3400)) touch("Only the icons");
+  if (passed(3750)) state("question", kNote);
 }
 void questionEnd() { state("question", kNoQuestion); }
 
@@ -387,42 +506,58 @@ void boardEnd() {
   oneSession("working", "Edit: page_today.cpp", -1);
 }
 
+// A window comes to the front: the bar takes its app's keys, the Windows page marks it, and
+// a zone tap would snap it.
+void bringUp(const char *context, int window, const char *app) {
+  state("context", context);
+  windowsList(window);
+  zones(app);
+}
+
 void appsStep() { showPage(kWindowsPage); }
 void appsTick() {
-  if (passed(2800)) {
-    state("context", kContextGmail);
-    windowsList(1);
-    zones("Chrome");
-  }
-  if (passed(5600)) {
-    state("context", kContextSpotify);
-    windowsList(6);
-    zones("Spotify");
-  }
+  if (passed(1600)) touch("Inbox (8)");
+  if (passed(1950)) bringUp(kContextGmail, 1, "Chrome");
+  if (passed(4400)) touch("Night Office");
+  if (passed(4750)) bringUp(kContextSpotify, 6, "Spotify");
+  if (passed(7200)) touch("flex-screen");
+  if (passed(7550)) bringUp(kContextExplorer, 4, "Explorer");
 }
-void appsEnd() {
-  state("context", kContextCode);
-  windowsList(0);
-  zones("VS Code");
-}
+void appsEnd() { bringUp(kContextCode, 0, "VS Code"); }
 
 void captureStep() { showPage(kCapturePage); }
 
+// A Teams call, then (the next step) Zoom: the call goes on, so the glow blinks blue once.
 void callStep() {
   showPage(kTodayPage);
   inCall(false, 0);
 }
 void callTick() {
-  if (passed(2500)) inCall(true, 0);
-  if (passed(4300)) inCall(true, 1);
+  if (passed(2000)) touch("Mic");
+  if (passed(2350)) inCall(true, 0);
+  if (passed(3900)) touch("Hand");
+  if (passed(4250)) inCall(true, 1);
 }
-void callEnd() { state("call", kNoCall); }
+
+void zoomStep() { zoomDrawing("pen", 1); }
+void zoomTick() {
+  if (passed(2000)) touch("Marker");
+  if (passed(2350)) zoomDrawing("highlighter", 2);
+  if (passed(4200)) touch("Laser");
+  if (passed(4550)) zoomDrawing("spotlight", -1);
+}
+void zoomEnd() { state("call", kNoCall); }
 
 void shortcutsStep() { launcher::open(); }
 void shortcutsTick() {
-  if (!passed(3000)) return;
-  launcher::close();
-  numpad::open();
+  if (passed(2600)) touch("Numpad");
+  if (passed(2950)) {
+    launcher::close();
+    numpad::open();
+    onTop();
+  }
+  if (passed(4300)) touch("7");
+  if (passed(5300)) touch("9");
 }
 void shortcutsEnd() {
   launcher::close();
@@ -447,20 +582,22 @@ struct Step {
   uint32_t ms;
   bool top;  // the caption over the status line rather than the context bar
   void (*begin)();
-  void (*tick)();  // every pass while it's on, or null
+  void (*tick)();  // every pass while it's on (and once at its end), or null
   void (*end)();   // or null
 };
 
 const Step kSteps[] = {
-    {"Your day at a glance: meetings, music, tasks", 6500, false, todayStep, nullptr, nullptr},
-    {"Every app's volume on its own fader", 6500, false, audioStep, audioTick, audioEnd},
-    {"Claude Code, the terminal, builds and git", 7000, false, devStep, devTick, nullptr},
-    {"Claude asks first: approve it from the deck", 5500, false, approvalStep, approvalTick, nullptr},
-    {"Claude can ask you, and tell you when it's done", 7000, false, questionStep, questionTick, questionEnd},
-    {"Every Claude session on the PC, and the plan's usage", 6500, false, boardStep, nullptr, boardEnd},
-    {"Keys for the app in front: VS Code, Gmail, Spotify", 8500, true, appsStep, appsTick, appsEnd},
-    {"Clipboard history, notes and tasks", 5500, false, captureStep, nullptr, nullptr},
-    {"On a call: mute, camera, hand up, reactions", 6500, false, callStep, callTick, callEnd},
+    {"Your day at a glance: meetings, music, tasks", 6000, false, todayStep, nullptr, nullptr},
+    {"Tap Up next for the whole day", 6500, true, dayStep, dayTick, dayEnd},
+    {"Every app's volume on its own fader", 6000, false, audioStep, audioTick, audioEnd},
+    {"Claude Code, the terminal, builds and git", 6500, false, devStep, devTick, nullptr},
+    {"Claude asks first: approve it from the deck", 5000, false, approvalStep, approvalTick, nullptr},
+    {"Claude can ask you, and tell you when it's done", 6500, false, questionStep, questionTick, questionEnd},
+    {"Every Claude session on the PC, and the plan's usage", 6000, false, boardStep, nullptr, boardEnd},
+    {"Tap a window: the bar below follows the app in front", 10000, true, appsStep, appsTick, appsEnd},
+    {"Clipboard history, notes and tasks", 5000, false, captureStep, nullptr, nullptr},
+    {"On a call: mute, raise a hand, react", 6000, false, callStep, callTick, nullptr},
+    {"In Zoom: draw on a shared screen from the deck", 7000, false, zoomStep, zoomTick, zoomEnd},
     {"Shortcuts a tap away, and a numpad over USB", 7000, true, shortcutsStep, shortcutsTick, shortcutsEnd},
     {"Hold a layer key and the deck shows that layer", 6000, true, layersStep, layersTick, layersEnd},
     {"That's flex-screen", 3500, false, todayStep, nullptr, nullptr},
@@ -475,11 +612,7 @@ uint32_t step_ms = 0;
 
 constexpr int kPillH = 36;
 
-struct {
-  lv_obj_t *scrim, *pill, *count, *text;
-} w;
-
-void onTouch(lv_event_t *) {
+void onScreenTouched(lv_event_t *) {
   stop();
   if (lv_indev_t *indev = lv_indev_active()) lv_indev_wait_release(indev);  // nothing under it gets this touch
 }
@@ -494,6 +627,7 @@ void showCaption(const Step &s) {
 }
 
 void nextStep() {
+  endTouch();
   if (step >= 0 && kSteps[step].end) kSteps[step].end();
   if (++step >= kStepCount) {
     stop();
@@ -502,6 +636,7 @@ void nextStep() {
   step_ms = millis();
   at = prev = 0;
   kSteps[step].begin();
+  onTop();
   showCaption(kSteps[step]);
 }
 
@@ -527,7 +662,7 @@ void build() {
   w.scrim = box(lv_layer_top());
   lv_obj_set_size(w.scrim, 800, 480);
   lv_obj_set_clickable(w.scrim, true);
-  lv_obj_add_event_cb(w.scrim, onTouch, LV_EVENT_PRESSED, nullptr);
+  lv_obj_add_event_cb(w.scrim, onScreenTouched, LV_EVENT_PRESSED, nullptr);
   lv_obj_set_hidden(w.scrim, true);
 
   w.pill = card(lv_layer_top(), kRaised, kAccent);
@@ -541,7 +676,7 @@ void build() {
   lv_obj_set_style_shadow_opa(w.pill, LV_OPA_50, 0);
   flexRow(w.pill, 10);
   lv_obj_set_clickable(w.pill, true);
-  lv_obj_add_event_cb(w.pill, onTouch, LV_EVENT_PRESSED, nullptr);
+  lv_obj_add_event_cb(w.pill, onScreenTouched, LV_EVENT_PRESSED, nullptr);
 
   lv_obj_t *tag = card(w.pill, kAccent, kAccent);
   lv_obj_set_size(tag, LV_SIZE_CONTENT, kPillH - 10);
@@ -556,6 +691,17 @@ void build() {
   w.text = label(w.pill, "", &body_font, kText);
   label(w.pill, "Tap to end", &small_font, kMuted);
   lv_obj_set_hidden(w.pill, true);
+
+  // Where a made-up tap lands: a fingertip-sized ring.
+  w.ring = box(lv_layer_top());
+  lv_obj_set_size(w.ring, kRing, kRing);
+  lv_obj_set_style_radius(w.ring, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(w.ring, hex(0xFFFFFF), 0);
+  lv_obj_set_style_bg_opa(w.ring, LV_OPA_30, 0);
+  lv_obj_set_style_border_color(w.ring, hex(0xFFFFFF), 0);
+  lv_obj_set_style_border_opa(w.ring, LV_OPA_80, 0);
+  lv_obj_set_style_border_width(w.ring, 3, 0);
+  lv_obj_set_hidden(w.ring, true);
 }
 
 void start() {
@@ -564,6 +710,7 @@ void start() {
   launcher::close();
   numpad::close();
   sessions::close();
+  day::close();
   cheat::unpin();
 
   saved = new Saved;
@@ -587,18 +734,18 @@ void start() {
 
   lv_obj_set_hidden(w.scrim, false);
   lv_obj_set_hidden(w.pill, false);
-  lv_obj_move_foreground(w.scrim);  // over anything that came forward since it was built
-  lv_obj_move_foreground(w.pill);
   step = -1;
-  nextStep();
+  nextStep();  // and over anything that came forward since it was built
 }
 
 void stop() {
   if (!on) return;
   on = false;
+  endTouch();
   launcher::close();
   numpad::close();
   sessions::close();
+  day::close();
   cheat::unpin();
 
   // The deck's own state again, as a new version of each, so every page redraws it.
@@ -625,13 +772,16 @@ void stop() {
 void update() {
   if (!on) return;
   idle::wake();  // no clock screen in the middle of it
+  if (touch_ms && millis() - touch_ms >= kTouchMs) endTouch();
+  const Step &s = kSteps[step];
   at = millis() - step_ms;
-  if (at >= kSteps[step].ms) {
-    nextStep();
-    return;
-  }
-  if (kSteps[step].tick) kSteps[step].tick();
+  // What's due before the step ends still happens, after a stall too (a screenshot holds the
+  // loop for 2.5 s: the approval stayed up through the next step).
+  const bool over = at >= s.ms;
+  if (over) at = s.ms;
+  if (s.tick) s.tick();
   prev = at;
+  if (over) nextStep();
 }
 
 bool playing() { return on; }

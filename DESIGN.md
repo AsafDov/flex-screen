@@ -90,9 +90,9 @@ renders under 12px.
 | 17 | Numpad | Pop-up (Shortcuts) | Firmware only | USB HID keypad keys plus a calculator mode; no companion needed |
 | 19 | Context bar | Every page | Companion | Keys for the app in front (the window list's foreground, by exe), in its color, picked on the deck from the app's bank of actions (its integration's, `companion/Integrations/<App>/`) (long press) and kept per app; the profile's `contextBar` adds actions. In a browser, a site's own keys (`sites.json` and the profile's `sites`), told by the tab's address (browser extension), an installed web app's name, or the title. Keys are `SendInput` combos into that window (refocused first if it lost the front), deck actions, or closing it |
 | 18 | Shortcuts launcher | Every page (the rail's foot) | Companion | Up to 12 tiles from the profile: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
-| 20 | Edge glow | Every page, the idle clock | Firmware (state from the companion) | Four 10 px strips on LVGL's system layer, solid at the edge and fading inward, that blink twice and fade out (2.8 s) when something starts: amber when a Claude session goes to `input` or an approval or question comes; red when a build turns `failed` (one under 10 minutes old); blue when `call` gets an app |
+| 20 | Edge glow | Every page, the idle clock | Firmware (state from the companion) | Four 10 px strips on LVGL's system layer, solid at the edge and fading inward, that blink twice and fade out (1.7 s; 2.8 s before 0.28.0) when something starts: amber when a Claude session goes to `input` or an approval or question comes; red when a build turns `failed` (one under 10 minutes old); blue when `call` gets an app |
 | 21 | Diagnostics | Overlay (hold the clock) | Firmware only | Firmware version and reset reason, uptime, internal RAM and PSRAM (`heap_caps_*`), frames per second and draw time (LVGL's refresh events), the link's counters and last error (`pc::linkStats()`) |
-| 22 | Demo | The diagnostics' Demo button | Firmware only | Twelve steps through the pages and overlays with made-up state, played through `pc.cpp`'s own handling (`pc::play`), a caption over each; the PC's lines are held back meanwhile (`pc::demoMode`) and the deck's state is put back after (`demo.cpp`) |
+| 22 | Demo | The diagnostics' Demo button | Firmware only | Fourteen steps through the pages and overlays with made-up state, played through `pc.cpp`'s own handling (`pc::play`), a caption over each; the PC's lines are held back meanwhile (`pc::demoMode`) and the deck's state is put back after (`demo.cpp`) |
 
 Extras on the canvas: **Lock PC** (`LockWorkStation`) and the **Headset** quick switch are
 easy. **Focus mode** and the **Claude usage meter** have no clean data source yet. They're
@@ -1850,6 +1850,37 @@ Gotchas found after phase 6:
     diagnostics' and offline checks again, 50 of 50. Every step looked at in screenshots, and a
     run to the end ("demo: played through") with the day back as it was. The ESP32 build,
     flashed on the deck over the link and kept. Not seen on the deck yet: the demo playing.
+- The demo after the user watched it, firmware 0.28.1 (2026-11-20; "the keyboard layers show
+  blank keys", Claude's flash "leaves two parallel marks a bit after the glow", along two
+  edges, "I want the zoom annotation panel to show also", "the context bar to change
+  according to windows. not sure if I noticed that happening", "also calendar view"):
+  - The glow's marks: on the deck, screenshots of the frame buffer right after the demo's
+    amber flashes had the edges clean to the pixel, the benchmark counted no short frames
+    through three of them (1,813 frames), and the simulator was clean too. What lingered was
+    the glow itself: its last flash eased out over 1.5 s, so for most of a second only the
+    strips' solid edge lines were faintly lit. The fade is now 0.4 s and even (1.7 s in all).
+  - Keyboard layers: every key of the made-up NAV and SYMBOL layers has a label (empty ones
+    draw blank), the arrows and media keys as the symbol font's icons, which the cheat sheet
+    draws large.
+  - Taps: a ring where a finger would go, over the button, tile or card it names (found by
+    its label, the overlays first), which shows as pressed for 0.35 s; no event reaches it.
+    Approve, an option of Claude's question, the Mic and Hand of the call, Zoom's tools, the
+    Numpad button and two keys, Up next, and the windows.
+  - Windows: three windows tapped to the front in turn (Chrome on Gmail, Spotify, Explorer),
+    each turning the context bar to its app's keys and color, the Windows page marking it and
+    the snap target following, under "Tap a window: the bar below follows the app in front".
+  - New steps: the day view, opened from Up next (two meetings done, Standup, the afternoon,
+    tomorrow's first, in three calendars' colors); Zoom annotating a shared screen after the
+    Teams call (pen, then the marker in yellow, then the laser's spotlight), the call going on
+    between them so the glow blinks blue once. Fourteen steps, 87 s.
+  - Steps run what's due before they end even after a stall: a 2.5 s screenshot had held the
+    loop past the approval's "approved", which then stayed up through the next step.
+  - `day::close()` and the cheat sheet's `unpin()` join the other overlays' for the demo.
+  - Checked: the simulator, 371 checks (370 passed; the one that failed was the version check,
+    against a simulator built before the bump, and passed once rebuilt, with the demo's: 47
+    of 47), every step and each tap's ring looked at in frames; on the deck, flashed and
+    kept, the demo played from `/deck` with the day view, Gmail's keys after the Chrome tap
+    and the labelled NAV layer seen in screenshots. Not seen on the deck: the shorter glow.
 
 ## Decisions
 

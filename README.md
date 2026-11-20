@@ -386,13 +386,14 @@ the first site that matches wins (yours before the built-in ones).
   up or down, lines taken in, and its errors: garbled lines, lines too long, bytes lost to
   a full buffer, bad image parts and drops, with the last error and when. Counts run from
   the deck's start. It works offline too.
-- Demo (the **Demo** button in the diagnostics): a little over a minute of the deck showing
+- Demo (the **Demo** button in the diagnostics): about a minute and a half of the deck showing
   what it does, by itself, for showing it to people. A made-up day goes through the pages
-  and the overlays one at a time, each with a caption: Today, Audio's faders moving, Dev with
-  Claude at work, an approval and a question from Claude, the session board, the context bar
-  following the app in front, Capture, a Teams call, the shortcuts and the Numpad, and the
-  keyboard's layers. It sends the PC nothing and works without one; a touch ends it, and the
-  deck comes back as it was, with whatever the PC sent meanwhile.
+  and the overlays one at a time, each with a caption, and a ring shows where it taps: Today,
+  the whole day from Up next, Audio's faders moving, Dev with Claude at work, an approval and
+  a question from Claude, the session board, windows tapped to the front with the context bar
+  following each, Capture, a Teams call, drawing on a shared screen in Zoom, the shortcuts and
+  the Numpad, and the keyboard's layers. It sends the PC nothing and works without one; a
+  touch ends it, and the deck comes back as it was, with whatever the PC sent meanwhile.
 - Four color themes, Base, Vibrant, Ember (warm, orange) and Violet, from the tray menu.
 - One deck, several PCs: it shows whichever PC it's plugged into. The PCs can share a
   profile (a synced folder), while each keeps its own sign-ins, vault and clipboard.

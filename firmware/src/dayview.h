@@ -9,6 +9,7 @@ namespace ui::day {
 
 void build();
 void open();
+void close();
 void update();  // call every loop
 
 }  // namespace ui::day

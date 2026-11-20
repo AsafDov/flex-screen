@@ -48,12 +48,6 @@ void dayText(int64_t day, char *out, size_t n) {
   snprintf(out, n, "%s %d %s", weekday, tm.tm_mday, month);
 }
 
-void close() {
-  shown = false;
-  lv_obj_set_hidden(w.scrim, true);
-  lv_obj_set_hidden(w.panel, true);
-}
-
 void onClose(lv_event_t *) { close(); }
 
 void onJoin(lv_event_t *e) {
@@ -326,6 +320,12 @@ void build() {
   lv_obj_set_scrollbar_mode(w.body, LV_SCROLLBAR_MODE_ACTIVE);
   flexCol(w.body, 6);
   lv_obj_set_hidden(p, true);
+}
+
+void close() {
+  shown = false;
+  lv_obj_set_hidden(w.scrim, true);
+  lv_obj_set_hidden(w.panel, true);
 }
 
 void open() {

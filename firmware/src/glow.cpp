@@ -20,8 +20,10 @@ constexpr uint32_t kFailedForMs = 10 * 60 * 1000;
 // Fixed, not the palette's: ember's accent is orange, and would pass for Claude's amber.
 constexpr uint32_t kRed = 0xFF4D4D, kBlue = 0x4C8DFF;
 
-// Blink, blink, then a last flash that fades away. ms from the start of each step.
-constexpr uint32_t kOn1 = 300, kOff1 = 500, kOn2 = 800, kOff2 = 1000, kHold = 1300, kEnd = 2800;
+// Blink, blink, then a last flash that fades away. ms from the start of each step. The fade
+// is short and even: 1.5 s easing out (to 0.27.1) left the edges' solid lines faintly lit for
+// most of a second, which the user took for marks left behind after the glow.
+constexpr uint32_t kOn1 = 300, kOff1 = 500, kOn2 = 800, kOff2 = 1000, kHold = 1300, kEnd = 1700;
 
 enum class Why { None, Call, Build, Claude };
 
@@ -91,13 +93,12 @@ void start(Why why) {
   pc::log("glow: %s", why == Why::Claude ? "amber, Claude needs you" : why == Why::Build ? "red, the build failed" : "blue, a call");
 }
 
-// Where the blink is: full on, off, or fading out (ease out: quick at first, then slower).
+// Where the blink is: full on, off, or fading out (evenly).
 lv_opa_t opaAt(uint32_t t) {
   if (t < kOn1 || (t >= kOff1 && t < kOn2) || (t >= kOff2 && t < kHold)) return LV_OPA_COVER;
   if (t < kOff2) return LV_OPA_TRANSP;
   if (t >= kEnd) return LV_OPA_TRANSP;
-  const uint32_t left = kEnd - t, span = kEnd - kHold;
-  return lv_opa_t(uint32_t(LV_OPA_COVER) * left * left / (span * span));
+  return lv_opa_t(uint32_t(LV_OPA_COVER) * (kEnd - t) / (kEnd - kHold));
 }
 
 }  // namespace
