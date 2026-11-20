@@ -39,7 +39,7 @@ firmware or release.
 ## Features
 
 ### Rail and status line (on every page)
-- The rail down the left: the clock and date (hold the clock for the deck's diagnostics),
+- The rail down the left: the clock and date (hold the clock for the deck's diagnostics and its demo),
   a button for each page (Today, Audio, Dev, Windows, Capture), and the shortcuts
   launcher at its foot. Swipe up for the next page and down for the one before (sideways
   works too); a drag on a list, a fader or a slider stays what it is.
@@ -386,6 +386,13 @@ the first site that matches wins (yours before the built-in ones).
   up or down, lines taken in, and its errors: garbled lines, lines too long, bytes lost to
   a full buffer, bad image parts and drops, with the last error and when. Counts run from
   the deck's start. It works offline too.
+- Demo (the **Demo** button in the diagnostics): a little over a minute of the deck showing
+  what it does, by itself, for showing it to people. A made-up day goes through the pages
+  and the overlays one at a time, each with a caption: Today, Audio's faders moving, Dev with
+  Claude at work, an approval and a question from Claude, the session board, the context bar
+  following the app in front, Capture, a Teams call, the shortcuts and the Numpad, and the
+  keyboard's layers. It sends the PC nothing and works without one; a touch ends it, and the
+  deck comes back as it was, with whatever the PC sent meanwhile.
 - Four color themes, Base, Vibrant, Ember (warm, orange) and Violet, from the tray menu.
 - One deck, several PCs: it shows whichever PC it's plugged into. The PCs can share a
   profile (a synced folder), while each keeps its own sign-ins, vault and clipboard.

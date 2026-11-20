@@ -11,6 +11,7 @@ namespace ui::cheat {
 
 void build();   // on LVGL's top layer, above the call panel
 void toggle();  // the layer pill: pin it open, or close it
+void unpin();   // back to showing only while a layer key is held (the demo)
 void update();  // call every loop
 
 }  // namespace ui::cheat

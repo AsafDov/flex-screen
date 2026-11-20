@@ -2,6 +2,7 @@
 // frame rate and what the link with the PC has been through (lines, errors, drops). An
 // overlay over the pages, not a page of its own; holding the status bar's clock opens it.
 // It needs nothing from the PC, so it works offline too, which is when it's most wanted.
+// Its Demo button starts the demo (demo.h).
 #pragma once
 
 namespace ui::diag {

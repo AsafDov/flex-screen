@@ -953,12 +953,13 @@ sealed class TrayApp : ApplicationContext
         else if (t == "act" && TestActions.Contains(action)) Act(action, message);
     }
 
-    /// <summary>From /deck: switch the deck's page, or take a picture of its screen.</summary>
+    /// <summary>From /deck: switch the deck's page, play its demo, or take a picture of its screen.</summary>
     async Task<byte[]?> OnDeckCommand(JsonNode command)
     {
         var t = (string?)command["t"];
         Log.Write($"test: deck {command.ToJsonString()}");
         if (t == "page") _link.Send(new { t = "page", i = (int?)command["i"] ?? 0 });
+        if (t == "demo") _link.Send(new { t = "demo" });
         if (t == "shot") return await _shot.TakeAsync(() => _link.Send(new { t = "shot" }));
         return null;
     }

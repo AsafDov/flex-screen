@@ -11,6 +11,7 @@
 #include "USBHIDConsumerControl.h"
 #include "USBHIDKeyboard.h"
 #include "board.h"
+#include "demo.h"
 #include "esp32-hal-tinyusb.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
@@ -49,6 +50,7 @@ int seen_count = 0;  // state topics remembered (seen_state, below handle())
 volatile uint32_t rx_dropped = 0;  // bytes lost to a full receive buffer (USB task)
 bool line_cut = false;             // the line coming in ran past kMaxLine
 bool was_connected = false;
+bool demo_on = false;  // demoMode()
 LinkStats stats;
 
 // Notes the link's latest error, with when, for the diagnostics screen, and logs it.
@@ -156,6 +158,7 @@ void sendHello() {
 }
 
 void act(const char *action) {
+  if (demo_on) return;  // the demo's taps are made up: nothing for the PC
   JsonDocument doc;
   doc["t"] = "act";
   doc["a"] = action;
@@ -163,6 +166,7 @@ void act(const char *action) {
 }
 
 void act(const char *action, const char *key, const char *value) {
+  if (demo_on) return;
   JsonDocument doc;
   doc["t"] = "act";
   doc["a"] = action;
@@ -964,6 +968,7 @@ void handle(const JsonDocument &doc) {
   } else if (!strcmp(t, "img")) {
     handleImage(doc);
   } else if (!strncmp(t, "ota", 3)) {
+    ui::demo::stop();  // an update shows over everything, the deck as it really is
     handleOta(t, doc);
   } else if (!strcmp(t, "toast")) {
     model::toast.level = doc["level"] | "ok";
@@ -997,10 +1002,14 @@ void handle(const JsonDocument &doc) {
     model::bench_requests++;
   } else if (!strcmp(t, "page")) {
     // From the companion's test endpoint, before a "shot": wakes the screen too.
+    ui::demo::stop();
     ui::idle::wake();
     ui::showPage(doc["i"] | 0);
   } else if (!strcmp(t, "shot")) {
     sendShot();
+  } else if (!strcmp(t, "demo")) {  // the companion's test endpoint: as the diagnostics' Demo button
+    ui::idle::wake();
+    ui::demo::start();
   }
   // "ping" needs no reply; receiving it is the point.
 }
@@ -1037,6 +1046,34 @@ bool sameAsLast(const char *topic, uint32_t hash) {
   return false;
 }
 
+// While the demo plays, what the PC sends that it would cover waits: the newest line of each
+// state topic, and the newest toast, applied when it ends. A context key's list (`pick`)
+// can't have been asked for. Everything else (the time, settings, sync, images) goes ahead.
+struct Held {
+  String key;  // the topic, or "@toast"
+  String line;
+};
+constexpr int kHeld = 48;  // more than there are topics
+Held *held = nullptr;      // only while the demo plays, in PSRAM: internal RAM is short
+int held_count = 0;
+
+// True if the line was held back (or dropped).
+bool holdBack(const JsonDocument &doc) {
+  const char *t = doc["t"] | "";
+  const char *key;
+  if (!strcmp(t, "state")) key = doc["topic"] | "";
+  else if (!strcmp(t, "toast")) key = "@toast";
+  else return !strcmp(t, "pick");
+  for (int i = 0; i < held_count; i++) {
+    if (held[i].key == key) {
+      held[i].line = rx;
+      return true;
+    }
+  }
+  if (held && held_count < kHeld) held[held_count++] = {key, rx};
+  return true;
+}
+
 void takeLine() {
   JsonDocument doc;
   if (deserializeJson(doc, rx) != DeserializationError::Ok) {
@@ -1048,10 +1085,14 @@ void takeLine() {
   heard = true;
   last_rx_ms = millis();
   if (!strcmp(doc["t"] | "", "state") && sameAsLast(doc["topic"] | "", lineHash(rx))) return;
+  if (demo_on && holdBack(doc)) return;
   handle(doc);
 }
 
 LineTiming line_timing;
+
+// The companion really there: connected() without the demo.
+bool linkUp() { return port_open && heard && millis() - last_rx_ms < kCompanionTimeoutMs; }
 
 // Parsing a line and applying it, timed for the benchmark.
 void handleLine() {
@@ -1147,7 +1188,7 @@ void poll() {
   }
 
   // The link coming up and going down (quiet for kCompanionTimeoutMs, or the port let go).
-  const bool up = connected();
+  const bool up = linkUp();
   if (up != was_connected) {
     was_connected = up;
     if (up) {
@@ -1167,7 +1208,35 @@ LineTiming takeLineTiming() {
   return t;
 }
 
-bool connected() { return port_open && heard && millis() - last_rx_ms < kCompanionTimeoutMs; }
+bool connected() { return demo_on || linkUp(); }
+
+void demoMode(bool on) {
+  if (on == demo_on) return;
+  demo_on = on;
+  if (on) {
+    held = new Held[kHeld];
+    held_count = 0;
+    return;
+  }
+  Held *lines = held;
+  const int count = held_count;
+  held = nullptr;
+  held_count = 0;
+  for (int i = 0; i < count; i++) {
+    JsonDocument doc;
+    if (deserializeJson(doc, lines[i].line) == DeserializationError::Ok) handle(doc);
+  }
+  delete[] lines;
+}
+
+void play(const char *line) {
+  JsonDocument doc;
+  if (deserializeJson(doc, line) != DeserializationError::Ok) {
+    log("demo: bad line %.60s", line);
+    return;
+  }
+  handle(doc);
+}
 
 void media(MediaCmd cmd) {
   if (connected()) {
@@ -1294,7 +1363,7 @@ void callVolume(int level) {
 void focusWindow(const char *id) { act("win.focus", "id", id); }
 void closeWindow(const char *id) { act("win.close", "id", id); }
 void requestIcon(const char *id) {
-  if (!id || !id[0]) return;
+  if (!id || !id[0] || demo_on) return;
   const uint32_t now = millis();
   IconAsk *ask = nullptr;
   IconAsk *oldest = &icon_asks[0];

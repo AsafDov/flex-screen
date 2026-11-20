@@ -11,6 +11,7 @@ namespace ui::launcher {
 
 void build(lv_obj_t *rail);  // after the rail's page buttons: the button is its last child
 void update();               // call every loop
+void open();
 void close();
 
 }  // namespace ui::launcher

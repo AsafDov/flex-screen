@@ -11,6 +11,7 @@ namespace ui::sessions {
 
 void build();  // on LVGL's top layer
 void open();
+void close();
 void update();  // call every loop
 
 }  // namespace ui::sessions

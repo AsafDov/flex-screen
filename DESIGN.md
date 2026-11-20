@@ -92,6 +92,7 @@ renders under 12px.
 | 18 | Shortcuts launcher | Every page (the rail's foot) | Companion | Up to 12 tiles from the profile: links, Start menu apps (found in `shell:AppsFolder` by name, focused if open, else started with `explorer shell:AppsFolder\<id>`), files and folders, deck actions, key combinations (`SendInput`). Icons from the shell (`IShellItemImageFactory`) and sites' `/favicon.ico` |
 | 20 | Edge glow | Every page, the idle clock | Firmware (state from the companion) | Four 10 px strips on LVGL's system layer, solid at the edge and fading inward, that blink twice and fade out (2.8 s) when something starts: amber when a Claude session goes to `input` or an approval or question comes; red when a build turns `failed` (one under 10 minutes old); blue when `call` gets an app |
 | 21 | Diagnostics | Overlay (hold the clock) | Firmware only | Firmware version and reset reason, uptime, internal RAM and PSRAM (`heap_caps_*`), frames per second and draw time (LVGL's refresh events), the link's counters and last error (`pc::linkStats()`) |
+| 22 | Demo | The diagnostics' Demo button | Firmware only | Twelve steps through the pages and overlays with made-up state, played through `pc.cpp`'s own handling (`pc::play`), a caption over each; the PC's lines are held back meanwhile (`pc::demoMode`) and the deck's state is put back after (`demo.cpp`) |
 
 Extras on the canvas: **Lock PC** (`LockWorkStation`) and the **Headset** quick switch are
 easy. **Focus mode** and the **Claude usage meter** have no clean data source yet. They're
@@ -1808,6 +1809,47 @@ Gotchas found after phase 6:
     since the last benchmark and during its redraws (`display::panelCounts()`). A missed
     refill shows as a short frame; a late one doesn't.
   - Checked: the deck, as above; the simulator, 355 checks.
+- The demo, firmware 0.28.0 (2026-11-20; the user wanted "a button or gesture ... maybe
+  through the diagnostics panel, to show a bit of a demo of the boards capabilities" to
+  people, and picked a show reel of the features over a graphics showcase of the hardware):
+  - A **Demo** button in the diagnostics' header closes them and plays twelve steps, 76 s:
+    Today; Audio with the faders and the master volume swinging; Dev with Claude's progress
+    counting up and `npm test` running, then passing (toast); an approval (amber glow), then
+    "approved"; a question, then a note; the session board; Windows with the context bar
+    going from VS Code to Gmail to Spotify (the windows and the snap target follow); Capture;
+    a Teams call (blue glow), muting and raising a hand; the shortcuts, then the Numpad; the
+    keyboard's NAV, then SYMBOL layer (held for a minute already, so the cheat sheet shows; a
+    deck with `cheat_hold_s` 0 pins it); Today again. A caption pill ("DEMO 3/12", what the
+    step shows, "Tap to end") fades in over the context bar, or over the status line for the
+    steps that show the context bar, the Numpad and the cheat sheet.
+  - It plays the companion's part: made-up lines (`demo.cpp`, as in protocol/v0.md, with
+    `$U+n` / `$D+n` for times and dates from now) go through `pc::play`, `pc.cpp`'s own
+    handling, so the pages draw them as they would the PC's. Nothing in the data is the
+    user's own (made-up track, projects, windows, clips, tasks); icons are left empty, so the
+    pages draw their initials and ask the PC for none.
+  - While it plays (`pc::demoMode`): `connected()` says yes, so it plays offline as if the PC
+    were there (a deck that never had the time gets the build day at 10:12); `act` and icon
+    asks send nothing; the PC's `state` lines and toasts are held back, the newest of each
+    topic, and `pick` dropped (`sync`, `time`, settings and images go ahead). The link's
+    counters and the diagnostics' link state still go by the real link (`linkUp()`).
+  - Putting it back: the 26 topics' model state is copied (to PSRAM) when it starts and put
+    back when it ends, each with a new version so every page redraws; then the held lines
+    are applied. Album art isn't touched (the made-up track has none), so the real track's
+    stays. It ends after the last step, on a touch anywhere (a scrim over everything on the
+    top layer, which takes the touch: nothing under it gets it), on a `page` from the
+    companion, or when an update starts. The page it started on comes back, and the
+    shortcuts, the Numpad, the session board and a pinned cheat sheet close.
+  - The companion's `/deck` takes `{"t":"demo"}`, which starts it (for testing on the deck).
+  - Internal RAM: the held lines' array lives only while the demo plays (in PSRAM); kept in
+    internal RAM it cost 1.5 KB for good (the deck's hello said 72.3 KB free against 0.27.1's
+    73.9; 73.8 with it moved).
+  - Checked: the simulator, 371 checks, all passed (16 new: the button, the caption, the
+    made-up day, the PC's lines held back and applied after, Audio coming by itself, a touch
+    ending it on the page it started from with the deck's own state, nothing sent to the PC,
+    the companion's `demo` and `page`, offline); after moving the held lines, the demo's,
+    diagnostics' and offline checks again, 50 of 50. Every step looked at in screenshots, and a
+    run to the end ("demo: played through") with the day back as it was. The ESP32 build,
+    flashed on the deck over the link and kept. Not seen on the deck yet: the demo playing.
 
 ## Decisions
 

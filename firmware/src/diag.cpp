@@ -4,6 +4,7 @@
 #include <lvgl.h>
 #include <time.h>
 
+#include "demo.h"
 #include "display.h"
 #include "esp_heap_caps.h"
 #include "idle.h"
@@ -64,6 +65,11 @@ void close() {
 }
 
 void onClose(lv_event_t *) { close(); }
+
+void onDemo(lv_event_t *) {
+  close();
+  demo::start();
+}
 
 // LVGL's refresh timer runs every few ms and mostly finds nothing to draw: only refreshes
 // that drew count as frames. Their time includes the layout and copying the other buffer
@@ -323,6 +329,13 @@ void build() {
   label(head, "Deck diagnostics", &title_font, kText);
   lv_obj_t *note = label(head, "Counted since the deck started", &small_font, kMuted);
   fillRow(note);
+  // The demo, for showing the deck to people: a minute of what it does, with made-up data.
+  lv_obj_t *demo = button(head, LV_SIZE_CONTENT, 34, kRaised, onDemo);
+  lv_obj_set_style_radius(demo, 10, 0);
+  lv_obj_set_style_pad_hor(demo, 14, 0);
+  lv_obj_set_ext_click_area(demo, 4);
+  flexRow(demo, 0);
+  label(demo, LV_SYMBOL_PLAY "  Demo", &body_font, kText);
   lv_obj_t *x = lv_obj_get_parent(iconButton(head, 48, 34, kSurface, LV_SYMBOL_CLOSE, kMuted, onClose));
   lv_obj_set_ext_click_area(x, 6);
 

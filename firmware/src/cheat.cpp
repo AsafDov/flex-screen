@@ -171,6 +171,8 @@ void toggle() {
   else pinned = true;
 }
 
+void unpin() { pinned = false; }
+
 void update() {
   const model::Keymap &m = model::keymap;
   if (m.version != keymap_seen) {

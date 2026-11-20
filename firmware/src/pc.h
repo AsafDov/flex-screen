@@ -10,13 +10,21 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "0.27.1";
+constexpr const char *kFirmwareVersion = "0.28.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
 
-// True while the companion app has the port open and has spoken in the last few seconds.
+// True while the companion app has the port open and has spoken in the last few seconds,
+// and while the demo plays (see demoMode()).
 bool connected();
+
+// The demo (ui::demo). While it's on, connected() says yes even offline, nothing goes to the
+// PC, and the PC's state lines and toasts are held back, the newest of each topic, instead
+// of shown. Turned off, those are applied. play() takes a made-up line as if the companion
+// had sent it.
+void demoMode(bool on);
+void play(const char *line);
 
 enum class MediaCmd { Toggle, Next, Prev };
 void media(MediaCmd cmd);

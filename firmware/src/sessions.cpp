@@ -37,11 +37,6 @@ uint32_t hint_ms = 0;
 
 bool isOpen() { return w.panel && !lv_obj_has_flag(w.panel, LV_OBJ_FLAG_HIDDEN); }
 
-void close() {
-  lv_obj_set_hidden(w.scrim, true);
-  lv_obj_set_hidden(w.panel, true);
-}
-
 void onClose(lv_event_t *) { close(); }
 
 int rowOf(lv_event_t *e) { return int(intptr_t(lv_event_get_user_data(e))); }
@@ -335,6 +330,11 @@ void build() {
 
   buildUsage(body);
   close();
+}
+
+void close() {
+  lv_obj_set_hidden(w.scrim, true);
+  lv_obj_set_hidden(w.panel, true);
 }
 
 void open() {

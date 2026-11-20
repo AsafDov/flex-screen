@@ -1285,6 +1285,74 @@ def test_diagnostics(d: Deck) -> None:
     check('diagnostics: and goes no further', not d.acts(mark))
 
 
+def texts_now(d: Deck) -> list[str]:
+    """The texts on screen right now, without waiting for a still screen as tree() does: the
+    demo keeps it moving."""
+    mark, token = d.mark(), int(time.time() * 1000) % 1000000
+    d.send({'t': 'sim.dump', 'id': token})
+    reply = d.wait_for(lambda m: m.get('t') == 'sim.tree' and m.get('id') == token, since=mark)
+    out, hidden_depth = [], None
+    for n in reply['screen'] + reply['top']:
+        if hidden_depth is not None and n['d'] > hidden_depth:
+            continue
+        hidden_depth = n['d'] if n.get('hidden') else None
+        if hidden_depth is None and 0 <= n['x'] < 800 and 0 <= n['y'] < 480 and 'text' in n:
+            out.append(n['text'])
+    return out
+
+
+def test_demo(d: Deck) -> None:
+    """The diagnostics' Demo: about a minute of the deck by itself, with made-up data. It sends
+    the PC nothing, holds back what the PC sends meanwhile, and a touch ends it with the deck
+    as it was, then what the PC sent."""
+    has = lambda texts, text: any(text in t for t in texts)
+    d.page(3)  # Windows: where it should come back to
+    check('demo: the diagnostics have a Demo button', open_diagnostics(d) and on_screen(d, 'Demo'))
+    mark = d.mark()
+    tap(d, 'Demo')
+    started = time.time()
+    time.sleep(0.4)
+    texts = texts_now(d)
+    check('demo: it starts, the diagnostics closed', 'DEMO' in texts and 'Deck diagnostics' not in texts)
+    check('demo: a caption says what the step shows', has(texts, 'Your day at a glance') and '1/12' in texts)
+    check('demo: Today, with its own made-up day', 'Low Orbit' in texts and 'Weightless' not in texts)
+    d.state('media', {**fixtures.day()['media'], 'title': 'Sent meanwhile'})
+    d.toast('Toast meanwhile')
+    time.sleep(0.3)
+    texts = texts_now(d)
+    check('demo: what the PC sends waits', not has(texts, 'Sent meanwh') and 'Toast meanwhile' not in texts)
+    time.sleep(max(0.0, started + 7.5 - time.time()))
+    texts = texts_now(d)
+    check('demo: then Audio, by itself', has(texts, "Every app's volume") and '2/12' in texts, f'{time.time() - started:.1f} s in')
+    d.tap(450, 240)  # over a fader: it isn't moved
+    d.settle()
+    check('demo: a touch ends it', not on_screen(d, 'DEMO', exact=True))
+    check('demo: back on the page it started from', on_screen(d, 'PrusaSlicer', exact=True))
+    check('demo: then the toast the PC sent meanwhile', on_screen(d, 'Toast meanwhile', exact=True))
+    d.page(0)
+    check('demo: and its state', on_screen(d, 'Sent meanwh') and not on_screen(d, 'Low Orbit', exact=True))
+    check('demo: the rest as it was', on_screen(d, 'Marconi Union', exact=True))
+    check('demo: nothing went to the PC', not d.acts(mark), str(d.acts(mark)))
+
+    d.send({'t': 'demo'})  # the companion's test endpoint
+    time.sleep(0.4)
+    started = 'DEMO' in texts_now(d)
+    d.send({'t': 'page', 'i': 0})
+    d.settle()
+    check("demo: the companion's demo starts it, its page ends it", started and not on_screen(d, 'DEMO', exact=True))
+
+    d.offline()
+    check('demo: offline too', open_diagnostics(d) and tap(d, 'Demo'))
+    time.sleep(0.4)
+    texts = texts_now(d)
+    check('demo: offline, drawn as if the PC were there', 'Low Orbit' in texts and not has(texts, 'PC offline'))
+    d.tap(450, 240)
+    d.settle()
+    check('demo: and offline again after', on_screen(d, 'PC offline') and not on_screen(d, 'DEMO', exact=True))
+    d.online()
+    d.settle()
+
+
 def near(a: tuple[int, int, int], b: int, slack: int = 24) -> bool:
     return all(abs(a[i] - (b >> (16 - 8 * i) & 255)) <= slack for i in range(3))
 
@@ -1525,7 +1593,7 @@ def main() -> int:
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
         for test in (test_today, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
-                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_diagnostics, test_glow, test_idle, test_offline, test_firmware_update):
+                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)

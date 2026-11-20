@@ -261,6 +261,7 @@ void build(lv_obj_t *rail) {
   lv_obj_set_hidden(w.panel, true);
 }
 
+void open() { setOpen(true); }
 void close() { setOpen(false); }
 
 void update() {

@@ -25,6 +25,7 @@
 #include "page_numpad.h"
 #include "page_today.h"
 #include "dayview.h"
+#include "demo.h"
 #include "page_windows.h"
 #include "pc.h"
 #include "ui_kit.h"
@@ -751,7 +752,8 @@ void begin() {
   ask::build();
   buildToast();
   idle::build();
-  buildFlashing();  // last: over the idle clock too
+  buildFlashing();  // over the idle clock too
+  demo::build();    // last: its caption, and the touch that ends it, over everything
   glow::build();  // on the system layer, over all of it
   pc::bootMark("ui.overlays");
   pc::bootValue("objects", countObjects(lv_screen_active()) + countObjects(lv_layer_top()) + countObjects(lv_layer_sys()));
@@ -780,6 +782,7 @@ void previewVolume(int level) {
 
 void update() {
   const uint32_t t0 = micros();
+  demo::update();  // first, so what its step changes is drawn in this pass
   updateCompanion();
   updateClock();
   updateVolume();
