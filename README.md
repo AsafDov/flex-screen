@@ -474,7 +474,8 @@ the first site that matches wins (yours before the built-in ones).
   following each, Capture, a Teams call, drawing on a shared screen in Zoom, the shortcuts and
   the Numpad, and the keyboard's layers. It sends the PC nothing and works without one; a
   touch ends it, and the deck comes back as it was, with whatever the PC sent meanwhile.
-- Four color themes, Base, Vibrant, Ember (warm, orange) and Violet, from the tray menu.
+- Five color themes, Base, Vibrant, Ember (warm, orange), Violet and Pastel (soft pink, mint
+  and lavender on a dusky plum-grey), from the tray menu.
 - One deck, several PCs: it shows whichever PC it's plugged into. The PCs can share a
   profile (a synced folder), while each keeps its own sign-ins, vault and clipboard.
 
@@ -621,7 +622,7 @@ gives editors that read it (VS Code) completion and checks for everything here
 
 ```jsonc
 {
-  "palette": "base",                                   // or "vibrant", "ember", "violet"
+  "palette": "base",                                   // or "vibrant", "ember", "violet", "pastel"
   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
   "layerNames": ["BASE", "NAV", "SYMBOL"],             // your keyboard's layers
   "cheatSheetSeconds": 10,                             // hold a layer key this long for its cheat sheet; 0: only from the pill

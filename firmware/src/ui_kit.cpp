@@ -50,6 +50,15 @@ void usePalette(const char *name) {
     kHighlight = 0x1E1638, kHighlightLine = 0x4A3A80, kHighlightText = 0xB9AEE0;
     return;
   }
+  // Dusky plum-grey with pastel colors: pink accent, mint, butter yellow, lavender Up next.
+  if (!strcmp(name, "pastel")) {
+    kBg = 0x15131A, kSurface = 0x1E1B26, kBorder = 0x342E40, kRaised = 0x292434, kSelected = 0x3D2A3C;
+    kText = 0xF6F0F8, kSoftText = 0xDAD0E0, kMuted = 0xA79DB3, kTrack = 0x3A3346;
+    kAccent = 0xF5A9C8, kOnAccent = 0x3A1426, kGreen = 0x9FE3C4, kAmber = 0xF7D58B, kAmberBg = 0x3D3320;
+    kArtBg = 0x3B3356;
+    kHighlight = 0x231E34, kHighlightLine = 0x4B4070, kHighlightText = 0xCABFEB;
+    return;
+  }
   kBg = 0x0D0F12, kSurface = 0x16191E, kBorder = 0x232830, kRaised = 0x1F242B, kSelected = 0x1F2A36;
   kText = 0xECEEF1, kSoftText = 0xC4CBD3, kMuted = 0x9BA4AF, kTrack = 0x2A3038;
   kAccent = 0x5AB4FF, kOnAccent = 0x0B1520, kGreen = 0x4FD1A5, kAmber = 0xF5A623, kAmberBg = 0x3A2A10;

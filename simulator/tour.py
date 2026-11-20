@@ -1,6 +1,6 @@
 """Screenshots of every page, for looking over: out/tour/<set>-<palette>-<page>.png.
 
-    python tour.py                  # the day set in all four themes, plus stress, empty, offline
+    python tour.py                  # the day set in all five themes, plus stress, empty, offline
     python tour.py day base         # one set, one theme
 """
 import os
@@ -10,7 +10,7 @@ import fixtures
 from deck import Deck, HERE
 
 PAGES = ['today', 'audio', 'dev', 'windows', 'capture', 'numpad']
-PALETTES = ['base', 'vibrant', 'ember', 'violet']
+PALETTES = ['base', 'vibrant', 'ember', 'violet', 'pastel']
 OUT = os.path.join(HERE, 'out', 'tour')
 
 

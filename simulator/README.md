@@ -76,7 +76,7 @@ they need nothing beyond the standard library.
 - `run_some.py test_sessions test_dev`: only those of `test_deck.py`'s tests, for a quick
   check while working on one feature.
 - `tour.py`: screenshots of all six pages for each data set and theme in `out/tour/`
-  (waiting, offline, gone, day in the four themes, stress, empty).
+  (waiting, offline, gone, day in the five themes, stress, empty).
 - `sheet.py`: six screenshots on one sheet, for looking them over: `python sheet.py
   day-ember` or `python sheet.py -o out.png a.png b.png …`.
 

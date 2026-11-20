@@ -28,7 +28,7 @@ namespace FlexScreen.Companion;
 ///
 /// profiles\work.json:
 /// {
-///   "palette": "base",                                        // the deck's colors: "base", "vibrant", "ember" or "violet"
+///   "palette": "base",                                        // the deck's colors: "base", "vibrant", "ember", "violet" or "pastel"
 ///   "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },  // 0 turns either off
 ///   "layerNames": ["BASE", "NAV", "SYMBOL"],                  // the keyboard's layers, from 0
 ///   "cheatSheetSeconds": 10,                                  // a layer key held this long shows the cheat sheet; 0: only from the pill
@@ -103,7 +103,7 @@ static class Settings
     public static JsonNode? ContextBar => Get("contextBar");
 
     /// <summary>The deck's color theme: what the tray's Deck colors menu offers.</summary>
-    public static readonly (string Name, string Label)[] Palettes = [("base", "Base"), ("vibrant", "Vibrant"), ("ember", "Ember"), ("violet", "Violet")];
+    public static readonly (string Name, string Label)[] Palettes = [("base", "Base"), ("vibrant", "Vibrant"), ("ember", "Ember"), ("violet", "Violet"), ("pastel", "Pastel")];
 
     public static string Palette => (string?)Get("palette") is { } name && Palettes.Any(p => p.Name == name) ? name : "base";
 

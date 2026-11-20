@@ -468,9 +468,10 @@ Gotchas found after phase 6:
   walks its parents to the first one with a window: the Claude app, VS Code or a
   terminal. The status bar's Claude pill, the Dev banner and the approval toast bring
   that window up.
-- Palettes: "base" (the design canvas) and "vibrant". Colors are read when pages build,
-  and some page styles are computed at startup, so the deck saves the choice (NVS) and
-  restarts into it; `settings.json` "palette" or the tray's Deck colors menu picks it.
+- Palettes: "base" (the design canvas), "vibrant", "ember", "violet" and "pastel", all
+  dark: the pages' fixed tints are made for a dark background. Colors are read when pages
+  build, and some page styles are computed at startup, so the deck saves the choice (NVS)
+  and restarts into it; `settings.json` "palette" or the tray's Deck colors menu picks it.
 - Idle: the backlight is on/off only (CH422G pin), so the idle clock is dim grey on black,
   then the backlight goes off. Idle means no touch on the deck and no input on the PC
   (`GetLastInputInfo`); a locked PC shows the clock at once. A tap wakes the deck and is
@@ -2025,6 +2026,15 @@ Gotchas found after phase 6:
     dot, the cards and bars in the cover's orange. Not tried on the deck: seeking, the volume,
     screens-off and Task Manager tiles by finger (they'd have moved the user's music,
     volume and screens).
+- A pastel theme, firmware 0.31.1 (2026-11-21; "add a pastel theme palette", and of a dark
+  theme with pastel colors or a light pastel background the user picked the dark one): a
+  dusky plum-grey (`kBg` 15131A, cards 1E1B26) with a pastel pink accent (F5A9C8, dark plum
+  text on it), mint for green (9FE3C4), butter yellow for amber (F7D58B) and a lavender Up
+  next card (231E34, its border 4B4070). Fifth in the tray's Deck colors and the profile's
+  `palette`. A light background would have meant moving the ~100 fixed tints the pages
+  use (icon tiles, banners, the build card, call buttons) into the palette.
+  - Checked: the simulator, every page in the day set in Pastel (`tour.py day pastel`), and
+    447 checks, all passing; the companion's and the ESP32 builds. Not yet on the deck.
 
 ## Decisions
 

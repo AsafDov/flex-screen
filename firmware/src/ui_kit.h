@@ -8,7 +8,8 @@
 namespace ui {
 
 // The palette. "base" is the design canvas's; "vibrant" is bluer and more saturated;
-// "ember" is warm with an orange accent; "violet" is indigo with a violet accent.
+// "ember" is warm with an orange accent; "violet" is indigo with a violet accent;
+// "pastel" is dusky plum-grey with soft pink, mint, butter-yellow and lavender.
 // Pages read these when they build, so a change takes a restart (the deck saves the
 // choice and restarts when the companion's settings name another one).
 extern uint32_t kBg, kSurface, kBorder, kRaised, kSelected, kText, kSoftText, kMuted, kTrack;

@@ -180,7 +180,7 @@ Profiles and settings (optional)
     { "palette": "vibrant",
       "idle": { "clockAfterMinutes": 10, "screenOffAfterMinutes": 30 },
       "layerNames": ["BASE", "NAV", "SYMBOL"] }
-  palette: the deck's colors, "base", "vibrant", "ember" or "violet" (also in the tray menu,
+  palette: the deck's colors, "base", "vibrant", "ember", "violet" or "pastel" (also in the tray menu,
   Deck colors).
   idle: minutes with no touch and no PC input before the clock screen and before the
   screen goes off (0 turns either off); a locked PC shows the clock right away.
