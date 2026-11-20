@@ -102,7 +102,9 @@ uint32_t mic_tap_ms = 0;
 constexpr uint32_t kRecheckMs = 1500;
 uint32_t mic_recheck_ms = 0;
 uint32_t claude_seen = UINT32_MAX;
-uint32_t build_seen = UINT32_MAX;
+uint32_t build_seen = UINT32_MAX, job_seen = UINT32_MAX;
+bool job_shown = false;  // the build pill shows a script's progress (flexctl), not the build
+char job_text[96], job_short[32];  // "Uploading 3/12", and just "3/12" for a full status line
 uint32_t layer_seen = UINT32_MAX;
 uint32_t meeting_tick_ms = 0;
 uint32_t meeting_seen = UINT32_MAX;
@@ -368,6 +370,7 @@ void buildRail(lv_obj_t *parent) {
   lv_obj_set_flex_align(clock, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_clickable(clock, true);
   lv_obj_add_event_cb(clock, [](lv_event_t *) { diag::open(); }, LV_EVENT_LONG_PRESSED, nullptr);
+  holdRing(clock);
   bar.time = label(clock, "--:--", &lv_font_montserrat_20, kText);
   bar.date = label(clock, "", &small_font, kMuted);
   railDivider(r);
@@ -482,13 +485,25 @@ void updateClaude() {
 
 void updateBuild() {
   const uint32_t v = model::build.version + (pc::connected() ? 0 : 0x80000000u);
-  if (v == build_seen) return;
+  if (v == build_seen && model::job.version == job_seen) return;
   build_seen = v;
+  job_seen = model::job.version;
   const String &state = model::build.state;
-  const bool show = pc::connected() && state != "none";
+  // A script's progress takes the pill while it runs: "Uploading 3/12".
+  job_shown = pc::connected() && model::job.total > 0;
+  const bool show = job_shown || (pc::connected() && state != "none");
   want_build = show;
   bar_changed = true;
   if (!show) return;
+  if (job_shown) {
+    const model::Job &j = model::job;
+    const String &what = j.label.length() ? j.label : j.from.length() ? j.from : String("Working");
+    snprintf(job_text, sizeof(job_text), LV_SYMBOL_REFRESH "  %s %d/%d", what.c_str(), min(j.done, j.total), j.total);
+    snprintf(job_short, sizeof(job_short), LV_SYMBOL_REFRESH "  %d/%d", min(j.done, j.total), j.total);
+    setTextUpTo(bar.build_text, job_text, 210);  // fitBar() shortens it if need be
+    lv_obj_set_style_text_color(bar.build_text, hex(kAccent), 0);
+    return;
+  }
   if (state == "running") {
     lv_label_set_text(bar.build_text, LV_SYMBOL_REFRESH "  Building");
     lv_obj_set_style_text_color(bar.build_text, hex(kAccent), 0);
@@ -575,10 +590,15 @@ void fitBar() {
   setHidden(bar.layer, !want_layer);
   setHidden(bar.build, !want_build);
   if (meeting_label.length()) setTextUpTo(bar.meeting_text, meeting_label.c_str(), 170);
+  if (job_shown) setTextUpTo(bar.build_text, job_text, 210);
   if (!pillsFit()) {
     setHidden(bar.layer, true);
     if (!pillsFit()) {
-      setHidden(bar.build, true);
+      // A script's progress was asked for: the meeting's title shortens, then the progress
+      // to its count, before it goes.
+      if (job_shown && meeting_label.length()) setTextUpTo(bar.meeting_text, meeting_label.c_str(), 90);
+      if (job_shown && !pillsFit()) setTextUpTo(bar.build_text, job_short, 210);
+      if (!pillsFit()) setHidden(bar.build, true);
       if (!pillsFit() && meeting_label.length()) setTextUpTo(bar.meeting_text, meeting_label.c_str(), 90);
     }
   }

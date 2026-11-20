@@ -11,6 +11,7 @@ Art art;
 Claude claude;
 Term term;
 Build build;
+Job job;
 Recent recent;
 Actions actions;
 Shortcuts shortcuts;

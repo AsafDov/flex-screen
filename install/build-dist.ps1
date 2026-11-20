@@ -73,7 +73,7 @@ try {
 Copy-Item (Join-Path $ext 'flex-screen.vsix') $out
 
 Step 'Scripts'
-foreach ($name in 'install.ps1', 'install.cmd', 'uninstall.ps1', 'uninstall.cmd', 'README.txt', 'remote-claude-hooks.sh') {
+foreach ($name in 'install.ps1', 'install.cmd', 'uninstall.ps1', 'uninstall.cmd', 'README.txt', 'remote-claude-hooks.sh', 'flexctl.ps1', 'flexctl.cmd') {
   Copy-Item (Join-Path $PSScriptRoot $name) $out
 }
 Copy-Item (Join-Path $root 'docs\google-setup.md') $out

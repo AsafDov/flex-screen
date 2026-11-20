@@ -59,6 +59,7 @@ sealed class TrayApp : ApplicationContext
     readonly ClaudeApprovals _approvals = new();
     readonly DeckQuestions _questions = new();
     readonly DeckTools _tools;
+    readonly ScriptApi _scripts;
     readonly ClaudeUsage _usage = new();
     volatile string _deckFirmware = "";  // the deck's, from its hello: what it understands
     readonly HashSet<string> _iconsSent = [];
@@ -177,6 +178,9 @@ sealed class TrayApp : ApplicationContext
             return _approvals.Ask(hook, project, ClaudeSource.ToolDetail(hook), _link.PortName != null);
         };
         _server.Mcp += _tools.Serve;
+        _scripts = new ScriptApi(_questions, () => _link.PortName != null);
+        _server.Api += _scripts.Serve;
+        _scripts.JobChanged += job => _link.Send(JobMessage(job));
         _server.ClaudeStop += _claude.ShouldStop;
         _approvals.Changed += SendApproval;
         _questions.Changed += SendQuestion;
@@ -385,7 +389,7 @@ sealed class TrayApp : ApplicationContext
         [
             MediaMessage(_media.Current), VolumeMessage(_volume.Current), MixerMessage(_mixer.Current),
             DevicesMessage(_devices.Devices), MicMessage(_devices.Mic), ClaudeMessage(_claude.Current),
-            TermMessage(_dev.Term), BuildMessage(_dev.Build), RecentMessage(_dev.Recent), GitMessage(_git.Current),
+            TermMessage(_dev.Term), BuildMessage(_dev.Build), JobMessage(_scripts.Current), RecentMessage(_dev.Recent), GitMessage(_git.Current),
             KeymapMessage(_keyboard.Map), KeyboardMessage(_keyboard.Current), ClipsMessage(_clipboard.Shown),
             ObsidianMessage(_obsidian.Current), CalendarMessage(_calendar.Current), TasksMessage(_tasks.Current, _tasks.Revision),
             CallMessage(_calls.Current), UsageMessage(_usage),
@@ -484,6 +488,14 @@ sealed class TrayApp : ApplicationContext
         t = "state",
         topic = "build",
         d = new { state = b.State, cmd = b.Cmd, ms = b.Ms, secs = SecondsSince(b.At), history = b.History },
+    };
+
+    /// <summary>A script's progress (flexctl), or none: total 0.</summary>
+    static object JobMessage(ScriptApi.Job? job) => new
+    {
+        t = "state",
+        topic = "job",
+        d = new { label = job?.Label ?? "", from = job?.From ?? "", done = job?.Done ?? 0, total = job?.Total ?? 0 },
     };
 
     static object RecentMessage(IReadOnlyList<RecentCommand> recent) => new
@@ -941,7 +953,7 @@ sealed class TrayApp : ApplicationContext
     // fw.update updates the deck to the companion's own firmware; update.check only looks for
     // a release and asks at the PC before anything is installed.
     static readonly HashSet<string> TestActions = ["win.focus", "win.close", "icon.need", "zone.snap", "zone.layout", "claude.approve", "claude.deny",
-                                                   "claude.answer", "claude.stop", "task.done", "task.add", "task.refresh", "task.open", "fw.update", "update.check"];
+                                                   "claude.answer", "claude.stop", "ctx.lock", "task.done", "task.add", "task.refresh", "task.open", "fw.update", "update.check"];
 
     /// <summary>For testing without touching the deck: a deck action, or "bench" passed on to the deck.</summary>
     void OnTestMessage(JsonNode message)
@@ -1057,6 +1069,7 @@ sealed class TrayApp : ApplicationContext
             case "ctx.set": _context.Set((string?)message["app"] ?? "", (int?)message["slot"] ?? -1, id); break;
             case "ctx.remove": _context.Remove((string?)message["app"] ?? "", (int?)message["slot"] ?? -1); break;
             case "ctx.reset": _context.Reset((string?)message["app"] ?? ""); break;
+            case "ctx.lock": _context.Lock((bool?)message["on"] ?? false); break;
             case "ctx.pick": _context.Choose(id, (string?)message["choice"] ?? ""); break;
             case "claude.approve" or "claude.deny":
                 // From the deck's banner (its request), or a context bar key (the newest).
@@ -1318,7 +1331,7 @@ sealed class TrayApp : ApplicationContext
             ? new { id = "" }
             : new
             {
-                id = q.Id, kind = q.Kind, level = q.Level, session = q.Session, project = q.Project, text = q.Text,
+                id = q.Id, kind = q.Kind, level = q.Level, session = q.Session, project = q.Project, from = q.From, text = q.Text,
                 options = q.Options.Select(o => new { label = o.Label, note = o.Note }),
                 multi = q.Multi, step = q.Step, steps = q.Steps, count = waiting,
             };
@@ -1344,6 +1357,7 @@ sealed class TrayApp : ApplicationContext
             keys = bar.Keys.Select(k => new { id = k.Id, name = k.Name, glyph = k.Glyph }),
             bank = bar.Bank.Select(k => new { id = k.Id, name = k.Name, glyph = k.Glyph }),
             own = bar.Own,
+            locked = bar.Locked,
         };
         lock (_actionsGate)
         {

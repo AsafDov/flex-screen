@@ -104,6 +104,7 @@ void buildClipboard(lv_obj_t *col) {
     lv_obj_set_style_pad_hor(r.root, 10, 0);
     lv_obj_add_event_cb(r.root, onClipTap, LV_EVENT_SHORT_CLICKED, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_add_event_cb(r.root, onClipHold, LV_EVENT_LONG_PRESSED, reinterpret_cast<void *>(intptr_t(i)));
+    holdRing(r.root);
     flexRow(r.root, 8);
     r.icon = label(r.root, "", &small_font, kSoftText);
     r.swatch = box(r.root);

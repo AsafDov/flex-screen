@@ -294,7 +294,7 @@ void dumpObject(JsonArray out, lv_obj_t *obj, int depth) {
   n["d"] = depth;
   const lv_obj_class_t *cls = lv_obj_get_class(obj);
   n["c"] = cls == &lv_label_class ? "label" : cls == &lv_button_class ? "button" : cls == &lv_image_class ? "image"
-          : cls == &lv_slider_class ? "slider" : cls == &lv_keyboard_class ? "keyboard" : "obj";
+          : cls == &lv_slider_class ? "slider" : cls == &lv_keyboard_class ? "keyboard" : cls == &lv_arc_class ? "arc" : "obj";
   lv_area_t a;
   lv_obj_get_coords(obj, &a);
   n["x"] = a.x1;

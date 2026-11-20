@@ -3,11 +3,12 @@ using System.Text.Json.Nodes;
 namespace FlexScreen.Companion;
 
 /// <summary>
-/// What Claude asks or tells you on the deck. A question has 2–4 options and waits for a tap:
-/// from the deck_ask tool (<see cref="DeckTools"/>), or Claude Code's own AskUserQuestion,
-/// answered through the PermissionRequest hook while its prompt shows at the PC too. A note
-/// (deck_notify) waits for nothing and stays until you tap OK, or send that session your
-/// next message. The deck shows the newest question, else the newest note.
+/// What Claude, or a script, asks or tells you on the deck. A question has 2–4 options and
+/// waits for a tap: from the deck_ask tool (<see cref="DeckTools"/>), Claude Code's own
+/// AskUserQuestion, answered through the PermissionRequest hook while its prompt shows at the
+/// PC too, or `flexctl ask` (<see cref="ScriptApi"/>). A note (deck_notify, `flexctl notify`)
+/// waits for nothing and stays until you tap OK, or send that session your next message. The
+/// deck shows the newest question, else the newest note.
 /// </summary>
 sealed class DeckQuestions
 {
@@ -17,9 +18,10 @@ sealed class DeckQuestions
     /// <param name="Level">A note's: "info", "done", "warning" or "error".</param>
     /// <param name="Step">This question's place among the ones asked together (1 of <paramref name="Steps"/>).</param>
     /// <param name="FromHook">AskUserQuestion's, answered at the PC too: settled when the session moves on.</param>
+    /// <param name="From">Who asks: "" for Claude, else the name a script gave ("Backup").</param>
     public sealed record Item(string Id, string Session, string Project, string Kind, string Level, string Text,
                               IReadOnlyList<Option> Options, bool Multi, int Step, int Steps, bool FromHook, DateTime At,
-                              TaskCompletionSource<int[]?> Answer);
+                              TaskCompletionSource<int[]?> Answer, string From = "");
 
     public enum Outcome { Picked, Dismissed, TimedOut, Gone }
 
@@ -59,12 +61,12 @@ sealed class DeckQuestions
     /// </summary>
     public async Task<(Outcome Outcome, int[] Picks)> Ask(string session, string project, string text, IReadOnlyList<Option> options,
                                                          bool multi, int step, int steps, bool fromHook, TimeSpan wait,
-                                                         CancellationToken cancel)
+                                                         CancellationToken cancel, string from = "")
     {
         var item = new Item($"q{Interlocked.Increment(ref _next)}", session, project, "ask", "", text, options, multi, step, steps,
-                            fromHook, DateTime.UtcNow, new TaskCompletionSource<int[]?>(TaskCreationOptions.RunContinuationsAsynchronously));
+                            fromHook, DateTime.UtcNow, new TaskCompletionSource<int[]?>(TaskCreationOptions.RunContinuationsAsynchronously), from);
         lock (_gate) _items.Add(item);
-        Log.Write($"claude: asked on the deck ({item.Id}): {project}: {text}");
+        Log.Write(from.Length > 0 ? $"script: {from} asked on the deck ({item.Id}): {text}" : $"claude: asked on the deck ({item.Id}): {project}: {text}");
         Changed?.Invoke();
         var timeout = Task.Delay(wait, CancellationToken.None);
         var gone = Task.Delay(Timeout.Infinite, cancel);
@@ -79,17 +81,17 @@ sealed class DeckQuestions
         return (first == timeout ? Outcome.TimedOut : Outcome.Gone, []);
     }
 
-    public void Note(string session, string project, string level, string text)
+    public void Note(string session, string project, string level, string text, string from = "")
     {
         var item = new Item($"n{Interlocked.Increment(ref _next)}", session, project, "note", level, text, [], false, 1, 1, false,
-                            DateTime.UtcNow, new TaskCompletionSource<int[]?>());
+                            DateTime.UtcNow, new TaskCompletionSource<int[]?>(), from);
         lock (_gate)
         {
             _items.Add(item);
             var notes = _items.Where(i => i.Kind == "note").ToList();
             foreach (var old in notes.Take(Math.Max(0, notes.Count - MaxNotes))) _items.Remove(old);
         }
-        Log.Write($"claude: note on the deck: {project}: {text}");
+        Log.Write(from.Length > 0 ? $"script: {from}'s note on the deck: {text}" : $"claude: note on the deck: {project}: {text}");
         Changed?.Invoke();
     }
 

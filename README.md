@@ -46,7 +46,7 @@ firmware or release.
 - The status line along the top:
   - Next meeting with a countdown, amber from five minutes out.
   - Claude Code status (working, needs you, done); tap it for the session board.
-  - Last build result.
+  - Last build result, or a script's progress while one runs (`flexctl progress`).
   - Keyboard layer (from a Vial keyboard); tap it to pin the layer cheat sheet open.
   - Volume (tap to mute) and microphone mute, which mutes every mic so Teams, Zoom and
     Discord all go quiet at once.
@@ -106,6 +106,36 @@ firmware or release.
   keyboard, not for the ordinary chat. Sessions on a Remote-SSH server get them through
   the same tunnel as the hooks.
 
+### Scripts talk to the deck (flexctl)
+
+<img src="docs/screens/script-note.png" alt="A note from a backup script on the deck, with its progress in the status line" width="560">
+
+- The same three things for any script, scheduled task or build step, with the `flexctl`
+  command the install puts on your PATH:
+
+  ```powershell
+  flexctl notify "Backup done: 412 files" -level done -from Backup
+  flexctl ask "Deploy to production?" Yes No -from Deploy     # prints the button tapped
+  flexctl progress 3 12 "Uploading" -from Backup
+  flexctl progress -clear
+  ```
+
+  - **notify** leaves a note that stays until you tap **OK** (or 30 minutes), under the
+    name the script gave (`-from`, "Script" if none), with the level's color and icon
+    (`info`, `done`, `warning`, `error`).
+  - **ask** shows 2-4 buttons and waits for a tap (15 minutes, or `-wait` minutes), then
+    prints the button's label. The exit code says how it went: 0 an answer, 1 dismissed
+    on the deck, 2 no answer in time, 3 the companion or the deck isn't there, 4 wrong
+    arguments. A script that stops waiting (Ctrl+C) takes its question off the deck.
+  - **progress** shows "Uploading 3/12" in the status line, in the build pill's place,
+    until done reaches total, `-clear`, or 30 minutes without a word (a script that died).
+- On a Remote-SSH server the server's hooks script also writes `~/.local/bin/flexctl`
+  (Python, through the same tunnel), which takes the same commands with `--level`,
+  `--from`, `--wait` and `--clear`, and names the server unless `--from` says otherwise.
+- Underneath it's three local endpoints, `POST http://localhost:48151/api/notify`, `/api/ask`
+  and `/api/progress`, taking JSON (see [protocol/v0.md](protocol/v0.md)); anything on the PC
+  that can send a request can use them, and no web page can.
+
 ### Context bar (on every page)
 
 <img src="docs/screens/context-bar.png" alt="Arranging the context bar: VS Code's actions to put in a key's place" width="560">
@@ -159,6 +189,11 @@ firmware or release.
   The Claude app's own sign-in is separate and can't be read. For Claude Code on a
   Remote-SSH server, the server's hooks run its `/usage` there and send the figure (see
   VS Code Remote-SSH below).
+- **Hold the app's name** at the bar's left to keep the bar on that app: reading docs in
+  Chrome while VS Code's keys stay, say. The name turns amber with a lock on its icon, other
+  apps coming to the front leave the bar as it is, and a key brings the locked app's window
+  back to the front before it presses. Hold it again (or close that window) and the bar
+  follows the app in front again. A tap on the name still opens its page.
 - **Long-press a key** to pick another action for its place from that app's list (VS Code
   also has Go to symbol, Go to line, Run, Rename, Format, Comment, Source control…; every
   app gets an "Everywhere" list: Snap left, Screenshot, Lock PC…). One already on the bar
@@ -372,6 +407,11 @@ the first site that matches wins (yours before the built-in ones).
   in the Vial app (Security > Unlock) and it stays unlocked until it's unplugged.
 
 ### The deck itself
+- Holds show a ring: wherever a hold does something (Stop on the session board, closing a
+  window, Zoom's Clear, pinning a clip, a context bar key's list, locking the bar, the
+  clock's diagnostics), a ring fills round your finger and is full just as the hold takes
+  effect. Lifting early or sliding away cancels it, and a tap never shows it. Red where the
+  hold ends something, amber for the lock.
 - Idle: a dim clock after 10 minutes without input on the deck or the PC, screen off
   after 30 (both adjustable). A locked PC shows the clock straight away.
 - Edge glow: a thin colored frame around the whole screen blinks twice and fades away
@@ -455,8 +495,9 @@ powershell -ExecutionPolicy Bypass -File install\build-dist.ps1
 ```
 
 Unzip `dist\flex-screen.zip` on the PC and run `install.cmd`. It installs the companion
-(started at sign-in), the VS Code extension and the Claude Code hooks; `uninstall.cmd`
-removes them. The kit also carries the deck's firmware (it builds it with PlatformIO).
+(started at sign-in), the VS Code extension, the Claude Code hooks and `flexctl` (its
+folder, `%LOCALAPPDATA%\Programs\flex-screen\bin`, goes on your user PATH; terminals opened
+after that find it); `uninstall.cmd` removes them. The kit also carries the deck's firmware (it builds it with PlatformIO).
 
 For a release, tag it `v` plus the version (`v0.21.0`) and attach `dist\flex-screen.zip`
 to it: installed companions find it there. The kit's version is the firmware's
@@ -489,7 +530,7 @@ under the server's Host in the PC's `~/.ssh/config`, reconnect, and run
 it: 0.16.2's sends the model of Claude's last reply, for the Model key; 0.16.3's also
 runs Claude Code's own `/usage` there after each turn, at most every 3 minutes, for the
 Usage key; 0.19.0's registers the deck's tools with Claude Code there; 0.20.0's adds the
-board's Stop). A session there is
+board's Stop; 0.29.0's writes `~/.local/bin/flexctl` for scripts there). A session there is
 matched to the VS Code window that has its folder open.
 Details in
 [install/README.txt](install/README.txt).
@@ -607,7 +648,7 @@ A key is `keys` (pressed in that app's window; `"g, i"` presses one after the ot
 | `vscode-ext/` | The VS Code extension |
 | `chrome-ext/` | The browser extension (Chrome and Edge): the tab's address for the context bar |
 | `protocol/` | [v0.md](protocol/v0.md): every message between the parts |
-| `install/` | Install kit builder and install/uninstall scripts |
+| `install/` | Install kit builder, install/uninstall scripts, `flexctl` |
 | `docs/` | Guides: [connecting Google Calendar and Tasks](docs/google-setup.md), [other calendars and the filters](docs/calendars.md), [the other task sources](docs/task-sources.md) |
 | `backup/` | Factory firmware backup and restore steps |
 | `simulator/` | The deck's UI on the PC, with feature tests and screenshot tours ([README](simulator/README.md)) |

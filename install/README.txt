@@ -19,6 +19,8 @@ What install.cmd does (no admin rights needed; run it again to update):
     answer first wins; "Approve Claude from the deck" in the tray menu turns it off); the
     original file is kept as settings.json.before-flex-screen, and nothing else in it
     changes
+  - puts flexctl on your user PATH (%LOCALAPPDATA%\Programs\flex-screen\bin), for scripts
+    to show a note, ask a question or show their progress on the deck (see flexctl below)
   - starts the companion
 
 After installing
@@ -100,9 +102,20 @@ VS Code Remote-SSH (working on a Linux server from this PC)
      registers the deck's tools with Claude Code there (deck_ask, deck_notify,
      deck_progress) and allows them without a prompt. And after updating from one older
      than 0.20.0: it adds the hook behind the session board's Stop.
-  Restart Claude sessions on the server afterwards.
+  Restart Claude sessions on the server afterwards. Since 0.29.0 it also writes
+  ~/.local/bin/flexctl there, for scripts on the server (see flexctl below).
   With Claude Code's chat tab in front in VS Code, the deck's bar turns into Claude's. That
   needs Claude in an editor tab (its default, "Open in New Tab"), not in the side bar.
+
+flexctl (scripts talk to the deck)
+  From any script, scheduled task or terminal opened after the install:
+    flexctl notify "Backup done" -level done -from Backup     a note, until OK is tapped
+    flexctl ask "Deploy to production?" Yes No -wait 15       waits, prints the button tapped
+    flexctl progress 3 12 "Uploading"                         "Uploading 3/12" in the status line
+    flexctl progress -clear
+  Levels: info, done, warning, error. Exit codes: 0 done, 1 dismissed on the deck, 2 no
+  answer in time, 3 the companion or the deck isn't there, 4 wrong arguments. On a
+  Remote-SSH server, ~/.local/bin/flexctl takes the same with --level, --from, --wait.
 
 Calls (Teams, Zoom, Discord)
   When an app uses the microphone, the deck shows a call panel with its controls. Teams
@@ -135,7 +148,9 @@ Context bar
   Discord have their own; any other app gets Copy, Paste, Undo, Save, Find and Close. A key
   presses its shortcut in that app's window. Long-press a key to pick another action for
   its place from that app's list (one already on the bar swaps places with it), remove
-  it, or reset the app's keys; "+" adds a key. The companion keeps each app's keys in
+  it, or reset the app's keys; "+" adds a key. Hold the app's name to keep the bar on that
+  app while others come to the front (amber, with a lock); hold again to let it follow
+  again. The companion keeps each app's keys in
   %LOCALAPPDATA%\flex-screen\context-bar.json. To add your own actions to an app's list,
   in the profile:
     "contextBar": {

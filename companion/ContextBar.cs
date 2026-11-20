@@ -29,6 +29,9 @@ namespace FlexScreen.Companion;
 /// something else took it; "g, i" presses one after the other), "text" (typed, "\n" for
 /// Enter), "action" (a deck action, as for shortcuts) or "action": "close" (closes the
 /// window, as its X button does).
+/// A hold on the app's name on the deck locks the bar to that window (<see cref="Lock"/>):
+/// other apps coming to the front leave it as it is, and its keys bring the window back
+/// first, until another hold, or the window closing, lets it follow again.
 /// </summary>
 sealed class ContextBar
 {
@@ -37,7 +40,9 @@ sealed class ContextBar
     /// <param name="Key">Whose layout this is: the exe's name ("code"), "chrome:gmail" on Gmail, "ms-teams:call" during a meeting.</param>
     /// <param name="Color">The bar's color, 0xRRGGBB.</param>
     /// <param name="Bank">Every action the bar can hold: the app's own first (<paramref name="Own"/> of them), then the everyday ones.</param>
-    public record Bar(string App, string Key, string Icon, int Color, IReadOnlyList<BarItem> Keys, IReadOnlyList<BarItem> Bank, int Own)
+    /// <param name="Locked">Held on this window: another app in front doesn't change it.</param>
+    public record Bar(string App, string Key, string Icon, int Color, IReadOnlyList<BarItem> Keys, IReadOnlyList<BarItem> Bank, int Own,
+                      bool Locked = false)
     {
         public static readonly Bar None = new("", "", "", 0, [], [], 0);
     }
@@ -66,7 +71,9 @@ sealed class ContextBar
     readonly Dictionary<string, IAppIntegration> _apps;  // by exe name
     readonly object _gate = new();
     readonly Dictionary<string, List<string>> _layouts;  // app key → action ids, as arranged on the deck
-    DeckWindow? _front;  // the app window in front last (kept while the desktop or the taskbar has it)
+    DeckWindow? _front;  // the app window in front last (kept while the desktop or the taskbar has it), or the one locked
+    DeckWindow? _polled;  // the app window in front last, whatever the lock says
+    bool _locked;
     string _exe = "";
     string _context = "";  // what the app in front is doing, as it says: "gmail", "claude", "call"
     string _config = "\0";
@@ -99,13 +106,59 @@ sealed class ContextBar
     /// <summary>From the window list's poll: the window in front (null for the desktop, the taskbar, a menu).</summary>
     public void OnPolled(IReadOnlyList<DeckWindow> all, DeckWindow? front)
     {
-        if (front == null) return;  // keep the last app's keys: they bring it back
+        var released = false;
+        lock (_gate)
+        {
+            if (front != null) _polled = front;
+            if (_locked && _front != null)
+            {
+                if (WindowSource.Exists(_front.Id))
+                {
+                    if (front == null || front.Id != _front.Id) return;  // locked: the bar stays
+                }
+                else
+                {
+                    // The locked window closed: the bar follows the app in front again.
+                    _locked = false;
+                    released = true;
+                    Log.Write($"context: {_front.App}'s window closed; the bar follows the app in front again");
+                    if (front == null)
+                    {
+                        _front = null;
+                        _exe = "";
+                    }
+                }
+            }
+        }
+        if (front == null)
+        {
+            if (released) Update();  // no bar: its window's gone
+            return;  // else keep the last app's keys: they bring it back
+        }
         lock (_gate)
         {
             if (_front != null && front.Id == _front.Id && front.Icon == _front.Icon && front.App == _front.App &&
                 ContextOf(front, _exe) == _context) return;
         }
         Show(front, Exe(front));
+    }
+
+    /// <summary>
+    /// A hold on the app's name on the deck: keep the bar on the window it shows now (true),
+    /// whatever comes to the front, or let it follow the app in front again (false).
+    /// </summary>
+    public void Lock(bool on)
+    {
+        DeckWindow? follow = null;
+        lock (_gate)
+        {
+            if (on == _locked || (on && _front == null)) return;
+            _locked = on;
+            Log.Write(on ? $"context: the bar stays on {_front!.App}" : "context: the bar follows the app in front again");
+            if (!on && _polled != null && _polled.Id != _front?.Id && WindowSource.Exists(_polled.Id)) follow = _polled;
+        }
+        if (follow != null) Show(follow, Exe(follow));
+        else Update();
     }
 
     static string Exe(DeckWindow window) => Path.GetFileNameWithoutExtension(WindowSource.ExePath(window.Id)).ToLowerInvariant();
@@ -140,7 +193,7 @@ sealed class ContextBar
         lock (_gate)
         {
             if (_front != null) _context = ContextOf(_front, _exe);
-            bar = _front == null ? Bar.None : Make(_front, _exe, _context);
+            bar = _front == null ? Bar.None : Make(_front, _exe, _context) with { Locked = _locked };
             if (Same(bar, _bar)) return;
             _bar = bar;
         }
@@ -221,7 +274,7 @@ sealed class ContextBar
     static string Slug(string name) => new(name.ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray());
 
     static bool Same(Bar a, Bar b) =>
-        a.App == b.App && a.Key == b.Key && a.Icon == b.Icon && a.Color == b.Color && a.Own == b.Own &&
+        a.App == b.App && a.Key == b.Key && a.Icon == b.Icon && a.Color == b.Color && a.Own == b.Own && a.Locked == b.Locked &&
         a.Keys.Select(k => (k.Id, k.Name)).SequenceEqual(b.Keys.Select(k => (k.Id, k.Name))) &&
         a.Bank.Select(k => (k.Id, k.Name)).SequenceEqual(b.Bank.Select(k => (k.Id, k.Name)));
 

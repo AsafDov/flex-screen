@@ -126,6 +126,16 @@ struct Build {
   uint32_t version = 0;
 };
 
+// A script's progress, from `flexctl progress` on the PC: shown in the status line's build
+// pill while it runs. The newest script's only.
+struct Job {
+  String label;   // "Uploading"
+  String from;    // who sent it ("Backup"), or ""
+  int done = 0;
+  int total = 0;  // 0: no job
+  uint32_t version = 0;
+};
+
 // A command run in VS Code's terminal lately (the workspace that ran the newest one).
 struct RecentCommand {
   String cmd;
@@ -197,6 +207,7 @@ struct Context {
   ContextKey bank[kBankMax];
   int bank_count = 0;
   int own = 0;
+  bool locked = false;  // held on this app (a hold on its name): another app in front doesn't change it
   uint32_t version = 0;
 };
 
@@ -221,6 +232,7 @@ struct Question {
   String level;    // a note's: "info", "done", "warning", "error"
   String session;  // the Claude session (to bring up its window)
   String project;
+  String from;     // who asks: "" for Claude, else a script's name (flexctl)
   String text;
   struct Option {
     String label, note;
@@ -565,6 +577,7 @@ extern Art art;
 extern Claude claude;
 extern Term term;
 extern Build build;
+extern Job job;
 extern Recent recent;
 extern Actions actions;
 extern Shortcuts shortcuts;

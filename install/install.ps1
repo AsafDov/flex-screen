@@ -3,6 +3,8 @@
 #   - the VS Code extension (terminal commands, builds and git for the deck's Dev page)
 #   - Claude Code hooks in ~/.claude/settings.json, for the deck's Claude status (the Claude
 #     extension in VS Code reads the same file)
+#   - flexctl, for scripts to put a note, a question or a progress bar on the deck, on the
+#     PATH (the companion's bin folder, added to your user PATH)
 #
 # Run install.cmd, or: powershell -ExecutionPolicy Bypass -File install.ps1
 # Running it again updates everything in place. No admin rights needed.
@@ -69,6 +71,29 @@ Write-Host "Optional, once per browser: so the deck's bar knows the site in Chro
 Write-Host "open chrome://extensions (edge://extensions), turn on Developer mode, Load unpacked, and pick"
 Write-Host "  $ext"
 Write-Host 'Updates come with the companion; the browser picks them up when it restarts.'
+
+Step 'flexctl for scripts'
+# flexctl.cmd alone in bin, so PowerShell runs it rather than finding flexctl.ps1 (which
+# running scripts being off would stop) on the PATH.
+$bin = Join-Path $dir 'bin'
+New-Item -ItemType Directory -Force $bin | Out-Null
+Copy-Item (Join-Path $here 'flexctl.ps1') $dir -Force
+Copy-Item (Join-Path $here 'flexctl.cmd') $bin -Force
+$binOnPath = '%LOCALAPPDATA%\Programs\flex-screen\bin'
+$envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+$userPath = [string]$envKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+$entries = @($userPath -split ';' | Where-Object { $_ })
+if (-not ($entries | Where-Object { $_.TrimEnd('\') -ieq $binOnPath -or [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ieq $bin })) {
+  $envKey.SetValue('Path', (($entries + $binOnPath) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+  # Tells Explorer, so terminals opened from now on have it.
+  [Environment]::SetEnvironmentVariable('FLEX_SCREEN_PATH_CHANGED', '1', 'User')
+  [Environment]::SetEnvironmentVariable('FLEX_SCREEN_PATH_CHANGED', $null, 'User')
+  Write-Host "Added $bin to your PATH; terminals opened from now on find flexctl."
+} else {
+  Write-Host 'flexctl is on your PATH.'
+}
+$envKey.Close()
+Write-Host '  flexctl notify "Backup done"   |   flexctl ask "Deploy?" Yes No   |   flexctl progress 3 12 Uploading'
 
 Step 'Claude Code hooks'
 if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {

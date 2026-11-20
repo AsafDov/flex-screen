@@ -108,6 +108,7 @@ void buildRow(int i) {
   lv_obj_set_style_radius(r.stop, 10, 0);
   lv_obj_add_event_cb(r.stop, onStopTap, LV_EVENT_SHORT_CLICKED, (void *)intptr_t(i));
   lv_obj_add_event_cb(r.stop, onStopHold, LV_EVENT_LONG_PRESSED, (void *)intptr_t(i));
+  holdRing(r.stop, 0xFF9A70);
   r.stop_label = label(r.stop, "Stop", &small_font, kText);
   lv_obj_center(r.stop_label);
 

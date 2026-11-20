@@ -27,6 +27,7 @@ constexpr int kKeysW = kW - 2 - kPadL - kPadR - kChipW - kKeyGap - 1 - 2 - kKeyG
 constexpr int kKeyPad = 6, kIconGap = 6;  // a key's side padding; between its icon and name
 constexpr int kKeyPadTight = 3, kIconGapTight = 4;  // when the keys don't all fit
 constexpr int kPlusW = 34;  // the key that adds a key
+constexpr int kLockBadge = 22;  // the lock on the app's icon while the bar's held on it
 constexpr uint32_t kIconRetryMs = 3000;
 
 // The long-press menu: the app's actions to choose from, above the bar.
@@ -46,7 +47,7 @@ struct KeyView {
 
 struct {
   lv_obj_t *pages;
-  lv_obj_t *bar, *chip, *image, *letter, *app, *divider;
+  lv_obj_t *bar, *chip, *image, *letter, *app, *lock, *divider;
   KeyView keys[model::Context::kMax];
   lv_obj_t *plus, *plus_icon;
 } w;
@@ -310,6 +311,12 @@ int pageFor(const String &key) {
 void onChip(lv_event_t *) {
   if (model::context.key.length()) showPage(pageFor(model::context.key));
 }
+
+// A hold on the app's name keeps the bar on that app while others come to the front, and
+// another hold lets it follow again. The companion says so with the next bar.
+void onChipHold(lv_event_t *) {
+  if (model::context.key.length()) pc::contextLock(!model::context.locked);
+}
 void onPlus(lv_event_t *) { openMenu(model::context.count); }
 
 void fill() {
@@ -324,6 +331,12 @@ void fill() {
   lv_obj_set_style_bg_color(w.chip, mix(color, kSurface, 115), LV_STATE_PRESSED);
 
   setText(w.app, c.app.c_str());
+  // Held on this app: amber, with a lock on the icon's corner (after the name, it cut
+  // "VS Code" short).
+  setHidden(w.lock, !c.locked);
+  setBgColor(w.chip, kAmberBg);
+  const lv_opa_t chip_opa = c.locked ? LV_OPA_COVER : LV_OPA_TRANSP;
+  if (lv_obj_get_style_bg_opa(w.chip, LV_PART_MAIN) != chip_opa) lv_obj_set_style_bg_opa(w.chip, chip_opa, 0);
   const lv_image_dsc_t *icon = icons::get(c.icon);
   if (!icon && c.icon.length() && millis() - asked_ms >= kIconRetryMs) {
     asked_ms = millis();
@@ -425,9 +438,12 @@ void build(lv_obj_t *screen, lv_obj_t *pages) {
   lv_obj_t *chip = box(w.bar);
   lv_obj_set_size(chip, kChipW + kChipPad, kKeyH);  // its padding taken from the bar's
   flexRow(chip, 8);
-  // A tap on the app's name goes to its page (Spotify to Audio, VS Code to Dev…).
+  // A tap on the app's name goes to its page (Spotify to Audio, VS Code to Dev…); a hold
+  // keeps the bar on this app.
   lv_obj_set_clickable(chip, true);
-  lv_obj_add_event_cb(chip, onChip, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(chip, onChip, LV_EVENT_SHORT_CLICKED, nullptr);
+  lv_obj_add_event_cb(chip, onChipHold, LV_EVENT_LONG_PRESSED, nullptr);
+  holdRing(chip, kAmber);
   lv_obj_set_style_radius(chip, 10, 0);
   lv_obj_set_style_pad_left(chip, kChipPad, 0);
   lv_obj_set_style_bg_opa(chip, LV_OPA_TRANSP, 0);
@@ -435,6 +451,7 @@ void build(lv_obj_t *screen, lv_obj_t *pages) {
   w.chip = chip;
   lv_obj_t *holder = box(chip);
   lv_obj_set_size(holder, icons::kSize, icons::kSize);
+  lv_obj_add_flag(holder, LV_OBJ_FLAG_OVERFLOW_VISIBLE);  // the lock badge sits over its corner
   w.image = lv_image_create(holder);
   lv_obj_set_size(w.image, icons::kSize, icons::kSize);
   w.letter = card(holder, kRaised, kRaised);  // no icon (yet): the app's first letter
@@ -446,6 +463,16 @@ void build(lv_obj_t *screen, lv_obj_t *pages) {
   lv_obj_set_style_max_width(w.app, kChipW - icons::kSize - 8, 0);
   lv_label_set_long_mode(w.app, LV_LABEL_LONG_MODE_DOTS);
   lv_obj_set_height(w.app, lv_font_get_line_height(&body_font));
+  // The lock badge, over the icon's bottom right corner while the bar's held on this app.
+  w.lock = card(holder, kBg, kAmber);  // dark, so the amber lock reads at this size
+  lv_obj_set_size(w.lock, kLockBadge, kLockBadge);
+  lv_obj_set_style_radius(w.lock, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_border_width(w.lock, 2, 0);
+  lv_obj_set_style_pad_all(w.lock, 0, 0);
+  lv_obj_add_flag(w.lock, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_align(w.lock, LV_ALIGN_BOTTOM_RIGHT, 5, 2);  // inside the chip, which clips
+  lv_obj_center(label(w.lock, glyph("lock"), &font_icons_15, kAmber));
+  lv_obj_set_hidden(w.lock, true);
 
   w.divider = box(w.bar);
   lv_obj_set_size(w.divider, 1, 28);
@@ -458,6 +485,7 @@ void build(lv_obj_t *screen, lv_obj_t *pages) {
     k.root = button(w.bar, 80, kKeyH, kRaised, nullptr);
     lv_obj_add_event_cb(k.root, onKey, LV_EVENT_SHORT_CLICKED, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_add_event_cb(k.root, onKeyHold, LV_EVENT_LONG_PRESSED, reinterpret_cast<void *>(intptr_t(i)));
+    holdRing(k.root);
     lv_obj_set_style_radius(k.root, 10, 0);
     lv_obj_set_style_pad_hor(k.root, kKeyPad, 0);
     flexRow(k.root, kIconGap);

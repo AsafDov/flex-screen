@@ -110,7 +110,9 @@ void show() {
   setBorderColor(w.root, color);
   lv_obj_set_style_bg_color(w.root, lv_color_mix(hex(color), hex(kSurface), 34), 0);
 
-  String title = q.project.length() ? "Claude · " + q.project : String("Claude");
+  // Claude's, or a script's (flexctl) under the name it gave.
+  String title = q.from.length() ? q.from : String("Claude");
+  if (q.project.length()) title += " · " + q.project;
   if (!note) title += " asks";
   if (q.steps > 1) title += " · " + String(q.step) + " of " + String(q.steps);
   if (q.multi) title += " · pick any";

@@ -225,6 +225,84 @@ void setHidden(lv_obj_t *o, bool hidden) {
   if (lv_obj_is_hidden(o) != hidden) lv_obj_set_hidden(o, hidden);
 }
 
+namespace {
+
+constexpr int kHoldRingD = 92, kHoldRingW = 6;  // round a fingertip, so it shows past it
+constexpr uint32_t kHoldRingDelayMs = 100;       // a tap is over before it shows
+constexpr int kHoldSlop = 16;                    // px the finger may wander: more is a drag
+lv_obj_t *hold_ring = nullptr;
+lv_point_t hold_from;
+
+void holdRingSet(void *, int32_t v) { lv_arc_set_value(hold_ring, v); }
+void holdRingShow(lv_anim_t *) { lv_obj_set_hidden(hold_ring, false); }
+
+void holdRingStop() {
+  if (!hold_ring) return;
+  lv_anim_delete(hold_ring, holdRingSet);
+  setHidden(hold_ring, true);
+}
+
+void makeHoldRing() {
+  hold_ring = lv_arc_create(lv_layer_top());
+  lv_obj_remove_style_all(hold_ring);
+  lv_obj_set_clickable(hold_ring, false);
+  lv_obj_set_size(hold_ring, kHoldRingD, kHoldRingD);
+  lv_arc_set_rotation(hold_ring, 270);  // from the top, clockwise
+  lv_arc_set_bg_angles(hold_ring, 0, 360);
+  lv_arc_set_range(hold_ring, 0, 100);
+  lv_obj_set_style_arc_width(hold_ring, kHoldRingW, LV_PART_MAIN);
+  lv_obj_set_style_arc_color(hold_ring, hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_arc_opa(hold_ring, LV_OPA_20, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(hold_ring, kHoldRingW, LV_PART_INDICATOR);
+  lv_obj_set_style_arc_rounded(hold_ring, true, LV_PART_INDICATOR);
+  lv_obj_set_hidden(hold_ring, true);
+}
+
+void onHoldRing(lv_event_t *e) {
+  const lv_event_code_t code = lv_event_get_code(e);
+  lv_indev_t *indev = lv_indev_active();
+  if (code == LV_EVENT_PRESSED) {
+    if (!indev) return;
+    if (!hold_ring) makeHoldRing();
+    lv_indev_get_point(indev, &hold_from);
+    const uint32_t color = uint32_t(uintptr_t(lv_event_get_user_data(e)));
+    lv_obj_set_style_arc_color(hold_ring, hex(color ? color : kAccent), LV_PART_INDICATOR);
+    lv_obj_set_pos(hold_ring, hold_from.x - kHoldRingD / 2, hold_from.y - kHoldRingD / 2);
+    lv_anim_delete(hold_ring, holdRingSet);
+    lv_arc_set_value(hold_ring, 0);
+    lv_obj_set_hidden(hold_ring, true);
+    lv_obj_move_foreground(hold_ring);  // over whatever opened on the top layer since
+    // Full when LVGL's long press fires, which is when the hold takes effect.
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, hold_ring);
+    lv_anim_set_exec_cb(&a, holdRingSet);
+    lv_anim_set_values(&a, 0, 100);
+    lv_anim_set_delay(&a, kHoldRingDelayMs);
+    lv_anim_set_duration(&a, LV_INDEV_DEF_LONG_PRESS_TIME - kHoldRingDelayMs);
+    lv_anim_set_start_cb(&a, holdRingShow);
+    lv_anim_start(&a);
+  } else if (code == LV_EVENT_PRESSING) {
+    if (!indev || !hold_ring) return;
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+    if (abs(p.x - hold_from.x) > kHoldSlop || abs(p.y - hold_from.y) > kHoldSlop) holdRingStop();
+  } else {
+    holdRingStop();  // the long press fired, or the finger lifted or slid off
+  }
+}
+
+}  // namespace
+
+void holdRing(lv_obj_t *obj, uint32_t color) {
+  void *user = reinterpret_cast<void *>(uintptr_t(color));
+  for (lv_event_code_t code : {LV_EVENT_PRESSED, LV_EVENT_PRESSING, LV_EVENT_LONG_PRESSED, LV_EVENT_RELEASED, LV_EVENT_PRESS_LOST}) {
+    lv_obj_add_event_cb(obj, onHoldRing, code, user);
+  }
+}
+
+bool holdRingShown() { return hold_ring && !lv_obj_is_hidden(hold_ring); }
+
 void formatTime(char *buf, size_t n, float seconds) {
   const int s = seconds > 0 ? int(seconds) : 0;
   if (s >= 3600) {

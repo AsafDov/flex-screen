@@ -75,6 +75,12 @@ void setBgColor(lv_obj_t *o, uint32_t color);
 void setBorderColor(lv_obj_t *o, uint32_t color);
 void setHidden(lv_obj_t *o, bool hidden);
 
+// A ring that fills round the finger while it holds `obj`, full just as the hold takes
+// effect (LVGL's long press), so a hold can be seen working; lifting early or sliding away
+// hides it. For every control a hold does something on. `color` 0 is the accent.
+void holdRing(lv_obj_t *obj, uint32_t color = 0);
+bool holdRingShown();
+
 // "3:07", or "1:02:07" past an hour.
 void formatTime(char *buf, size_t n, float seconds);
 // "just now", "42 s ago", "3 min ago", "2 h ago", "4 d ago"; "" for a negative age.

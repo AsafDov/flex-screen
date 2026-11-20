@@ -414,6 +414,13 @@ void handleState(const char *topic, JsonObjectConst d) {
     b.secs = d["secs"] | -1;
     b.at_ms = millis();
     b.version++;
+  } else if (!strcmp(topic, "job")) {
+    model::Job &j = model::job;
+    j.label = d["label"] | "";
+    j.from = d["from"] | "";
+    j.done = max(0, int(d["done"] | 0));
+    j.total = max(0, int(d["total"] | 0));
+    j.version++;
   } else if (!strcmp(topic, "recent")) {
     model::Recent &r = model::recent;
     r.count = 0;
@@ -486,6 +493,7 @@ void handleState(const char *topic, JsonObjectConst d) {
     q.level = d["level"] | "";
     q.session = d["session"] | "";
     q.project = d["project"] | "";
+    q.from = d["from"] | "";
     q.text = d["text"] | "";
     q.count = 0;
     for (JsonObjectConst o : d["options"].as<JsonArrayConst>()) {
@@ -522,6 +530,7 @@ void handleState(const char *topic, JsonObjectConst d) {
       out.glyph = k["glyph"] | "";
     }
     c.own = min(int(d["own"] | 0), c.bank_count);
+    c.locked = d["locked"] | false;
     c.version++;
   } else if (!strcmp(topic, "git")) {
     handleGit(d);
@@ -1310,6 +1319,14 @@ void contextRemove(const char *app, int slot) {
 }
 
 void contextReset(const char *app) { act("ctx.reset", "app", app); }
+
+void contextLock(bool on) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "ctx.lock";
+  doc["on"] = on;
+  send(doc);
+}
 
 void contextPick(const char *key, const char *choice) {
   JsonDocument doc;

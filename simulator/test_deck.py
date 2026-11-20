@@ -1475,6 +1475,159 @@ def test_progress(d: Deck) -> None:
     check('progress: without it, the step again', on_screen(d, 'Claude working', exact=True) and on_screen(d, 'Edit: icons.cpp'))
 
 
+def test_scripts(d: Deck) -> None:
+    """flexctl: a script's note, question and progress, under the name it gave."""
+    d.page(0)
+    d.state('question', {**fixtures.note('n7', 'Backup done: 412 files', 'done'), 'session': '', 'project': '', 'from': 'Backup'})
+    d.settle()
+    check("scripts: a script's note goes by its name, not Claude's",
+          on_screen(d, 'Backup', exact=True) and on_screen(d, 'Backup done: 412 files') and not on_screen(d, 'Claude ·'))
+    check('scripts: with OK, and no Open (no session to bring up)',
+          on_screen(d, 'OK', exact=True) and not on_screen(d, 'Open', exact=True))
+    d.shot(os.path.join(OUT, 'script-note.png'))
+    expect_act(d, "scripts: OK marks the script's note read", 'OK', 'claude.answer', exact=True, id='n7', picks=[])
+
+    d.state('question', {**fixtures.question('q7', 'Deploy to production?', ('Yes', 'No')), 'session': '', 'project': '', 'from': 'Deploy'})
+    d.settle()
+    check("scripts: a script's question says who asks", on_screen(d, 'Deploy asks', exact=True))
+    expect_act(d, 'scripts: a tap answers it', 'Yes', 'claude.answer', exact=True, id='q7', picks=[0])
+    d.state('question', fixtures.NO_QUESTION)
+
+    d.state('job', {'label': 'Uploading', 'from': 'Backup', 'done': 3, 'total': 12})
+    d.settle()
+    check("scripts: a script's progress takes the build pill", on_screen(d, 'Uploading 3/12') and not on_screen(d, 'Build passed'))
+    d.shot(os.path.join(OUT, 'script-progress.png'))
+    d.state('job', {'label': '', 'from': 'Backup', 'done': 5, 'total': 12})
+    d.settle()
+    check('scripts: without a label, the name it gave', on_screen(d, 'Backup 5/12'))
+    pill = label(d, 'Backup 5/12')
+    if pill:
+        tap_node(d, pill)
+    check('scripts: the pill opens Dev, as the build pill does', on_screen(d, 'TERMINAL'))
+    # Beside a meeting soon, Claude and a call the status line is full: the job stays.
+    d.state('job', {'label': 'Uploading the photos', 'from': 'Backup', 'done': 7, 'total': 12})
+    d.load(fixtures.stress())
+    d.settle()
+    check("scripts: in a full status line the progress stays (the meeting's title gives way)", on_screen(d, '7/12'))
+    d.shot(os.path.join(OUT, 'script-progress-stress.png'))
+    d.load(fixtures.day())
+    d.state('job', {'label': '', 'from': '', 'done': 0, 'total': 0})
+    d.settle()
+    check('scripts: done, the build pill again', on_screen(d, 'Build passed') and not on_screen(d, '7/12'))
+    d.page(0)
+
+
+def raw_tree(d: Deck) -> list[dict]:
+    """The objects now, without waiting for the screen to be still (a hold's ring moves)."""
+    mark = d.mark()
+    token = int(time.time() * 1000) % 1000000
+    d.send({'t': 'sim.dump', 'id': token})
+    reply = d.wait_for(lambda m: m.get('t') == 'sim.tree' and m.get('id') == token, since=mark)
+    return reply['screen'] + reply['top']
+
+
+def ring_shown(d: Deck) -> dict | None:
+    """The hold ring, if it's showing: the top layer's 92 px arc."""
+    out, hidden_depth = None, None
+    for n in raw_tree(d):
+        if hidden_depth is not None and n['d'] > hidden_depth:
+            continue
+        hidden_depth = n['d'] if n.get('hidden') else None
+        if hidden_depth is None and n['c'] == 'arc' and n['w'] == 92:
+            out = n
+    return out
+
+
+def test_hold_ring(d: Deck) -> None:
+    d.page(3)
+    tile = label(d, 'Chrome', exact=True) or label(d, 'Chrome')
+    if not tile:
+        check('hold ring: a window tile to hold', False, 'no Chrome tile')
+        return
+    x, y = tile['x'] + tile['w'] // 2, tile['y'] + tile['h'] // 2
+    mark = d.mark()
+    d.touch(x, y, True)
+    time.sleep(0.25)
+    ring = ring_shown(d)
+    check('hold ring: fills round the finger while it holds', ring is not None and abs(ring['x'] + 46 - x) <= 2 and abs(ring['y'] + 46 - y) <= 2,
+          str(ring))
+    d.shot(os.path.join(OUT, 'hold-ring.png'))
+    time.sleep(0.4)
+    check('hold ring: gone once the hold has done its thing', ring_shown(d) is None)
+    d.touch(x, y, False)
+    d.settle()
+    check('hold ring: the hold still does it (closes the window)', did(d, mark, 'win.close') is not None)
+
+    # The tile's gone now (a hold closes its window at once): a context bar key next.
+    d.load(fixtures.day())
+    d.page(0)
+    key = bar_key(d, 'Commands')
+    if not key:
+        check('hold ring: a context bar key to hold', False, 'no Commands key')
+        return
+    x, y = key['x'] + key['w'] // 2, key['y'] + key['h'] // 2
+    mark = d.mark()
+    d.touch(x, y, True)
+    time.sleep(0.06)
+    d.touch(x, y, False)
+    time.sleep(0.12)
+    check('hold ring: a tap never shows it', ring_shown(d) is None)
+    check('hold ring: and the tap still runs the key', did(d, mark, 'ctx.run', id='commands') is not None)
+    d.settle()
+
+    d.touch(x, y, True)
+    time.sleep(0.2)
+    shown_before = ring_shown(d) is not None
+    d.touch(x, y - 40, True)
+    time.sleep(0.05)
+    gone = ring_shown(d) is None
+    d.touch(x, y - 40, False)
+    d.settle()
+    check('hold ring: sliding away hides it', shown_before and gone, f'{shown_before} {gone}')
+    if menu_open(d):
+        tap_node(d, {'x': 400, 'y': 60, 'w': 0, 'h': 0})  # beside the menu closes it
+    d.load(fixtures.day())
+    d.page(0)
+
+
+LOCK = ''  # the icon font's lock
+
+
+def test_context_lock(d: Deck) -> None:
+    d.page(0)
+    chip = bar_key(d, 'VS Code')
+    mark = d.mark()
+    if chip:
+        tap_node(d, chip, hold=True)
+    check("context lock: a hold on the app's name locks the bar", did(d, mark, 'ctx.lock', on=True) is not None, str(d.acts(mark)))
+    check("context lock: and doesn't go to the app's page", not on_screen(d, 'TERMINAL'))
+    d.state('context', {**fixtures.day()['context'], 'locked': True})
+    d.settle()
+    lock = next((n for n in shown(d) if n.get('text') == LOCK and n['y'] >= BAR_TOP), None)
+    chip = bar_key(d, 'VS Code')
+    check("context lock: locked, a lock on the app's icon", lock is not None and chip is not None and lock['x'] < chip['x'], f'{lock} {chip}')
+    check('context lock: the name in full beside it', chip is not None)
+    d.shot(os.path.join(OUT, 'context-locked.png'))
+    mark = d.mark()
+    if chip:
+        tap_node(d, chip, hold=True)
+    check('context lock: another hold lets it follow again', did(d, mark, 'ctx.lock', on=False) is not None, str(d.acts(mark)))
+    if chip:
+        tap_node(d, chip)
+        d.settle()
+    check("context lock: a tap still goes to the app's page", on_screen(d, 'TERMINAL'))
+    d.state('context', {**fixtures.day()['context'], 'app': 'A very long application name', 'key': 'long', 'locked': True})
+    d.settle()
+    lock = next((n for n in shown(d) if n.get('text') == LOCK and n['y'] >= BAR_TOP), None)
+    name = next((n for n in shown(d) if n.get('text', '').startswith('A very') and n['y'] >= BAR_TOP), None)
+    check('context lock: with a long name too, inside the bar', lock is not None and name is not None and lock['y'] + lock['h'] <= 474,
+          f'{lock} {name}')
+    d.state('context', fixtures.day()['context'])
+    d.settle()
+    check('context lock: unlocked, no lock', not any(n.get('text') == LOCK and n['y'] >= BAR_TOP for n in shown(d)))
+    d.page(0)
+
+
 def test_picker(d: Deck) -> None:
     d.page(0)
     d.send({'t': 'pick', 'id': 'claude-model', 'title': 'Model', 'current': 'opus', 'choices': [
@@ -1594,7 +1747,7 @@ def main() -> int:
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
         for test in (test_today, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_dev, test_windows, test_capture, test_tasks, test_task_sources, test_numpad,
-                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
+                     test_toast, test_call, test_zoom, test_cheat_sheet, test_launcher, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_scripts, test_hold_ring, test_context_lock, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day
                 test(d)

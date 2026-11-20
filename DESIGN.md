@@ -94,6 +94,10 @@ renders under 12px.
 | 21 | Diagnostics | Overlay (hold the clock) | Firmware only | Firmware version and reset reason, uptime, internal RAM and PSRAM (`heap_caps_*`), frames per second and draw time (LVGL's refresh events), the link's counters and last error (`pc::linkStats()`) |
 | 22 | Demo | The diagnostics' Demo button | Firmware only | Fourteen steps through the pages and overlays with made-up state, played through `pc.cpp`'s own handling (`pc::play`), a caption over each; the PC's lines are held back meanwhile (`pc::demoMode`) and the deck's state is put back after (`demo.cpp`) |
 
+| 23 | flexctl | Every page (note, question), the status line (progress) | Companion | `ScriptApi`: `/api/notify`, `/api/ask`, `/api/progress` for scripts, through `DeckQuestions` with a `from` name and a `job` topic; `flexctl` on the PATH (PowerShell) and on Remote-SSH servers (Python) |
+| 24 | Hold ring | Every hold | Firmware only | An arc round the finger that fills until LVGL's long press fires (`ui::holdRing`) |
+| 25 | Context bar lock | Context bar | Companion (state on the deck) | A hold on the app's name: `ctx.lock`, `ContextBar` ignores other windows in front until unlocked or the window closes; `context.locked` |
+
 Extras on the canvas: **Lock PC** (`LockWorkStation`) and the **Headset** quick switch are
 easy. **Focus mode** and the **Claude usage meter** have no clean data source yet. They're
 parked until we find one.
@@ -1881,6 +1885,50 @@ Gotchas found after phase 6:
     of 47), every step and each tap's ring looked at in frames; on the deck, flashed and
     kept, the demo played from `/deck` with the day view, Gmail's keys after the Chrome tap
     and the labelled NAV layer seen in screenshots. Not seen on the deck: the shorter glow.
+- Three ideas from Tessera Deck, firmware 0.29.0 (2026-11-20; the user compared flex-screen
+  with Tessera, an open-source macro deck on a 7" ESP32-P4 panel, and said "Do 1,2,3"; what
+  was taken and what was left is in the ideas note's "From Tessera Deck"):
+  - **flexctl**: the deck's note, question and progress for any script, not just Claude.
+    `ScriptApi` in the companion serves `POST /api/notify`, `/api/ask` and `/api/progress`
+    (local tools only, as `/claude`: no `Origin`, so no web page). Notes and questions go
+    through `DeckQuestions` as Claude's do, with a `from` name instead of a session
+    (`question.from`; the card's title is that name, no Open). A question's reply starts at
+    once and sends a space every 10 s (JSON allows leading whitespace), so clients' timeouts
+    don't run out and a gone script takes its question off the deck. Progress is a new
+    `job` topic, the newest script's only, gone at done = total, on clear, or after 30
+    minutes without a word; the deck shows it in the build pill ("Uploading 3/12"), and a
+    full status line shortens the meeting's title, then the pill to "3/12", before it goes.
+    The command: `install/flexctl.ps1` (PowerShell 5.1, so it needs nothing installed) with
+    `flexctl.cmd` in the companion's `bin` folder, which install.ps1 puts on the user PATH
+    (as `%LOCALAPPDATA%\Programs\flex-screen\bin`, REG_EXPAND_SZ; uninstall takes it off);
+    the .ps1 sits a folder up, since PowerShell would pick a .ps1 on the PATH over the .cmd
+    and stop at the execution policy. On a Remote-SSH server, remote-claude-hooks.sh writes
+    `~/.local/bin/flexctl` (Python 3, which the script already needs), named after the
+    machine. Exit codes: 0 done, 1 dismissed, 2 no answer in time, 3 no companion or deck,
+    4 wrong arguments. Turned down as a bare idea that morning; picked once Tessera's
+    `deckctl` showed what it's for.
+  - **Hold ring**: `ui::holdRing(obj, color)` gives a held control a 92 px arc on the top
+    layer, round the finger, that fills from 100 ms to LVGL's long press (400 ms), so it's
+    full just as the hold takes effect; a tap never shows it, and lifting, sliding 16 px or
+    losing the press hides it. On every hold: the session board's Stop, closing a window and
+    Zoom's Clear (red), pinning a clip, a context bar key's list and the clock's diagnostics
+    (the accent), and the new lock (amber).
+  - **Context bar lock**: a hold on the app's name sends `ctx.lock`; `ContextBar` keeps the
+    window it shows (other windows in front are ignored, the same window's own changes, a
+    Gmail tab or a meeting, still count) until another hold or the window closing, and its
+    keys already bring their window back first. `context.locked` turns the name's chip amber
+    with a lock badge on the icon's corner (a lock after the name cut "VS Code" short). The
+    chip's tap moved to `SHORT_CLICKED`, so a hold doesn't also open the app's page.
+  - Checked: the simulator, 395 checks in two runs, all passing (the first run, 238, was
+    stopped from outside at test_question; the rest, 157, ran on the final build), with new
+    tests for scripts' notes, questions and progress (a full status line too), the ring
+    (round the finger mid-hold, gone after, never for a tap, gone on a slide) and the lock;
+    both `flexctl`s end to end against a companion playing with the simulator (exit codes,
+    a question waiting 14 s through the keep-alives and printing the answer, the server
+    script written and removed in a scratch home); on the deck, flashed and kept, a note,
+    a progress and the lock (from `/test`'s `ctx.lock`) seen in a screenshot. Not checked
+    on the deck: the ring and the lock by finger, and the lock holding while another app
+    comes to the front (only its log line).
 
 ## Decisions
 

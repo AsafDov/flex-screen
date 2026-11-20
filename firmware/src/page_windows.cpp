@@ -135,6 +135,7 @@ void buildTile(lv_obj_t *grid, int i) {
   lv_obj_set_style_border_width(t.root, 0, 0);
   lv_obj_add_event_cb(t.root, onTileTap, LV_EVENT_SHORT_CLICKED, reinterpret_cast<void *>(intptr_t(i)));
   lv_obj_add_event_cb(t.root, onTileHold, LV_EVENT_LONG_PRESSED, reinterpret_cast<void *>(intptr_t(i)));
+  holdRing(t.root, 0xFF9A70);  // closes the window
   // The icon above the app and title, so they have the tile's whole width: beside the rail
   // the tiles are ~126 px wide, and beside the icon "Obsidian" read "Obsid…". (With the
   // tab bar gone there's the height for it again.)

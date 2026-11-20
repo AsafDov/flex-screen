@@ -336,7 +336,10 @@ void buildDraw() {
     ActionView &a = w.actions[i];
     a.root = button(actions, 0, 48, i == Close ? 0x5A2424 : kRaised, nullptr);
     lv_obj_add_event_cb(a.root, onDrawAction, LV_EVENT_SHORT_CLICKED, reinterpret_cast<void *>(intptr_t(i)));
-    if (i == Clear) lv_obj_add_event_cb(a.root, onClearHold, LV_EVENT_LONG_PRESSED, nullptr);
+    if (i == Clear) {
+      lv_obj_add_event_cb(a.root, onClearHold, LV_EVENT_LONG_PRESSED, nullptr);
+      holdRing(a.root, 0xFF9A70);
+    }
     lv_obj_set_flex_grow(a.root, 1);
     lv_obj_set_style_radius(a.root, 12, 0);
     flexRow(a.root, 6);

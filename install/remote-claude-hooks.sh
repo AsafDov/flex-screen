@@ -22,7 +22,8 @@
 #
 # And it registers the deck's tools with Claude Code here (deck_ask, deck_notify,
 # deck_progress, served by the companion through the same tunnel) and allows them without
-# asking: they only show things on the deck.
+# asking: they only show things on the deck. The same three are ~/.local/bin/flexctl for
+# your own scripts here (flexctl notify|ask|progress).
 set -eu
 
 port="${FLEX_SCREEN_PORT:-48151}"
@@ -97,6 +98,99 @@ exit 0
 '''
 USAGE = {"type": "command", "command": "sh '" + helper + "' " + url, "async": True, "timeout": 120}
 
+# flexctl, for scripts here: a note, a question or a progress bar on the deck, through the
+# same tunnel (the companion's /api/...). As on the PC: flexctl notify|ask|progress.
+flexctl = os.path.join(os.path.expanduser("~"), ".local", "bin", "flexctl")
+FLEXCTL = r'''#!/usr/bin/env python3
+# flexctl (flex-screen, added by remote-claude-hooks.sh): a note, a question or a progress
+# bar on the flex-screen deck, from any script here, through the SSH tunnel to the deck's PC.
+#
+#   flexctl notify "Backup done" [--level info|done|warning|error] [--from NAME]
+#   flexctl ask "Deploy to production?" Yes No [--wait 15] [--from NAME]
+#   flexctl progress 3 12 "Uploading" [--from NAME]
+#   flexctl progress --clear
+#
+# ask prints the option tapped. Exit codes: 0 done, 1 dismissed, 2 no answer in time,
+# 3 the deck or the tunnel isn't there, 4 wrong arguments. The name shown is this machine's
+# unless --from gives one.
+import argparse, json, os, socket, sys, urllib.error, urllib.request
+
+BASE = os.environ.get("FLEX_SCREEN_URL") or "@BASE@"
+
+
+def fail(text, code):
+    print("flexctl: " + text, file=sys.stderr)
+    sys.exit(code)
+
+
+def send(path, body):
+    request = urllib.request.Request(BASE + "/api/" + path, data=json.dumps(body).encode("utf-8"),
+                                     headers={"Content-Type": "application/json; charset=utf-8"}, method="POST")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # localhost is the tunnel, never a proxy
+    try:
+        # A question's reply sends a space every 10 s while it waits, so this never runs out.
+        with opener.open(request, timeout=60) as response:
+            status, text = response.status, response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        status, text = e.code, e.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, OSError):
+        fail("nothing answers on " + BASE + " (is the SSH tunnel to the deck's PC up?)", 3)
+    reply = json.loads(text) if text.strip() else {}
+    if status >= 400:
+        fail(reply.get("error") or "HTTP %d" % status, 3 if status == 503 else 4)
+    return reply
+
+
+common = argparse.ArgumentParser(add_help=False)
+common.add_argument("--from", "-from", dest="sender", help="the name shown on the deck (this machine's otherwise)")
+parser = argparse.ArgumentParser(prog="flexctl", description="Notes, questions and progress on the flex-screen deck.")
+commands = parser.add_subparsers(dest="command")
+p = commands.add_parser("notify", parents=[common], help="a note that stays until OK is tapped")
+p.add_argument("text", nargs="+")
+p.add_argument("--level", "-level", choices=["info", "done", "warning", "error"])
+p = commands.add_parser("ask", parents=[common], help="2 to 4 buttons; prints the one tapped")
+p.add_argument("question")
+p.add_argument("options", nargs="+")
+p.add_argument("--wait", "-wait", type=float, help="minutes to wait for a tap (15)")
+p = commands.add_parser("progress", parents=[common], help="DONE TOTAL [LABEL] in the deck's status line")
+p.add_argument("words", nargs="*")
+p.add_argument("--clear", "-clear", action="store_true")
+args = parser.parse_args()
+if not args.command:
+    parser.print_help(sys.stderr)
+    sys.exit(4)
+body = {"from": args.sender or socket.gethostname().split(".")[0]}
+
+if args.command == "notify":
+    body["text"] = " ".join(args.text)
+    if args.level:
+        body["level"] = args.level
+    send("notify", body)
+elif args.command == "ask":
+    if not 2 <= len(args.options) <= 4:
+        fail("ask takes 2 to 4 options", 4)
+    body.update(question=args.question, options=args.options)
+    if args.wait:
+        body["wait_minutes"] = args.wait
+    reply = send("ask", body)
+    if reply.get("outcome") == "picked":
+        print(reply.get("answer", ""))
+        sys.exit(0)
+    fail("dismissed on the deck" if reply.get("outcome") == "dismissed" else "no answer on the deck in time",
+         1 if reply.get("outcome") == "dismissed" else 2)
+else:
+    if args.clear:
+        body["clear"] = True
+    else:
+        try:
+            body.update(done=float(args.words[0]), total=float(args.words[1]))
+        except (IndexError, ValueError):
+            fail("progress takes DONE TOTAL [LABEL], or --clear", 4)
+        if len(args.words) > 2:
+            body["label"] = " ".join(args.words[2:])
+    send("progress", body)
+'''
+
 # The deck's Stop for a session: Claude waits for this before each tool call, and the
 # companion answers "don't continue" once the deck asked that session to stop. No tunnel:
 # curl fails at once, and "|| true" keeps that quiet.
@@ -148,14 +242,30 @@ with open(tmp, "w", encoding="utf-8") as f:
     json.dump(root, f, indent=2)
     f.write("\n")
 os.replace(tmp, path)
+def is_ours(file):
+    try:
+        return "flex-screen" in open(file, encoding="utf-8").read(400)
+    except OSError:
+        return False
+
 if mode == "--remove":
     for leftover in (helper, os.path.join(os.path.dirname(path), ".flex-screen-usage-at")):
         if os.path.exists(leftover):
             os.remove(leftover)
+    if os.path.exists(flexctl) and is_ours(flexctl):
+        os.remove(flexctl)
 else:
     with open(helper, "w", encoding="utf-8", newline="\n") as f:
         f.write(HELPER)
     os.chmod(helper, 0o755)
+    if not os.path.exists(flexctl) or is_ours(flexctl):  # never over someone else's flexctl
+        os.makedirs(os.path.dirname(flexctl), exist_ok=True)
+        with open(flexctl, "w", encoding="utf-8", newline="\n") as f:
+            f.write(FLEXCTL.replace("@BASE@", url.rsplit("/claude", 1)[0]))
+        os.chmod(flexctl, 0o755)
+        print("Wrote " + flexctl + " (flexctl notify|ask|progress, for scripts here)")
+        if os.path.dirname(flexctl) not in os.environ.get("PATH", "").split(os.pathsep):
+            print("  ~/.local/bin isn't on your PATH yet: add it, or run ~/.local/bin/flexctl")
 print(("Removed the flex-screen hooks from " if mode == "--remove" else "Added the flex-screen hooks to ") + path)
 EOF
 

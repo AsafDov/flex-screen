@@ -7,8 +7,9 @@ namespace FlexScreen.Companion;
 
 /// <summary>
 /// The companion's endpoint on this PC only (http://localhost:48151): Claude Code hooks
-/// POST their events to /claude, Claude Code calls the deck's tools on /mcp, the VS Code
-/// extension keeps a WebSocket open on /vscode, and the browser extension one on /browser.
+/// POST their events to /claude, Claude Code calls the deck's tools on /mcp, scripts (flexctl)
+/// theirs on /api/…, the VS Code extension keeps a WebSocket open on /vscode, and the
+/// browser extension one on /browser.
 /// </summary>
 sealed class LocalServer
 {
@@ -39,6 +40,9 @@ sealed class LocalServer
 
     /// <summary>Claude Code calling the deck's tools (MCP over HTTP, <see cref="DeckTools"/>); the handler answers.</summary>
     public event Func<HttpListenerContext, Task>? Mcp;
+
+    /// <summary>A script's note, question or progress (<see cref="ScriptApi"/>); the handler answers.</summary>
+    public event Func<HttpListenerContext, Task>? Api;
 
     /// <summary>A command for the deck from /deck; a screen shot comes back as PNG bytes.</summary>
     public event Func<JsonNode, Task<byte[]?>>? DeckCommand;
@@ -218,6 +222,10 @@ sealed class LocalServer
 
                 case "/mcp" when FromLocalTool(request, needsTestHeader: false) && Mcp is { } serve:
                     await serve(context);
+                    return;
+
+                case { } path when path.StartsWith("/api/", StringComparison.Ordinal) && FromLocalTool(request, needsTestHeader: false) && Api is { } api:
+                    await api(context);
                     return;
 
                 case "/vscode" when request.IsWebSocketRequest && NotFromWebPage(request):
