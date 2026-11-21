@@ -112,7 +112,7 @@ a pixel (LVGL shares a page's leftover pixels out over its rows from the top, so
 | | Terminal | `terminal` | 9 x 10 | VS Code's last commands; a tap runs one again |
 | | Git | `git` | 5 x 7 | Branch, changes, last commit, Pull/Push/Fetch/Stash/Commit |
 | | Build | `build` | 5 x 3 | The last build and the last 10 runs |
-| Windows | Windows | `windows` | 9 x 12 | The open windows as tiles, the desktop map, dragging a window to its zone |
+| Windows | Windows | `windows` | 9 x 12 | The open windows as tiles; one dragged brings up the desktop map, to drop it in a zone or full screen |
 | | FancyZones | `fancyzones` | 5 x 12 | Layouts, the zone map, the monitors |
 | Capture | Tasks | `tasks` | 8 x 12 | Every task source's tasks, chips per list, open, tick, add |
 | | Clipboard | `clipboard` | 6 x 7 | Copies and pins; tap to paste, hold to pin |
@@ -2198,6 +2198,21 @@ Gotchas found after phase 6:
   it by holding does.
   - Checked: `test_windows` checks the hint shows whole; the simulator's full suite (518 of
     518); the ESP32 build (flash 21.8%, RAM 27.9%); on the deck, flashed with `ota_upload.py`.
+- No Map button, firmware 1.3.2 (2026-11-21; "the windows tab still has the map button,
+  which is nice, but it competes with the snap window when dragged. I think its best if we
+  remove it"): the Map view (0.30.0), the open windows card swapped for the monitors with
+  each window drawn where it is, to tap or drag into a zone, is gone with its button. A tile
+  dragged still brings up the desktop map (1.1.0): the zones, what fills each, Full screen per
+  monitor and the window drawn where it would go; it's laid out afresh at each drag, as the PC
+  last said, and holds still until it's let go. The header is "OPEN WINDOWS", the hint and
+  Lock PC. The companion still sends each window's place and stacking (`r`, `z`); the deck
+  uses the places for the drag's preview and no longer the stacking. No protocol change.
+  - Checked: `test_desktop_map` is gone (its zone, no-zone and off-the-monitors drops are
+    `test_tile_drag`'s too); `test_windows` checks there's no Map button. The simulator's full
+    suite: 505 of 506, the miss Full screen staying over the tiles after a drag (it sits
+    beside the map, and the Map toggle's code was what hid it); hidden with the map again,
+    `test_windows`, `test_tile_drag` and `test_page_tiles` 67 of 67. The ESP32 build (flash
+    21.8%, RAM 27.8%, ~3 KB smaller); the README's slideshow taken again; on the deck.
 
 ## Decisions
 

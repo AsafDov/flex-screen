@@ -288,9 +288,10 @@ the first site that matches wins (yours before the built-in ones).
 - The 8 most recently used windows with their icons, in taskbar order. Tap to focus (tap
   again to minimize); a minimized window keeps its tile, icon dimmed, and a tap brings it
   back. Hold to close the window, which takes its tile away at once.
-- **Drag a tile to snap its window**: as soon as a tile moves under your finger the desktop
-  map (below) comes up in the tiles' place: every monitor's FancyZones zones, each naming
-  the app that fills it now, and above them a **Full screen** tile for each monitor. Where
+- **Drag a tile to snap its window**: as soon as a tile moves under your finger a map of
+  your monitors, as they're arranged, comes up in the tiles' place: every monitor's
+  FancyZones zones, each naming the app that fills it now, and above them a **Full screen**
+  tile for each monitor. Where
   the window would go is drawn as it would be there, with its icon and name: the zone under
   your finger (in place of what's there now), or the whole monitor over its Full screen
   tile. Let go and it goes there, on whichever monitor (minimized windows too): snapped
@@ -299,15 +300,6 @@ the first site that matches wins (yours before the built-in ones).
   in the zone it fills already, nothing moves. A swipe that starts on a tile drags the
   window, so swipe to another page from elsewhere on the page, or use the rail.
 - Show desktop and Lock PC.
-- **Map** (beside Lock PC) shows the desktop map instead of the tiles (**Tiles** goes back):
-  your monitors as they're arranged, each open window drawn where it is on them, the one in
-  front on top, with its icon and name when there's room. Tap a window to bring it up (or
-  minimize the one in front, as a tile does). Drag one to move it: the FancyZones zones show
-  while it's dragged, the one under your finger lit, and letting go snaps the window into
-  it, on whichever monitor. On a monitor without zones it goes where you let go, its size
-  kept. Let go off the monitors, or back in the zone it fills already, and nothing moves.
-  Minimized windows stay on the tiles.
-  <img src="screens/windows-map.png" alt="The desktop map: a landscape and a portrait monitor with the open windows drawn where they are" width="560">
 - FancyZones: switch each monitor's layout (Priority grid, Columns, Rows, Grid or your
   custom layouts), tap a zone on the map to snap the active window into it, tap it again
   to maximize. A monitor picker for multi-monitor setups.

@@ -569,8 +569,10 @@ def test_dev(d: Deck) -> None:
 
 def test_windows(d: Deck) -> None:
     d.page(3)
-    check("windows: the header's hint shows whole beside Map and Lock PC", on_screen(d, 'Hold: close', exact=True),
+    check("windows: the header's hint shows whole beside Lock PC", on_screen(d, 'Hold: close', exact=True),
           str([n.get('text') for n in shown(d) if 'old' in n.get('text', '')]))
+    # No Map button (1.3.2): a dragged tile's map is the only one.
+    check('windows: no Map button in the header', not on_screen(d, 'Map', exact=True) and not on_screen(d, 'Tiles', exact=True))
     expect_act(d, 'windows: tap a tile focuses it', 'Chrome', 'win.focus', exact=True, id='102')
     expect_act(d, 'windows: tap a minimized tile brings it back', 'Obsidian', 'win.focus', exact=True, id='104')
     expect_act(d, 'windows: hold a tile closes it', 'Explorer', 'win.close', exact=True, hold=True, id='105')
@@ -620,69 +622,6 @@ def layout_thumb(d: Deck, name: str) -> tuple[dict | None, list[dict]]:
     return thumb, cells[::-1]
 
 
-def on_map(d: Deck, text: str) -> dict | None:
-    """A label on the desktop map (the open windows card, left of the FancyZones panel): its
-    text, or its start when the window is too narrow for all of it ("Termin…")."""
-    for n in shown(d):
-        t = n.get('text', '')
-        cut = t.rstrip('.…')
-        if (t == text or (len(cut) >= 4 and len(cut) < len(t) and text.startswith(cut))) and RAIL_W < n['x'] < 460 and 80 < n['y'] < 420:
-            return n
-    return None
-
-
-def test_desktop_map(d: Deck) -> None:
-    d.page(3)
-    check('map: the tiles show first', on_screen(d, 'Show desktop'))
-    tap(d, 'Map', exact=True)
-    d.settle()
-    check('map: Map shows the desktop map instead of the tiles',
-          not on_screen(d, 'Show desktop') and on_screen(d, 'Tiles', exact=True) and on_screen(d, 'Drag: move', exact=True))
-    d.shot(os.path.join(OUT, 'windows-map.png'))
-    dell, lenovo = on_map(d, LV_HOME + ' DELL P2722H'), on_map(d, 'LEN T24i-10')
-    check('map: both monitors, side by side', bool(dell and lenovo) and lenovo['x'] > dell['x'], f'{dell} {lenovo}')
-    check('map: a minimized window is left off it', not on_map(d, 'Obsidian') and not on_map(d, 'Spotify'))
-    vscode = on_map(d, 'VS Code')
-    mark = d.mark()
-    if vscode:
-        d.tap(vscode['x'] + 10, vscode['y'] + 6)
-    check('map: tap a window focuses it', bool(did(d, mark, 'win.focus', id='101')))
-    terminal = on_map(d, 'Terminal')
-    check('map: the windows show their names', bool(terminal and vscode))
-    if terminal and lenovo:
-        # Into the portrait monitor's lower zone (Claude's), just above its name at the bottom.
-        mark = d.mark()
-        d.drag(terminal['x'] + 10, terminal['y'] + 6, lenovo['x'] + lenovo['w'] // 2, lenovo['y'] - 20, steps=16, ms=600)
-        hit = did(d, mark, 'zone.snap')
-        check('map: drag a window into a zone snaps it there', bool(hit) and hit.get('mon') == 1 and hit.get('zone') == 1 and
-              hit.get('hwnd') == 103, str(hit))
-        check('map: the drag stays on the Windows page', on_screen(d, 'Tiles', exact=True))
-    explorer = on_map(d, 'Explorer') or on_map(d, 'PrusaSlicer')
-    check('map: a window behind others is on it too', bool(explorer))
-    if explorer and dell:
-        # Below the landscape monitor, where there's no screen: nothing moves.
-        mark = d.mark()
-        d.drag(explorer['x'] + 10, explorer['y'] + 6, dell['x'] + dell['w'] // 2, dell['y'] + 40, steps=16, ms=600)
-        time.sleep(0.5)
-        check('map: let go off the monitors, nothing moves', not d.took('zone.snap', since=mark) and not d.took('win.move', since=mark))
-    check('map: no Full screen in the Map view (only while a tile is dragged)', not on_screen(d, 'Full screen', exact=True))
-    # A monitor without zones: the window goes where it's let go.
-    no_zones = fixtures.zones()
-    no_zones['mons'][1]['zones'] = []
-    d.state('zones', no_zones)
-    d.settle()
-    vscode, lenovo = on_map(d, 'VS Code'), on_map(d, 'LEN T24i-10')
-    if vscode and lenovo:
-        mark = d.mark()
-        d.drag(vscode['x'] + 10, vscode['y'] + 6, lenovo['x'] + 10, lenovo['y'] - 120, steps=16, ms=600)
-        hit = did(d, mark, 'win.move')
-        check('map: on a monitor without zones it moves where it was let go', bool(hit) and hit.get('id') == '101' and
-              hit.get('mon') == 1, str(hit))
-    tap(d, 'Tiles', exact=True)
-    d.settle()
-    check('map: Tiles shows the tiles again', on_screen(d, 'Show desktop'))
-
-
 def tile(d: Deck, app: str) -> dict | None:
     """A window's tile on the Windows page: its app's name, in the open windows card."""
     return next((n for n in shown(d) if n.get('text') == app and RAIL_W < n['x'] < 460), None)
@@ -702,8 +641,7 @@ def test_tile_drag(d: Deck) -> None:
         return
 
     # A press that moves past 16 px is a drag: the map comes up in the tiles' place. Where it
-    # puts things is read off it then, to aim at (its Full screen row leaves the map less
-    # room than in the Map view).
+    # puts things is read off it then, to aim at.
     mark = d.mark()
     x0, y0 = terminal['x'] + 10, terminal['y'] + 6
     d.touch(x0, y0, True)
@@ -756,7 +694,7 @@ def test_tile_drag(d: Deck) -> None:
           hit.get('hwnd') == 103, str(hit))
     check('tile drag: a drag is not a hold (no close) nor a tap (no focus)',
           not d.took('win.close', since=mark) and not d.took('win.focus', since=mark), str(d.acts(mark)))
-    check('tile drag: the tiles come back after', on_screen(d, 'Show desktop') and on_screen(d, 'Map', exact=True) and
+    check('tile drag: the tiles come back after', on_screen(d, 'Show desktop') and on_screen(d, 'Hold: close', exact=True) and
           not on_screen(d, 'Moving Terminal', exact=True))
     check('tile drag: the drag stays on the Windows page', on_screen(d, 'Lock PC'))
 
@@ -2427,7 +2365,7 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_today_tiles, test_page_tiles, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_seek, test_media_accent, test_dev, test_windows, test_desktop_map, test_tile_drag, test_capture, test_tasks, test_task_sources, test_numpad,
+        for test in (test_today, test_today_tiles, test_page_tiles, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_seek, test_media_accent, test_dev, test_windows, test_tile_drag, test_capture, test_tasks, test_task_sources, test_numpad,
                      test_toast, test_call, test_zoom, test_cheat_sheet, test_face, test_launcher, test_shortcut_actions, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_scripts, test_hold_ring, test_context_lock, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day

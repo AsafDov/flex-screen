@@ -1,8 +1,8 @@
 // The Windows tile (Windows): the 8 most recently used windows as tiles (tap to focus or
-// minimize, hold to close, Show desktop, Lock PC), and the desktop map in their place: the
-// monitors as arranged with each window drawn where it is, to tap or drag into a zone. A
-// tile dragged brings the map up too, with Full screen for each monitor. One of a kind (the
-// manager places each kind once), so its state lives here.
+// minimize, hold to close, Show desktop, Lock PC). A tile dragged brings up the desktop map
+// in their place, the monitors as arranged with their zones and Full screen for each, to let
+// the window go into. One of a kind (the manager places each kind once), so its state lives
+// here.
 #include "fonts/font_icons.h"
 #include "icons.h"
 #include "model.h"
@@ -42,62 +42,36 @@ struct Request {
 Request requests[model::Windows::kMax];
 int next_request = 0;
 
-// ---- the desktop map: the open windows card's other view
+// ---- the desktop map, while a tile is dragged
 //
-// The monitors as they're arranged, each open window drawn where it is on them, the one in
-// front on top. A tap on a window brings it up (or minimizes the one in front, as a tile
-// does); a drag moves it: the FancyZones zones show while it's dragged, the one under the
-// finger lit, and letting go snaps the window into it, on whichever monitor. On a monitor
-// without zones it goes where it's let go, its size kept. Let go off the monitors, or back
-// in the zone it already fills, and nothing happens. Minimized windows stay on the tiles.
+// It comes up in the tiles' place: the monitors as they're arranged, their FancyZones zones
+// drawn on them with what fills each named (the windows themselves aren't drawn: their names
+// ran into the dragged one's), and Full screen for each monitor above it. Where the window
+// would go shows as it would be there: the zone under the finger filled with it, or the
+// whole monitor, or its own size on a monitor without zones. Letting go puts it there; then
+// the tiles come back. Let go off the monitors, or back in the zone it already fills, and
+// nothing happens. (Until 1.3.2 a Map button beside Lock PC showed a map of its own, the
+// windows drawn where they are to tap or drag; it competed with this one, so it's gone.)
 constexpr int kMaxMons = model::Zones::kMax;
 constexpr int kMaxZoneViews = kMaxMons * model::Monitor::kMaxZones;
 constexpr int kMapPad = 4;
-constexpr int kDragStart = 8;  // px a press moves before it's a drag
-
-struct MapWin {
-  lv_obj_t *root, *icon, *name;
-  int index;  // in model::windows.list; -1 when unused
-};
 
 struct {
-  bool on = false;  // the map shows instead of the tiles
-  lv_obj_t *grid, *toggle_label, *hint;
+  lv_obj_t *grid, *hint;
   lv_obj_t *area, *note;
   lv_obj_t *mons[kMaxMons], *mon_names[kMaxMons];
   lv_obj_t *zones[kMaxZoneViews];
-  lv_obj_t *zone_apps[kMaxZoneViews];  // what fills each zone now, named while a tile is dragged
+  lv_obj_t *zone_apps[kMaxZoneViews];  // what fills each zone now
   int8_t zone_mon[kMaxZoneViews], zone_index[kMaxZoneViews];  // bytes: this sits in internal RAM
   int zone_count = 0;
-  MapWin wins[model::Windows::kMax];
-  // Full screen, one per monitor, above the map while a tile is dragged (not in the Map view:
-  // its room there cost the windows their names).
-  lv_obj_t *full, *full_tiles[kMaxMons], *full_names[kMaxMons];
-  bool full_on = false;
+  lv_obj_t *full, *full_tiles[kMaxMons], *full_names[kMaxMons];  // Full screen, one per monitor, above the map
   int full_lit = -1;
-  lv_obj_t *preview, *preview_icon, *preview_name;  // where a dragged tile's window would go
+  lv_obj_t *preview, *preview_icon, *preview_name;  // where the dragged tile's window would go
   // The PC's screens onto the map: map = (screen - v) * scale + o.
   float scale = 0;
   int vx = 0, vy = 0, ox = 0, oy = 0;
-  uint32_t windows_seen = UINT32_MAX, zones_seen = UINT32_MAX, icons_seen = UINT32_MAX;
-  int32_t size_seen = -1;
-  int connected_seen = -1;
 } mp;
 
-struct {
-  int slot = -1;  // the MapWin pressed
-  bool dragging = false;
-  lv_point_t start;  // the finger when it went down, on the deck's screen
-  int32_t x0 = 0, y0 = 0;  // the window's place on the map then
-  int lit = -1;            // the zone view under the finger (this drag's or a tile's)
-} drag;
-
-// A tile dragged: the desktop map comes up in the tiles' place, the zones drawn on it with
-// what fills each named (the windows themselves aren't drawn: their names ran into the
-// dragged one's), and Full screen for each monitor above it. Where the window would go
-// shows as it would be there: the zone under the finger filled with it, or the whole
-// monitor, or its own size on a monitor without zones. Letting go puts it there; then the
-// tiles come back. No Map press first.
 constexpr int kTileDragStart = 16;  // px: as far as the hold ring lets the finger wander (past it there's no hold)
 constexpr int kFullH = 42;          // the Full screen tiles: two lines
 
@@ -141,7 +115,7 @@ void onTileHold(lv_event_t *e) {
 void onDesktop(lv_event_t *) { pc::showDesktop(); }
 void onLock(lv_event_t *) { pc::lockPc(); }
 
-// ---- the desktop map's actions
+// ---- the desktop map's geometry
 
 int mapX(int x) { return mp.ox + int(lroundf((x - mp.vx) * mp.scale)); }
 int mapY(int y) { return mp.oy + int(lroundf((y - mp.vy) * mp.scale)); }
@@ -181,13 +155,6 @@ void showZones(bool show) {
   for (int v = 0; v < mp.zone_count; v++) setHidden(mp.zones[v], !show);
 }
 
-void lightZone(int v) {
-  if (v == drag.lit) return;
-  if (drag.lit >= 0) lv_obj_set_style_bg_opa(mp.zones[drag.lit], LV_OPA_TRANSP, 0);
-  if (v >= 0) lv_obj_set_style_bg_opa(mp.zones[v], LV_OPA_40, 0);
-  drag.lit = v;
-}
-
 // How much two boxes overlap, 0 to 1 (as the companion judges a window filling a zone).
 float overlap(int ax, int ay, int aw, int ah, int bx, int by, int bw, int bh) {
   const int w = min(ax + aw, bx + bw) - max(ax, bx), h = min(ay + ah, by + bh) - max(ay, by);
@@ -221,115 +188,20 @@ void lightFull(int i) {
   mp.full_lit = i;
 }
 
-// A window let go where the PC is to move it stays there until the PC's next list (~300 ms)
-// says where it went; with no word this long, it's laid out again as the PC last said.
-constexpr uint32_t kMovedWaitMs = 1500;
-uint32_t relayout_ms = 0;
-
-// Without a move asked for, the map is laid out again at once (the window goes back).
-void endDrag(bool moved = false) {
-  lightZone(-1);
-  showZones(false);
-  drag.slot = -1;
-  drag.dragging = false;
-  if (moved) relayout_ms = millis() + kMovedWaitMs;
-  else mp.windows_seen = UINT32_MAX;
-}
-
-void onMapPress(lv_event_t *e) {
-  lv_indev_t *indev = lv_indev_active();
-  const int slot = indexOf(e);
-  if (!indev || mp.wins[slot].index < 0) return;
-  drag.slot = slot;
-  drag.dragging = false;
-  drag.lit = -1;
-  lv_indev_get_point(indev, &drag.start);
-  drag.x0 = lv_obj_get_x(mp.wins[slot].root);
-  drag.y0 = lv_obj_get_y(mp.wins[slot].root);
-}
-
-void onMapPressing(lv_event_t *e) {
-  lv_indev_t *indev = lv_indev_active();
-  const int slot = indexOf(e);
-  if (!indev || slot != drag.slot) return;
-  lv_point_t p;
-  lv_indev_get_point(indev, &p);
-  const int dx = p.x - drag.start.x, dy = p.y - drag.start.y;
-  lv_obj_t *root = mp.wins[slot].root;
-  if (!drag.dragging) {
-    if (abs(dx) < kDragStart && abs(dy) < kDragStart) return;
-    drag.dragging = true;
-    lv_obj_move_foreground(root);
-    showZones(true);
-  }
-  lv_obj_set_pos(root, drag.x0 + dx, drag.y0 + dy);
-  const lv_point_t at = fingerOnScreens(p);
-  lightZone(zoneViewAt(at.x, at.y));
-}
-
-// Asks the PC to move the window where it was let go; false when it isn't to move.
-bool drop(int slot, const lv_point_t &p) {
-  const model::Window &win = model::windows.list[mp.wins[slot].index];
-  const lv_point_t at = fingerOnScreens(p);
-  const int mon = monitorAt(at.x, at.y);
-  if (mon < 0) return false;  // off the monitors: it goes back
-  const model::Monitor &m = model::zones.mons[mon];
-  lv_obj_t *root = mp.wins[slot].root;
-  const int v = zoneViewAt(at.x, at.y);
-  if (v >= 0) {
-    const model::Zone &z = m.zones[mp.zone_index[v]];
-    // Back in the zone it fills already: nothing (the companion would maximize it, as a tap
-    // on the zone map does).
-    if (overlap(win.x, win.y, win.w, win.h, m.x + z.x, m.y + z.y, z.w, z.h) > 0.9f) return false;
-    pc::snapWindowTo(win.id.c_str(), mon, mp.zone_index[v]);
-    lv_obj_set_pos(root, mapX(m.x + z.x), mapY(m.y + z.y));  // there at once
-    lv_obj_set_size(root, max(int(z.w * mp.scale), 12), max(int(z.h * mp.scale), 12));
-    return true;
-  }
-  pc::moveWindow(win.id.c_str(), mon, screenX(lv_obj_get_x(root)) - m.x, screenY(lv_obj_get_y(root)) - m.y);
-  return true;
-}
-
-void onMapRelease(lv_event_t *e) {
-  lv_indev_t *indev = lv_indev_active();
-  const int slot = indexOf(e);
-  if (slot != drag.slot) return;
-  const int index = mp.wins[slot].index;
-  bool moved = false;
-  if (index >= 0 && index < model::windows.count) {
-    if (!drag.dragging) {
-      pc::focusWindow(model::windows.list[index].id.c_str());
-    } else if (indev) {
-      lv_point_t p;
-      lv_indev_get_point(indev, &p);
-      moved = drop(slot, p);
-    }
-  }
-  endDrag(moved);
-}
-
-void onMapLost(lv_event_t *e) {
-  if (indexOf(e) == drag.slot) endDrag();
-}
-
-void showMap(bool on) {
-  mp.on = on;
-  setHidden(mp.grid, on);
-  setHidden(mp.area, !on);
-  if (!on) setHidden(mp.full, true);
-  setText(mp.toggle_label, on ? "Tiles" : "Map");
-  setText(mp.hint, on ? "Drag: move" : "Hold: close");  // tapping focuses, as anyone would try first
-  mp.windows_seen = UINT32_MAX;
-}
-
-void onToggle(lv_event_t *) {
-  if (drag.slot >= 0) endDrag();
-  showMap(!mp.on);
-}
-
 // ---- a tile dragged onto the map
 
-void updateMap();
+void layoutMap();
+
+// The map in the tiles' place, or the tiles back. Full screen sits beside the map, not in
+// it: layoutMap shows it, and it goes with the map.
+void showMap(bool on) {
+  setHidden(mp.grid, on);
+  setHidden(mp.area, !on);
+  if (!on) {
+    setHidden(mp.full, true);
+    setText(mp.hint, "Hold: close");
+  }
+}
 
 // The map is placed (and the PC's screens can be read off it).
 bool mapPlaced() { return mp.scale > 0 && pc::connected() && model::zones.mon_count > 0; }
@@ -401,13 +273,10 @@ void showPreview(const Target &t) {
 void startTileDrag(const model::Window &win, const lv_point_t &p) {
   tile_drag.dragged = true;
   tile_drag.win = win;
-  if (drag.slot >= 0) endDrag();
-  mp.full_on = true;
   showMap(true);
   setTextf(mp.hint, "Moving %s", win.app.c_str());
-  updateMap();  // placed now, not at the next update: the zones are needed under the finger at once
+  layoutMap();  // as the PC last said, now: the zones are needed under the finger at once
   tile_drag.dragging = true;  // from here the map holds still until it's let go
-  for (MapWin &mw : mp.wins) setHidden(mw.root, true);  // drawn again when the map next shows
   showZones(true);
   const int line = lv_font_get_line_height(&small_font);
   for (int v = 0; v < mp.zone_count; v++) {
@@ -452,15 +321,14 @@ void endTileDrag() {
   lightFull(-1);
   for (int v = 0; v < kMaxZoneViews; v++) setHidden(mp.zone_apps[v], true);
   showZones(false);
-  mp.full_on = false;
-  showMap(false);  // laid out afresh when it next shows, the windows drawn again, no Full screen
+  showMap(false);  // laid out afresh at the next drag
 }
 
 void onTilePress(lv_event_t *e) {
   lv_indev_t *indev = lv_indev_active();
   tile_drag.dragged = false;
   tile_drag.tile = -1;
-  if (!indev || indexOf(e) >= model::windows.count || mp.on) return;
+  if (!indev || indexOf(e) >= model::windows.count) return;
   tile_drag.tile = indexOf(e);
   lv_indev_get_point(indev, &tile_drag.start);
 }
@@ -547,12 +415,12 @@ void buildTile(lv_obj_t *grid, int i) {
   ellipsize(t.title);
 }
 
-// The map's pieces, made once and placed when the windows or monitors change: monitors at
-// the back, the zones over them (shown while a window is dragged), the windows on top.
+// The map's pieces, made once and laid out when a tile is dragged: monitors at the back, the
+// zones over them, where the window would go on top.
 void buildMap(lv_obj_t *card) {
-  // Full screen on each monitor, above the map while a tile is dragged: the window let go
-  // on one is maximized there. Two lines, "Full screen" over the monitor's name: on one,
-  // "Full screen · DELL P2722H" was cut.
+  // Full screen on each monitor, above the map: the window let go on one is maximized there.
+  // Two lines, "Full screen" over the monitor's name: on one, "Full screen · DELL P2722H"
+  // was cut.
   lv_obj_t *row = mp.full = box(card);
   lv_obj_set_size(row, LV_PCT(100), kFullH);
   flexRow(row, 8);
@@ -614,33 +482,6 @@ void buildMap(lv_obj_t *card) {
     lv_obj_set_hidden(app, true);
     lv_obj_set_hidden(z, true);
   }
-  for (int i = 0; i < model::Windows::kMax; i++) {
-    MapWin &mw = mp.wins[i];
-    mw.index = -1;
-    mw.root = box(a);
-    lv_obj_set_clickable(mw.root, true);
-    // A drag here moves the window: not a swipe to another page, nor a scroll.
-    lv_obj_set_gesture_bubble(mw.root, false);
-    lv_obj_set_scroll_chain_hor(mw.root, false);
-    lv_obj_set_scroll_chain_ver(mw.root, false);
-    lv_obj_set_style_bg_color(mw.root, hex(kRaised), 0);
-    lv_obj_set_style_bg_opa(mw.root, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(mw.root, 5, 0);
-    lv_obj_set_style_border_color(mw.root, hex(kBorder), 0);
-    lv_obj_set_style_border_width(mw.root, 1, 0);
-    lv_obj_set_style_pad_all(mw.root, 4, 0);
-    void *user = reinterpret_cast<void *>(intptr_t(i));
-    lv_obj_add_event_cb(mw.root, onMapPress, LV_EVENT_PRESSED, user);
-    lv_obj_add_event_cb(mw.root, onMapPressing, LV_EVENT_PRESSING, user);
-    lv_obj_add_event_cb(mw.root, onMapRelease, LV_EVENT_RELEASED, user);
-    lv_obj_add_event_cb(mw.root, onMapLost, LV_EVENT_PRESS_LOST, user);
-    mw.icon = lv_image_create(mw.root);
-    lv_obj_set_size(mw.icon, icons::kSize, icons::kSize);
-    mw.name = label(mw.root, "", &small_font, kText);
-    lv_label_set_long_mode(mw.name, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_height(mw.name, lv_font_get_line_height(&small_font));  // one line, then "…"
-    lv_obj_set_hidden(mw.root, true);
-  }
   mp.note = label(a, "", &body_font, kMuted);
   lv_obj_center(mp.note);
   // Where a dragged tile's window would go, drawn as it would be there.
@@ -670,16 +511,11 @@ void buildWindows(lv_obj_t *c) {
   lv_obj_set_size(head, LV_PCT(100), LV_SIZE_CONTENT);
   flexRow(head, 6);
   label(head, "OPEN WINDOWS", &small_font, kMuted);
-  // "Tap: focus · hold: close" was cut to "hold:…" beside Map and Lock PC.
+  // Tapping focuses, as anyone would try first ("Tap: focus · hold: close" was cut beside the
+  // Map button there was until 1.3.2).
   lv_obj_t *hint = mp.hint = label(head, "Hold: close", &small_font, kMuted);
   fillRow(hint);
   lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_RIGHT, 0);
-  // The tiles or the desktop map.
-  lv_obj_t *toggle = button(head, LV_SIZE_CONTENT, 28, kRaised, onToggle);
-  lv_obj_set_style_radius(toggle, 8, 0);
-  lv_obj_set_style_pad_hor(toggle, 8, 0);
-  mp.toggle_label = label(toggle, "Map", &small_font, kText);
-  lv_obj_center(mp.toggle_label);
   lv_obj_t *lock = button(head, LV_SIZE_CONTENT, 28, kRaised, onLock);
   lv_obj_set_style_radius(lock, 8, 0);
   lv_obj_set_style_pad_hor(lock, 8, 0);
@@ -779,14 +615,13 @@ void updateTiles() {
   setText(w.empty, !online ? "PC offline" : count == 0 ? "No open windows" : "");
 }
 
-// Places the monitors, their zones and the windows on the map, scaled to fit it.
+// Places the monitors and their zones on the map, scaled to fit it.
 void layoutMap() {
   const model::Zones &z = model::zones;
-  const model::Windows &ws = model::windows;
   const bool online = pc::connected();
   const int mons = online ? z.mon_count : 0;
-  // Full screen for each monitor first (while a tile is dragged): it takes the map's room.
-  setHidden(mp.full, !mp.full_on || mons == 0);
+  // Full screen for each monitor first: it takes the map's room.
+  setHidden(mp.full, mons == 0);
   for (int i = 0; i < kMaxMons; i++) {
     setHidden(mp.full_tiles[i], i >= mons);
     if (i < mons) setText(mp.full_names[i], z.mons[i].name.c_str());
@@ -837,70 +672,6 @@ void layoutMap() {
     }
   }
   for (int v = mp.zone_count; v < kMaxZoneViews; v++) setHidden(mp.zones[v], true);
-
-  // The windows, back to front, so the one in front is drawn last.
-  int order[model::Windows::kMax], n = 0;
-  for (int i = 0; placed && i < ws.count; i++) {
-    if (!ws.list[i].minimized && ws.list[i].w > 0 && ws.list[i].h > 0) order[n++] = i;
-  }
-  for (int a = 1; a < n; a++) {  // by z, the furthest back first
-    for (int b = a; b > 0 && ws.list[order[b]].z > ws.list[order[b - 1]].z; b--) {
-      const int t = order[b];
-      order[b] = order[b - 1];
-      order[b - 1] = t;
-    }
-  }
-  for (int s = 0; s < model::Windows::kMax; s++) {
-    MapWin &mw = mp.wins[s];
-    mw.index = s < n ? order[s] : -1;
-    setHidden(mw.root, mw.index < 0);
-    if (mw.index < 0) continue;
-    const model::Window &win = ws.list[mw.index];
-    const int x = mapX(win.x), y = mapY(win.y);
-    const int w = max(int(win.w * mp.scale), 12), h = max(int(win.h * mp.scale), 12);
-    lv_obj_set_pos(mw.root, x, y);
-    lv_obj_set_size(mw.root, w, h);
-    lv_obj_move_foreground(mw.root);
-    setBgColor(mw.root, win.active ? kSelected : kRaised);
-    setBorderColor(mw.root, win.active ? kAccent : kBorder);
-    if (lv_obj_get_style_border_width(mw.root, LV_PART_MAIN) != (win.active ? 2 : 1)) lv_obj_set_style_border_width(mw.root, win.active ? 2 : 1, 0);
-    // The icon when there's room, the app's name beside it (or alone) when there's more.
-    const lv_image_dsc_t *icon = icons::get(win.icon);
-    if (!icon && win.icon.length()) requestIcon(win.icon);
-    const bool show_icon = icon && w >= icons::kSize + 10 && h >= icons::kSize + 10;
-    setHidden(mw.icon, !show_icon);
-    if (show_icon && lv_image_get_src(mw.icon) != icon) lv_image_set_src(mw.icon, icon);
-    lv_obj_align(mw.icon, LV_ALIGN_TOP_LEFT, 0, 0);
-    const int name_x = show_icon ? icons::kSize + 6 : 0;
-    const int name_w = w - 10 - name_x;
-    const bool show_name = name_w >= 30 && h >= 26;
-    setHidden(mw.name, !show_name);
-    if (show_name) {
-      lv_obj_set_width(mw.name, name_w);
-      lv_obj_align(mw.name, LV_ALIGN_TOP_LEFT, name_x, show_icon ? (icons::kSize - lv_font_get_line_height(&small_font)) / 2 : 0);
-      setText(mw.name, win.app.c_str());
-      setTextColor(mw.name, win.active ? kHighlightText : kText);
-    }
-  }
-  lv_obj_move_foreground(mp.note);
-}
-
-void updateMap() {
-  const int connected = pc::connected() ? 1 : 0;
-  const int32_t size = lv_obj_get_width(mp.area) << 16 | lv_obj_get_height(mp.area);
-  const bool waited = relayout_ms && int32_t(millis() - relayout_ms) >= 0;
-  if (model::windows.version == mp.windows_seen && model::zones.version == mp.zones_seen && icons::version() == mp.icons_seen &&
-      size == mp.size_seen && connected == mp.connected_seen && !waited) {
-    return;
-  }
-  if (drag.slot >= 0 || tile_drag.dragging) return;  // not under the finger; once it's let go
-  relayout_ms = 0;
-  mp.windows_seen = model::windows.version;
-  mp.zones_seen = model::zones.version;
-  mp.icons_seen = icons::version();
-  mp.size_seen = size;
-  mp.connected_seen = connected;
-  layoutMap();
 }
 
 class Windows : public Tile {
@@ -914,7 +685,6 @@ class Windows : public Tile {
       connected_seen = connected;
       updateTiles();
     }
-    if (mp.on) updateMap();
   }
 };
 
