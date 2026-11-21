@@ -411,6 +411,35 @@ def test_windows(d: Deck) -> None:
     tap(d, 'LEN T24i-10')
     check('windows: picking the other monitor shows its zones', on_screen(d, 'Chrome', exact=True))
     d.shot(os.path.join(OUT, 'windows-monitor2.png'))
+    # Each layout button's thumbnail: the PC's 40x26 cells scaled into the button's box, a
+    # pixel apart (placed as sent, only the top-left corner of them showed).
+    for name, count in (('Columns', 3), ('Rows', 2), ('Priority', 3)):
+        thumb, cells = layout_thumb(d, name)
+        inside = bool(thumb) and all(thumb['x'] <= c['x'] and c['x'] + c['w'] <= thumb['x'] + thumb['w'] and
+                                     thumb['y'] <= c['y'] and c['y'] + c['h'] <= thumb['y'] + thumb['h'] for c in cells)
+        right = max((c['x'] + c['w'] for c in cells), default=0)
+        bottom = max((c['y'] + c['h'] for c in cells), default=0)
+        fills = bool(thumb) and right >= thumb['x'] + thumb['w'] - 2 and bottom >= thumb['y'] + thumb['h'] - 2
+        apart = all(not (a['x'] < b['x'] + b['w'] and b['x'] < a['x'] + a['w'] and a['y'] < b['y'] + b['h'] and b['y'] < a['y'] + a['h'])
+                    for i, a in enumerate(cells) for b in cells[i + 1:])
+        check(f'windows: the {name} thumbnail shows its whole layout, to scale',
+              len(cells) == count and inside and fills and apart, f'{thumb} {cells}')
+
+
+def layout_thumb(d: Deck, name: str) -> tuple[dict | None, list[dict]]:
+    """A FancyZones layout button's thumbnail box and its cells (those showing), by the name
+    beside it: the box and the name are the button's children, the cells the box's."""
+    tree = d.tree()
+    i = next((k for k, n in enumerate(tree) if n.get('text', '').startswith(name) and n['x'] > 560 and not n.get('hidden')), None)
+    if i is None:
+        return None, []
+    depth, cells, k = tree[i]['d'], [], i - 1
+    while k >= 0 and tree[k]['d'] > depth:
+        if tree[k]['d'] == depth + 1 and not tree[k].get('hidden'):
+            cells.append(tree[k])
+        k -= 1
+    thumb = tree[k] if k >= 0 and tree[k]['d'] == depth else None
+    return thumb, cells[::-1]
 
 
 def on_map(d: Deck, text: str) -> dict | None:
@@ -473,6 +502,95 @@ def test_desktop_map(d: Deck) -> None:
     tap(d, 'Tiles', exact=True)
     d.settle()
     check('map: Tiles shows the tiles again', on_screen(d, 'Show desktop'))
+
+
+def tile(d: Deck, app: str) -> dict | None:
+    """A window's tile on the Windows page: its app's name, in the open windows card."""
+    return next((n for n in shown(d) if n.get('text') == app and RAIL_W < n['x'] < 460), None)
+
+
+def test_tile_drag(d: Deck) -> None:
+    d.page(3)
+    # Where the map puts the monitors, to aim at: the map comes up in the same place.
+    tap(d, 'Map', exact=True)
+    d.settle()
+    dell, lenovo = on_map(d, LV_HOME + ' DELL P2722H'), on_map(d, 'LEN T24i-10')
+    tap(d, 'Tiles', exact=True)
+    d.settle()
+    check('tile drag: aiming at the map', bool(dell and lenovo), f'{dell} {lenovo}')
+    terminal = tile(d, 'Terminal')
+    if not (dell and lenovo and terminal):
+        check('tile drag: the Terminal tile', False, str(terminal))
+        return
+
+    # Into the portrait monitor's lower zone, slowly (past the hold's 400 ms): the map comes up
+    # mid-drag, and letting go snaps the window there, no close and no focus.
+    mark = d.mark()
+    x0, y0 = terminal['x'] + 10, terminal['y'] + 6
+    x1, y1 = lenovo['x'] + lenovo['w'] // 2, lenovo['y'] - 20
+    d.touch(x0, y0, True)
+    time.sleep(0.1)
+    for i in range(1, 9):
+        d.touch(x0 + (x1 - x0) * i // 16, y0 + (y1 - y0) * i // 16, True)
+        time.sleep(0.04)
+    d.settle()
+    check('tile drag: the map comes up while a tile is dragged',
+          not on_screen(d, 'Show desktop') and on_screen(d, 'Let go on a zone', exact=True) and bool(on_map(d, 'LEN T24i-10')))
+    check('tile drag: a chip of the window follows the finger', sum(1 for n in shown(d) if n.get('text') == 'Terminal') >= 1)
+    d.shot(os.path.join(OUT, 'windows-tile-drag.png'))
+    for i in range(9, 17):
+        d.touch(x0 + (x1 - x0) * i // 16, y0 + (y1 - y0) * i // 16, True)
+        time.sleep(0.04)
+    time.sleep(0.3)
+    d.touch(x1, y1, False)
+    d.settle()
+    hit = did(d, mark, 'zone.snap')
+    check('tile drag: let go on a zone snaps that window there', bool(hit) and hit.get('mon') == 1 and hit.get('zone') == 1 and
+          hit.get('hwnd') == 103, str(hit))
+    check('tile drag: a drag is not a hold (no close) nor a tap (no focus)',
+          not d.took('win.close', since=mark) and not d.took('win.focus', since=mark), str(d.acts(mark)))
+    check('tile drag: the tiles come back after', on_screen(d, 'Show desktop') and on_screen(d, 'Map', exact=True) and
+          not on_screen(d, 'Let go on a zone', exact=True))
+    check('tile drag: the drag stays on the Windows page', on_screen(d, 'Lock PC'))
+
+    # A minimized window's tile too, into the landscape monitor's first zone.
+    obsidian = tile(d, 'Obsidian')
+    if obsidian:
+        mark = d.mark()
+        # Its name is at the foot of the monitor, in the middle: left of that is the big zone.
+        d.drag(obsidian['x'] + 10, obsidian['y'] + 6, dell['x'] + dell['w'] // 2 - 20, dell['y'] - 60, steps=16, ms=500)
+        hit = did(d, mark, 'zone.snap')
+        check('tile drag: a minimized window snaps too', bool(hit) and hit.get('mon') == 0 and hit.get('hwnd') == 104, str(hit))
+    else:
+        check('tile drag: the Obsidian tile', False)
+
+    # Let go off the monitors: nothing moves, the tiles come back.
+    explorer = tile(d, 'Explorer')
+    if explorer:
+        mark = d.mark()
+        d.drag(explorer['x'] + 10, explorer['y'] + 6, dell['x'] + dell['w'] // 2, dell['y'] + 40, steps=16, ms=500)
+        time.sleep(0.5)
+        check('tile drag: let go off the monitors, nothing moves',
+              not d.took('zone.snap', since=mark) and not d.took('win.move', since=mark) and not d.took('win.close', since=mark),
+              str(d.acts(mark)))
+        check('tile drag: and the tiles come back', on_screen(d, 'Show desktop'))
+
+    # A monitor without zones: the window's middle goes where it's let go.
+    no_zones = fixtures.zones()
+    no_zones['mons'][1]['zones'] = []
+    d.state('zones', no_zones)
+    d.settle()
+    chrome = tile(d, 'Chrome')
+    if chrome:
+        mark = d.mark()
+        d.drag(chrome['x'] + 10, chrome['y'] + 6, lenovo['x'] + lenovo['w'] // 2, lenovo['y'] - 120, steps=16, ms=500)
+        hit = did(d, mark, 'win.move')
+        check('tile drag: on a monitor without zones it moves there', bool(hit) and hit.get('id') == '102' and hit.get('mon') == 1, str(hit))
+
+    # After all that a tap is still a tap, and a hold still closes.
+    d.settle()
+    expect_act(d, 'tile drag: a tap still focuses', 'VS Code', 'win.focus', exact=True, id='101')
+    expect_act(d, 'tile drag: a hold still closes', 'Claude', 'win.close', exact=True, hold=True, id='106')
 
 
 def test_capture(d: Deck) -> None:
@@ -2091,7 +2209,7 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_seek, test_media_accent, test_dev, test_windows, test_desktop_map, test_capture, test_tasks, test_task_sources, test_numpad,
+        for test in (test_today, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_seek, test_media_accent, test_dev, test_windows, test_desktop_map, test_tile_drag, test_capture, test_tasks, test_task_sources, test_numpad,
                      test_toast, test_call, test_zoom, test_cheat_sheet, test_face, test_launcher, test_shortcut_actions, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_scripts, test_hold_ring, test_context_lock, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day

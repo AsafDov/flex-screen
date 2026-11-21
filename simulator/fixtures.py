@@ -128,10 +128,10 @@ def zones() -> dict:
         'active': 0,
         'app': 'VS Code',
         'layouts': [
-            {'id': 'custom-1', 'name': 'real priority', 'custom': True, 'cells': [[0, 0, 26, 26], [26, 0, 14, 13], [26, 13, 14, 13]]},
-            {'id': 'priority-grid', 'name': 'Priority', 'custom': False, 'cells': [[0, 0, 10, 26], [10, 0, 20, 26], [30, 0, 10, 26]]},
-            {'id': 'columns', 'name': 'Columns', 'custom': False, 'cells': [[0, 0, 13, 26], [13, 0, 14, 26], [27, 0, 13, 26]]},
-            {'id': 'rows', 'name': 'Rows', 'custom': False, 'cells': [[0, 0, 40, 13], [0, 13, 40, 13]]},
+            {'id': 'custom-1', 'name': 'real priority', 'custom': True, 'cells': [[0, 0, 24, 23], [25, 0, 14, 11], [25, 12, 14, 11]]},
+            {'id': 'priority-grid', 'name': 'Priority', 'custom': False, 'cells': [[0, 0, 9, 25], [10, 0, 19, 25], [30, 0, 9, 25]]},
+            {'id': 'columns', 'name': 'Columns', 'custom': False, 'cells': [[0, 0, 12, 25], [13, 0, 12, 25], [26, 0, 13, 25]]},
+            {'id': 'rows', 'name': 'Rows', 'custom': False, 'cells': [[0, 0, 39, 12], [0, 13, 39, 12]]},
         ],
     }
 

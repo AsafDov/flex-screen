@@ -97,8 +97,23 @@ struct {
   bool dragging = false;
   lv_point_t start;  // the finger when it went down, on the deck's screen
   int32_t x0 = 0, y0 = 0;  // the window's place on the map then
-  int lit = -1;            // the zone view under the finger
+  int lit = -1;            // the zone view under the finger (this drag's or a tile's)
 } drag;
+
+// A tile dragged: the desktop map comes up in the tiles' place with the zones showing, a
+// chip of the window under the finger, and letting go on a zone snaps the window into it;
+// then the tiles come back. No Map press first.
+constexpr int kTileDragStart = 16;  // px: as far as the hold ring lets the finger wander (past it there's no hold)
+constexpr int kGhostLift = 14;      // px the chip sits above the finger, so the finger doesn't hide it
+
+struct {
+  int tile = -1;          // the tile pressed
+  bool dragging = false;  // the map is up for it
+  bool dragged = false;   // this press became a drag: its tap and hold don't count (until the next press)
+  String id;              // the window's: the list may change under the finger
+  lv_point_t start;
+  lv_obj_t *ghost, *icon, *initials, *name;
+} tile_drag;
 
 // The monitor the zone map shows: one picked by hand recently, else the active window's.
 int shownMonitor() {
@@ -116,7 +131,7 @@ int indexOf(lv_event_t *e) { return int(intptr_t(lv_event_get_user_data(e))); }
 // taskbar button does.
 void onTileTap(lv_event_t *e) {
   const int i = indexOf(e);
-  if (i >= model::windows.count) return;
+  if (i >= model::windows.count || tile_drag.dragged) return;
   const bool minimizing = model::windows.list[i].active;
   for (int t = 0; t < model::Windows::kMax; t++) {  // show it now; the PC confirms in ~300 ms
     const bool lit = t == i && !minimizing;
@@ -128,7 +143,8 @@ void onTileTap(lv_event_t *e) {
 
 void onTileHold(lv_event_t *e) {
   const int i = indexOf(e);
-  if (i >= model::windows.count) return;
+  // LVGL's long press comes during a drag too (it's timed from the press): not a close then.
+  if (i >= model::windows.count || tile_drag.dragged) return;
   // Gone at once, as an unused slot; the PC's next list (~300 ms) no longer has it, or has
   // it back after a few seconds if the window stayed open (unsaved work, say).
   lv_obj_set_style_opa(w.tiles[i].root, LV_OPA_TRANSP, 0);
@@ -316,6 +332,176 @@ void onToggle(lv_event_t *) {
   showMap(!mp.on);
 }
 
+// ---- a tile dragged onto the map
+
+void updateMap();
+
+const model::Window *windowById(const String &id) {
+  for (int i = 0; i < model::windows.count; i++) {
+    if (model::windows.list[i].id == id) return &model::windows.list[i];
+  }
+  return nullptr;
+}
+
+// The map is placed (and the PC's screens can be read off it).
+bool mapPlaced() { return mp.scale > 0 && pc::connected() && model::zones.mon_count > 0; }
+
+void placeGhost(const lv_point_t &p) {
+  lv_obj_t *g = tile_drag.ghost;
+  const int gw = lv_obj_get_width(g), gh = lv_obj_get_height(g);
+  const int x = max(0, min(int(p.x) - gw / 2, int(lv_obj_get_width(lv_layer_top())) - gw));
+  const int y = max(0, int(p.y) - gh - kGhostLift);
+  lv_obj_set_pos(g, x, y);
+}
+
+void lightZoneAt(const lv_point_t &p) {
+  if (!mapPlaced()) return;
+  const lv_point_t at = fingerOnScreens(p);
+  lightZone(zoneViewAt(at.x, at.y));
+}
+
+// The map comes up in the tiles' place, the zones showing, the window's chip under the finger.
+void startTileDrag(const model::Window &win, const lv_point_t &p) {
+  tile_drag.dragged = true;
+  tile_drag.id = win.id;
+  if (drag.slot >= 0) endDrag();
+  showMap(true);
+  setText(mp.hint, "Let go on a zone");
+  updateMap();  // placed now, not at the next update: the zones are needed under the finger at once
+  tile_drag.dragging = true;  // from here the map holds still until it's let go
+  // The zones are what's being picked: over the windows, which fade back (the map's own
+  // drag keeps them under the windows, beside the one moving).
+  for (MapWin &mw : mp.wins) lv_obj_set_style_opa(mw.root, LV_OPA_30, 0);
+  for (int v = 0; v < mp.zone_count; v++) lv_obj_move_foreground(mp.zones[v]);
+  showZones(true);
+  drag.lit = -1;
+
+  const lv_image_dsc_t *icon = icons::get(win.icon);
+  setHidden(tile_drag.icon, icon == nullptr);
+  setHidden(tile_drag.initials, icon != nullptr);
+  if (icon) {
+    if (lv_image_get_src(tile_drag.icon) != icon) lv_image_set_src(tile_drag.icon, icon);
+  } else {
+    char letters[3] = {win.app.length() ? win.app[0] : '?', win.app.length() > 1 && win.app[1] != ' ' ? win.app[1] : '\0', '\0'};
+    setText(lv_obj_get_child(tile_drag.initials, 0), letters);
+  }
+  setText(tile_drag.name, win.app.c_str());
+  lv_obj_move_foreground(tile_drag.ghost);
+  lv_obj_set_hidden(tile_drag.ghost, false);
+  lv_obj_update_layout(tile_drag.ghost);
+  placeGhost(p);
+  lightZoneAt(p);
+}
+
+// Where the dragged tile's window goes: into the zone under the finger, or, on a monitor
+// with no zone there, its middle where the finger is, its size kept. Off the monitors, or
+// in the zone it fills already, nowhere.
+void dropTile(const lv_point_t &p) {
+  const model::Window *win = windowById(tile_drag.id);
+  if (!win || !mapPlaced()) return;
+  const lv_point_t at = fingerOnScreens(p);
+  const int mon = monitorAt(at.x, at.y);
+  if (mon < 0) return;
+  const model::Monitor &m = model::zones.mons[mon];
+  const int v = zoneViewAt(at.x, at.y);
+  if (v >= 0) {
+    const model::Zone &z = m.zones[mp.zone_index[v]];
+    if (!win->minimized && overlap(win->x, win->y, win->w, win->h, m.x + z.x, m.y + z.y, z.w, z.h) > 0.9f) return;
+    pc::snapWindowTo(win->id.c_str(), mon, mp.zone_index[v]);
+    return;
+  }
+  // A minimized window's place is Windows' stand-in, not its size: its corner goes there.
+  const int ww = win->minimized ? 0 : win->w, wh = win->minimized ? 0 : win->h;
+  pc::moveWindow(win->id.c_str(), mon, at.x - m.x - ww / 2, at.y - m.y - wh / 2);
+}
+
+void endTileDrag() {
+  tile_drag.tile = -1;
+  if (!tile_drag.dragging) return;
+  tile_drag.dragging = false;
+  lv_obj_set_hidden(tile_drag.ghost, true);
+  lightZone(-1);
+  showZones(false);
+  for (MapWin &mw : mp.wins) lv_obj_set_style_opa(mw.root, LV_OPA_COVER, 0);
+  showMap(false);  // laid out afresh when it next shows: the windows over the zones again
+}
+
+void onTilePress(lv_event_t *e) {
+  lv_indev_t *indev = lv_indev_active();
+  tile_drag.dragged = false;
+  tile_drag.tile = -1;
+  if (!indev || indexOf(e) >= model::windows.count || mp.on) return;
+  tile_drag.tile = indexOf(e);
+  lv_indev_get_point(indev, &tile_drag.start);
+}
+
+void onTilePressing(lv_event_t *e) {
+  lv_indev_t *indev = lv_indev_active();
+  const int i = indexOf(e);
+  if (!indev || i != tile_drag.tile) return;
+  lv_point_t p;
+  lv_indev_get_point(indev, &p);
+  if (!tile_drag.dragging) {
+    const int dx = p.x - tile_drag.start.x, dy = p.y - tile_drag.start.y;
+    if (abs(dx) <= kTileDragStart && abs(dy) <= kTileDragStart) return;
+    // Held to close already (the tile's gone), or the list moved on under the finger.
+    if (!lv_obj_is_clickable(w.tiles[i].root) || i >= model::windows.count) {
+      tile_drag.tile = -1;
+      return;
+    }
+    startTileDrag(model::windows.list[i], p);
+    return;
+  }
+  placeGhost(p);
+  lightZoneAt(p);
+}
+
+void onTileRelease(lv_event_t *e) {
+  lv_indev_t *indev = lv_indev_active();
+  if (indexOf(e) != tile_drag.tile) return;
+  if (tile_drag.dragging && indev) {
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+    dropTile(p);
+  }
+  endTileDrag();
+}
+
+void onTileLost(lv_event_t *e) {
+  if (indexOf(e) == tile_drag.tile) endTileDrag();
+}
+
+// The chip that follows the finger: the window's icon (or initials) and app.
+void buildGhost() {
+  lv_obj_t *g = tile_drag.ghost = card(lv_layer_top(), kSelected, kAccent);
+  lv_obj_set_clickable(g, false);
+  lv_obj_set_size(g, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_set_style_max_width(g, 180, 0);
+  lv_obj_set_style_border_width(g, 2, 0);
+  lv_obj_set_style_radius(g, 10, 0);
+  lv_obj_set_style_pad_all(g, 6, 0);
+  lv_obj_set_style_pad_right(g, 10, 0);
+  lv_obj_set_style_shadow_width(g, 16, 0);
+  lv_obj_set_style_shadow_opa(g, LV_OPA_50, 0);
+  lv_obj_set_style_shadow_color(g, hex(0x000000), 0);
+  flexRow(g, 8);
+  lv_obj_set_flex_align(g, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_t *top = box(g);
+  lv_obj_set_size(top, icons::kSize, icons::kSize);
+  tile_drag.icon = lv_image_create(top);
+  lv_obj_set_size(tile_drag.icon, icons::kSize, icons::kSize);
+  tile_drag.initials = card(top, kTints[0], kTints[0]);
+  lv_obj_set_size(tile_drag.initials, icons::kSize, icons::kSize);
+  lv_obj_set_style_pad_all(tile_drag.initials, 0, 0);
+  lv_obj_set_style_radius(tile_drag.initials, 8, 0);
+  lv_obj_center(label(tile_drag.initials, "", &small_font, kText));
+  tile_drag.name = label(g, "", &body_font, kHighlightText);
+  lv_label_set_long_mode(tile_drag.name, LV_LABEL_LONG_MODE_DOTS);
+  lv_obj_set_style_max_width(tile_drag.name, 180 - icons::kSize - 32, 0);
+  lv_obj_set_height(tile_drag.name, lv_font_get_line_height(&body_font));  // one line, then "…"
+  lv_obj_set_hidden(g, true);
+}
+
 // ---- building
 
 lv_obj_t *header(lv_obj_t *parent, const char *left, const char *right) {
@@ -339,6 +525,15 @@ void buildTile(lv_obj_t *grid, int i) {
   lv_obj_add_event_cb(t.root, onTileTap, LV_EVENT_SHORT_CLICKED, reinterpret_cast<void *>(intptr_t(i)));
   lv_obj_add_event_cb(t.root, onTileHold, LV_EVENT_LONG_PRESSED, reinterpret_cast<void *>(intptr_t(i)));
   holdRing(t.root, 0xFF9A70);  // closes the window
+  // A drag takes the window to a zone on the map: not a swipe to another page, nor a scroll.
+  void *user = reinterpret_cast<void *>(intptr_t(i));
+  lv_obj_set_gesture_bubble(t.root, false);
+  lv_obj_set_scroll_chain_hor(t.root, false);
+  lv_obj_set_scroll_chain_ver(t.root, false);
+  lv_obj_add_event_cb(t.root, onTilePress, LV_EVENT_PRESSED, user);
+  lv_obj_add_event_cb(t.root, onTilePressing, LV_EVENT_PRESSING, user);
+  lv_obj_add_event_cb(t.root, onTileRelease, LV_EVENT_RELEASED, user);
+  lv_obj_add_event_cb(t.root, onTileLost, LV_EVENT_PRESS_LOST, user);
   // The icon above the app and title, so they have the tile's whole width: beside the rail
   // the tiles are ~126 px wide, and beside the icon "Obsidian" read "Obsid…". (With the
   // tab bar gone there's the height for it again.)
@@ -499,6 +694,15 @@ void buildLayoutButton(lv_obj_t *parent, int i) {
   w.layout_labels[i] = name;
   w.layout_buttons[i] = b;
 }
+
+// The PC draws each layout's zones in a 40x26 thumbnail, a pixel apart (protocol `zones`);
+// the button's is smaller since the rail (28x18), so they're scaled into it. Until 0.31.2
+// they were placed as sent, and the box showed only the thumbnail's top-left corner.
+constexpr int kCellsW = 40, kCellsH = 26;
+
+// A cell's edge from the PC's thumbnail scaled into the button's, rounded.
+int thumbX(int x) { return (x * kThumbW + kCellsW / 2) / kCellsW; }
+int thumbY(int y) { return (y * kThumbH + kCellsH / 2) / kCellsH; }
 
 // A thumbnail cell's place, set only when it moves (each set relayouts the button).
 void placeCell(lv_obj_t *cell, int x, int y, int cw, int ch) {
@@ -724,7 +928,12 @@ void updateZones() {
       const bool shown = c < l.cell_count;
       setHidden(cell, !shown);
       if (!shown) continue;
-      placeCell(cell, l.cells[c].x, l.cells[c].y, l.cells[c].w, l.cells[c].h);
+      // Scaled by edges, the pixel between cells kept: the next cell starts a pixel past this
+      // one's end, so this one ends a pixel before where that one starts once scaled.
+      const auto &src = l.cells[c];
+      const int x0 = thumbX(src.x), y0 = thumbY(src.y);
+      const int x1 = thumbX(src.x + src.w + 1) - 1, y1 = thumbY(src.y + src.h + 1) - 1;
+      placeCell(cell, x0, y0, max(x1 - x0, 1), max(y1 - y0, 1));
       setBgColor(cell, on ? kAccent : kThumbOff);
       const lv_opa_t opa = on && c > 0 ? LV_OPA_60 : LV_OPA_COVER;
       if (lv_obj_get_style_bg_opa(cell, LV_PART_MAIN) != opa) lv_obj_set_style_bg_opa(cell, opa, 0);
@@ -849,7 +1058,7 @@ void updateMap() {
       size == mp.size_seen && connected == mp.connected_seen && !waited) {
     return;
   }
-  if (drag.slot >= 0) return;  // not under the finger; once it's let go
+  if (drag.slot >= 0 || tile_drag.dragging) return;  // not under the finger; once it's let go
   relayout_ms = 0;
   mp.windows_seen = model::windows.version;
   mp.zones_seen = model::zones.version;
@@ -868,6 +1077,7 @@ void build(lv_obj_t *page) {
   lv_obj_set_flex_align(page, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
   buildWindows(page);
   buildZones(page);
+  buildGhost();
 }
 
 void update() {

@@ -2035,6 +2035,33 @@ Gotchas found after phase 6:
   use (icon tiles, banners, the build card, call buttons) into the palette.
   - Checked: the simulator, every page in the day set in Pastel (`tour.py day pastel`), and
     447 checks, all passing; the companion's and the ESP32 builds. Not yet on the deck.
+- Dragging a tile brings up the map, firmware 0.31.2 (2026-11-21; "if I start dragging a
+  window, the map should come up with the options for me to put it in tiles … i dont like
+  to have to press map", the drag being on the deck's tiles): a press on a tile that moves
+  past 16 px (the hold ring's slop, so a hold can't close a window being dragged) swaps the
+  tiles for the desktop map at once, laid out there and then. The windows fade to 30% and
+  the zones are raised over them (the Map view's own drag keeps them under the windows);
+  a chip of the window (icon or initials, app) rides 14 px above the finger on the top
+  layer. Letting go is judged by the finger, as the map's drag is: `zone.snap` with the
+  `hwnd` into the zone under it, else `win.move` with the window's middle there; off the
+  monitors or in the zone it fills already, nothing. Then the tiles come back. The tile's
+  long press still fires mid-drag (LVGL times it from the press), and its short click after
+  the release: both are ignored for a press that became a drag. Tiles no longer pass
+  gestures or scrolls on, so a swipe from a tile drags rather than turning the page. No
+  protocol change.
+  - Checked: the simulator (`test_tile_drag`: the map up mid-drag, a snap into the portrait
+    monitor's zone after a 700 ms drag with no close and no focus, a minimized window, off the
+    monitors, a monitor without zones, taps and holds after), the full suite (460 checks),
+    and the ESP32 build; flashed on the deck, which kept 0.31.2, its layout thumbnails seen in
+    a screenshot with the real layouts. Not tried on the deck: the drag by finger (it moves
+    real windows).
+  - In the same release, the FancyZones layout buttons' thumbnails drawn to scale ("the
+    fancyzones options mini map for each option is not to scale"): the companion sends each
+    layout's zones in a 40x26 thumbnail, a pixel apart, and since the rail (0.26.0) the
+    button's box is 28x18, but the cells were still placed as sent, so only their top-left
+    corner showed (Columns as two columns, a custom layout as a block). They're scaled by
+    their edges now, keeping the pixel between them. The simulator's fixtures and the demo's
+    thumbnails are as the companion makes them (with the gaps) instead of touching cells.
 
 ## Decisions
 
