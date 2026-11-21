@@ -183,6 +183,22 @@ const char *glyphOf(const char *name) {
   return "";
 }
 
+lv_obj_t *textButton(lv_obj_t *parent, int width, int height, uint32_t bg, const char *text, uint32_t color,
+                     lv_event_cb_t cb, void *user) {
+  lv_obj_t *b = button(parent, width, height, bg, cb, user);
+  lv_obj_set_style_radius(b, 10, 0);
+  lv_obj_set_style_pad_hor(b, 8, 0);
+  lv_obj_t *l = label(b, text, &small_font, color);
+  // Only a button of set width can cut its label short: a percentage of a button sized to
+  // its label came out as nothing, and those buttons (Open, Focus, Ctrl+C) showed blank.
+  if (width != LV_SIZE_CONTENT) {
+    lv_obj_set_style_max_width(l, LV_PCT(100), 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+  }
+  lv_obj_center(l);
+  return b;
+}
+
 void fillRow(lv_obj_t *l) {
   lv_obj_set_width(l, 1);  // any fixed width: the row's flex layout gives it the rest
   lv_obj_set_flex_grow(l, 1);

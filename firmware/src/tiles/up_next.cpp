@@ -101,6 +101,6 @@ class UpNext : public Tile {
 }  // namespace
 
 // extern: tiles.cpp's list of kinds refers to it.
-extern const Kind kUpNext = {"up-next", {4, 1}, {}, []() -> Tile * { return new UpNext(); }};
+extern const Kind kUpNext = {"up-next", {8, 4}, {}, []() -> Tile * { return new UpNext(); }};
 
 }  // namespace ui::tiles

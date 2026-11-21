@@ -19,15 +19,12 @@
 #include "load.h"
 
 #include "model.h"
-#include "page_audio.h"
-#include "page_capture.h"
-#include "page_dev.h"
 #include "page_numpad.h"
-#include "page_today.h"
+#include "pages.h"
 #include "dayview.h"
 #include "demo.h"
-#include "page_windows.h"
 #include "pc.h"
+#include "tiles.h"
 #include "ui_kit.h"
 
 namespace ui {
@@ -632,8 +629,7 @@ void updateArt() {
   if (model::art.version == art_seen) return;
   art_seen = model::art.version;
   if (!installPendingArt()) return;
-  today::showArt();
-  audio::showArt();
+  tiles::showArt();
   releaseOldArt();  // nothing points at the previous image any more
 }
 
@@ -753,11 +749,11 @@ void begin() {
   lv_obj_set_gesture_bubble(content, false);
   lv_obj_add_event_cb(content, onSwipe, LV_EVENT_GESTURE, nullptr);
 
-  today::build(lv_tabview_add_tab(tv, LV_SYMBOL_HOME "  Today"));
-  audio::build(lv_tabview_add_tab(tv, LV_SYMBOL_AUDIO "  Audio"));
-  dev::build(lv_tabview_add_tab(tv, LV_SYMBOL_EDIT "  Dev"));
-  windows::build(lv_tabview_add_tab(tv, LV_SYMBOL_LIST "  Windows"));
-  capture::build(lv_tabview_add_tab(tv, LV_SYMBOL_COPY "  Capture"));
+  // Each page is made of tiles (pages.cpp names them). The tab bar is hidden: the rail has
+  // the page buttons.
+  static const char *const tab_names[kPages] = {LV_SYMBOL_HOME "  Today", LV_SYMBOL_AUDIO "  Audio", LV_SYMBOL_EDIT "  Dev",
+                                                LV_SYMBOL_LIST "  Windows", LV_SYMBOL_COPY "  Capture"};
+  for (int i = 0; i < kPages; i++) pages::build(i, lv_tabview_add_tab(tv, tab_names[i]));
   pc::bootMark("ui.pages");
   buildRail(scr);
   ctxbar::build(scr, content);  // along the bottom, over the pages' room for it
@@ -814,13 +810,9 @@ void update() {
   updateToast();
   updateArt();
   updateRail();
-  today::update();
+  tiles::update();  // every page's
   day::update();
-  audio::update();
-  dev::update();
-  windows::update();
   numpad::update();
-  capture::update();  // with its Tasks card
   ctxbar::update();
   call::update();
   fitBar();  // after the call pill too: it sits among the others

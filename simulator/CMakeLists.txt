@@ -24,11 +24,12 @@ target_include_directories(lvgl PUBLIC ${SIM} ${LIBDEPS}/lvgl)
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE)
 target_compile_options(lvgl PRIVATE ${COMMON_OPTIONS} /W0)
 
-set(FIRMWARE_SOURCES approval ask call cheat ctxbar dayview demo diag glow icons idle launcher model page_audio page_capture page_dev page_numpad page_tasks page_today sessions
-    page_windows pc ui ui_kit)
+set(FIRMWARE_SOURCES approval ask call cheat ctxbar dayview demo diag glow icons idle launcher model page_numpad pages pc sessions
+    ui ui_kit)
 list(TRANSFORM FIRMWARE_SOURCES PREPEND ${FW}/src/)
 list(TRANSFORM FIRMWARE_SOURCES APPEND .cpp)
-# The tiles (firmware/src/tiles.h): every file under tiles/, as the firmware builds them.
+# The tiles every page is made of (firmware/src/tiles.h): every file under tiles/, as the
+# firmware builds them.
 file(GLOB TILE_SOURCES CONFIGURE_DEPENDS ${FW}/src/tiles/*.cpp)
 list(APPEND FIRMWARE_SOURCES ${FW}/src/tiles.cpp ${TILE_SOURCES})
 

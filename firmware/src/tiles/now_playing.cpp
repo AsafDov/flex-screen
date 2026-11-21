@@ -168,6 +168,6 @@ class NowPlaying : public Tile {
 }  // namespace
 
 // extern: tiles.cpp's list of kinds refers to it.
-extern const Kind kNowPlaying = {"now-playing", {3, 2}, {}, []() -> Tile * { return new NowPlaying(); }};
+extern const Kind kNowPlaying = {"now-playing", {6, 8}, {}, []() -> Tile * { return new NowPlaying(); }};
 
 }  // namespace ui::tiles

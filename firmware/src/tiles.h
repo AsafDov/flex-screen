@@ -1,15 +1,16 @@
-// Tiles: the cards a page is made of. Each tile is a module of its own (a file under
-// tiles/) that fills one card and keeps it up to date. A page only names its tiles; the
-// manager here does the rest: it puts them on the page's grid in that order, makes each
-// card and sizes it to its cells, grows and shrinks the cells with the room the page has
-// (the context bar takes some of it while it shows), and calls every tile's update.
+// Tiles: the cards the pages are made of. Each tile is a module of its own (a file under
+// tiles/) that fills one card and keeps it up to date. A page only names its tiles
+// (pages.cpp); the manager here does the rest: it puts them on the page's grid in that
+// order, makes each card and sizes it to its cells, grows and shrinks the cells with the
+// room the page has (the context bar takes some of it while it shows), and calls every
+// tile's update.
 //
 // A new tile:
 //   1. tiles/<name>.cpp: a class deriving from Tile, and a Kind for it (its id, the cells
 //      it asks for, the fewest it can still draw in, and how to make one). See
 //      tiles/clock.cpp for the smallest one.
 //   2. A line in tiles.cpp's list of kinds.
-//   3. Its id in a page's list (page_today.cpp).
+//   3. Its id in a page's list (pages.cpp).
 // The simulator builds every file under tiles/ (simulator/CMakeLists.txt), as the
 // firmware does.
 #pragma once
@@ -18,12 +19,13 @@
 
 namespace ui::tiles {
 
-// The grid every tiled page has: seven columns across the page's 704 px, three rows down
-// whatever height it has. A cell is about 92 x 115 px with the context bar showing,
-// 92 x 133 without it. (Seven, so Today's 3 + 4 columns keep its two sides as wide as they
-// were before tiles: five cut Now Playing's titles 14 px sooner.)
-constexpr int kCols = 7;
-constexpr int kRows = 3;
+// The grid every page has: 14 columns across the page's 704 px and 12 rows down whatever
+// height it has. A cell is 41 px across and about 21 px tall with the context bar showing, 26 without
+// it; a tile takes a block of them. (Fine enough for each page to keep the proportions it
+// had before tiles: Dev's Claude banner is 2 rows, Today's clock 6 x 4, a full-height
+// card 12 rows.)
+constexpr int kCols = 14;
+constexpr int kRows = 12;
 
 // A tile's size, in cells.
 struct Span {

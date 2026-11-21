@@ -66,44 +66,68 @@ renders under 12px.
   and task sources are built from the profile's `accounts` at run time (`ICalendarProvider`,
   `ITaskProvider`), and the browser's sites from `sites.json` plus the profile's `sites`, so
   a new account, calendar or site needs no new firmware or release.
-- **Pages made of tiles** (firmware 1.2.0 on, Today first): a tile is one card, a module of
-  its own under `firmware/src/tiles/` (a class deriving from `ui::tiles::Tile`: `build` fills
-  the card it's given, `update` redraws what changed), with a `Kind` saying its id, the
-  cells it asks for and the fewest it can draw in. A page only lists tile ids;
-  `tiles::layout` does the rest: a 7 x 3 grid of equal cells (LVGL's grid, `LV_GRID_FR`), each
-  tile at the first place from the top left with room, shrunk toward its min when there
-  isn't, its card made and stretched over its cells. The cells follow the page's height, so
-  the context bar showing or not resizes every tile with no code in it. A new tile is its
-  file, a line in `tiles.cpp`'s list and its id in a page's list; the simulator builds every
-  file under `tiles/`. See [Tiles](#tiles) below.
+- **Pages made of tiles** (firmware 1.2.0 on for Today, 1.3.0 on for every page): a tile is
+  one card, a module of its own under `firmware/src/tiles/` (a class deriving from
+  `ui::tiles::Tile`: `build` fills the card it's given, `update` redraws what changed), with
+  a `Kind` saying its id, the cells it asks for and the fewest it can draw in. A page is only
+  a list of tile ids (`pages.cpp`); `tiles::layout` does the rest: a 14 x 12 grid of equal
+  cells (LVGL's grid, `LV_GRID_FR`), each tile at the first place from the top left with room,
+  shrunk toward its min when there isn't, its card made and stretched over its cells. The
+  cells follow the page's height, so the context bar showing or not resizes every tile with
+  no code in it. `ui.cpp` calls `tiles::update()` once a loop for every page's tiles. A new
+  tile is its file, a line in `tiles.cpp`'s list and its id in a page's list; the simulator
+  builds every file under `tiles/`. See [Tiles](#tiles) below.
 
 ### Tiles
 
 ```
- page_today.cpp                  tiles.cpp (the manager)             tiles/<name>.cpp
- ┌───────────────────────┐       ┌───────────────────────────┐       ┌───────────────────────┐
- │ {"clock", "up-next",  │──────►│ finds each id's Kind      │──────►│ class Clock : Tile    │
- │  "now-playing",       │ ids   │ places it on the 7x3 grid │ make  │   build(card, span)   │
- │  "recent"}            │       │ makes its card, sizes it  │ build │   update()            │
- └───────────────────────┘       │ calls update() every loop │       │ kClock = {"clock",    │
-                                 └───────────────────────────┘       │   {3,1}, {}, make}    │
-                                                                     └───────────────────────┘
+ pages.cpp                       tiles.cpp (the manager)              tiles/<name>.cpp
+ ┌────────────────────────┐      ┌────────────────────────────┐       ┌───────────────────────┐
+ │ kToday = {"clock",     │─────►│ finds each id's Kind       │──────►│ class Clock : Tile    │
+ │   "up-next", …}        │ ids  │ places it on the 14x12 grid│ make  │   build(card, span)   │
+ │ kAudio = {"player", …} │      │ makes its card, sizes it   │ build │   update()            │
+ │ kDev, kWindows, …      │      │ calls update() every loop  │       │ kClock = {"clock",    │
+ └────────────────────────┘      └────────────────────────────┘       │   {6,4}, {}, make}    │
+                                                                      └───────────────────────┘
 ```
 
-| Tile | Id | Cells | What |
-|---|---|---|---|
-| Clock | `clock` | 3 x 1 | The PC's time, seconds and date |
-| Now Playing | `now-playing` | 3 x 2 | Track, art, transport, master volume, in the cover's color |
-| Up next | `up-next` | 4 x 1 | The next meeting, Join; a tap opens the day |
-| Recent | `recent` | 4 x 2 | The last five deck actions, and the tasks pill |
+The grid is fine (a cell is 41 px across, about 21 px tall with the context bar and 26
+without) so each
+page kept the proportions it had before tiles: Dev's Claude banner is 2 rows (the 52 px it
+was), Capture's Obsidian card 5 (its 150 px), a full-height card 12. Today's tiles are the
+1.2.0 ones at twice the columns and four times the rows: the same widths, and heights within
+a pixel (LVGL shares a page's leftover pixels out over its rows from the top, so the clock is
+114 px tall with the context bar, 115 before, and Now Playing 242, 241 before).
+
+| Page | Tile | Id | Cells | What |
+|---|---|---|---|---|
+| Today | Clock | `clock` | 6 x 4 | The PC's time, seconds and date |
+| | Up next | `up-next` | 8 x 4 | The next meeting, Join; a tap opens the day |
+| | Now Playing | `now-playing` | 6 x 8 | Track, art, transport, master volume, in the cover's color |
+| | Recent | `recent` | 8 x 8 | The last five deck actions, and the tasks pill |
+| Audio | Player | `player` | 14 x 4 | Transport, shuffle and repeat, the track with its progress (seek), the art as tall as the band |
+| | Devices | `devices` | 4 x 8 | Outputs and inputs; a tap makes one the default |
+| | Mixer | `mixer` | 10 x 8 | Master and a fader per app; the name mutes it |
+| Dev | Claude | `claude` | 14 x 2 | The newest session's state, Open; a tap opens the session board |
+| | Terminal | `terminal` | 9 x 10 | VS Code's last commands; a tap runs one again |
+| | Git | `git` | 5 x 7 | Branch, changes, last commit, Pull/Push/Fetch/Stash/Commit |
+| | Build | `build` | 5 x 3 | The last build and the last 10 runs |
+| Windows | Windows | `windows` | 9 x 12 | The open windows as tiles, the desktop map, dragging a window to its zone |
+| | FancyZones | `fancyzones` | 5 x 12 | Layouts, the zone map, the monitors |
+| Capture | Tasks | `tasks` | 8 x 12 | Every task source's tasks, chips per list, open, tick, add |
+| | Clipboard | `clipboard` | 6 x 7 | Copies and pins; tap to paste, hold to pin |
+| | Obsidian | `obsidian` | 6 x 5 | Today's note and the recent notes |
 
 Rules a tile keeps: it builds once and only changes what changed in `update` (ui_kit's
 `setText` and friends skip equal values; a version counter per model topic says what's
 new), it lays itself out to fill whatever card it gets (flex, `LV_PCT`, `flex_grow`; never
-the page's own numbers), and it shows once (a second copy of an id is left out). Every
-tile still reads the model `pc.cpp` fills, so a tile with new data still needs its topic
-there; tiles fed by the companion alone (generic kinds such as a value or a list, sent
-over the link) are a next step, not built.
+the page's own numbers: a tile that needs its size reads its card's, as Player's art and
+the Terminal's rows do), and it shows once (a second copy of an id is left out). Because a
+kind shows once, a tile may keep its state in its file rather than its class, as the
+tiles that were whole pages before 1.3.0 do. Every tile still reads the model `pc.cpp`
+fills, so a tile with new data still needs its topic there; tiles fed by the companion
+alone (generic kinds such as a value or a list, sent over the link) are a next step, not
+built.
 
 ## Features
 
@@ -2142,6 +2166,29 @@ Gotchas found after phase 6:
     the stress set; the Today, day, pages, swipes and media accent tests unchanged); the
     layout's other paths (a tile shrunk to fit, an unknown id, a second copy) tried once with a
     throwaway layout; the ESP32 build. Not yet on the deck.
+- Every page made of tiles, firmware 1.3.0 (2026-11-21; "make all the other tabs in tiles as
+  well like the today"): Audio, Dev, Windows and Capture became tiles too, twelve new ones
+  (`player`, `devices`, `mixer`; `claude`, `terminal`, `git`, `build`; `windows`,
+  `fancyzones`; `tasks`, `clipboard`, `obsidian`), and every page is a list of ids in
+  `pages.cpp` (the five `page_*.cpp` files and `page_tasks.cpp` are gone; the Numpad stays a
+  pop-up). The grid went from 7 x 3 to 14 x 12, so the short cards keep their sizes: Dev's
+  banner is 2 rows (52 px with the context bar, as before) and Obsidian 5 (147 px, from
+  150); Today's tiles doubled their spans and land within a pixel of where they were. Widths moved a little
+  where 14 columns of 41 px don't match the old fixed ones: Audio's devices 194 px (200),
+  Dev's git and build column 245 (264), FancyZones 245 (234), Capture's side 296 (294). Audio's band is 4
+  rows (115 px with the bar, 133 without; it was 128 either way), so its art follows the
+  band's height and its keys are a little smaller (play 56, skip 46). The page tiles keep
+  their state in their files (each kind shows once); Dev's `textButton` moved to `ui_kit`.
+  `ui.cpp` updates every page's tiles with one `tiles::update()`. Same texts, taps and timings;
+  no protocol change.
+  - Checked: the simulator's full suite on this firmware (516 of 517: the one miss,
+    `test_icon_asks`, fails on 0.29 too when it runs straight after a fixture load, since
+    Recent's row has just asked for the fixture's icon; it now waits that out first, and
+    passes); the new `test_page_tiles` (each page's tiles all there, filling the page down to
+    the context bar without overlapping, Dev's banner and Obsidian at their old heights with
+    both rows of notes, growing without the bar, every text inside its card with the day and
+    the stress set, a scrolled list's rows counted as scrolled); every page in the tour; the
+    ESP32 build (flash 21.8%, RAM 27.9%, as 1.2.0). Not yet on the deck.
 
 ## Decisions
 

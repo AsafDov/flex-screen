@@ -190,6 +190,6 @@ class Recent : public Tile {
 }  // namespace
 
 // extern: tiles.cpp's list of kinds refers to it.
-extern const Kind kRecent = {"recent", {4, 2}, {}, []() -> Tile * { return new Recent(); }};
+extern const Kind kRecent = {"recent", {8, 8}, {}, []() -> Tile * { return new Recent(); }};
 
 }  // namespace ui::tiles

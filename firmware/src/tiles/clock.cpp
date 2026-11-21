@@ -47,6 +47,6 @@ class Clock : public Tile {
 }  // namespace
 
 // extern: tiles.cpp's list of kinds refers to it.
-extern const Kind kClock = {"clock", {3, 1}, {}, []() -> Tile * { return new Clock(); }};
+extern const Kind kClock = {"clock", {6, 4}, {}, []() -> Tile * { return new Clock(); }};
 
 }  // namespace ui::tiles

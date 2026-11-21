@@ -9,16 +9,27 @@ namespace ui::tiles {
 
 // Every kind of tile there is, each in its own file under tiles/. A new one adds its line
 // to both lists.
-extern const Kind kClock, kNowPlaying, kUpNext, kRecent;
-const Kind *const kKinds[] = {&kClock, &kNowPlaying, &kUpNext, &kRecent};
+extern const Kind kClock, kNowPlaying, kUpNext, kRecent;  // Today
+extern const Kind kPlayer, kDevices, kMixer;              // Audio
+extern const Kind kClaude, kTerminal, kGit, kBuild;       // Dev
+extern const Kind kWindows, kFancyZones;                  // Windows
+extern const Kind kTasks, kClipboard, kObsidian;          // Capture
+const Kind *const kKinds[] = {
+    &kClock,   &kNowPlaying, &kUpNext, &kRecent,  //
+    &kPlayer,  &kDevices,    &kMixer,             //
+    &kClaude,  &kTerminal,   &kGit,    &kBuild,   //
+    &kWindows, &kFancyZones,                      //
+    &kTasks,   &kClipboard,  &kObsidian,
+};
 
 namespace {
 
-// Seven columns and three rows of equal shares; the page's padding keeps kGap round them
-// (and the context bar's room under them while it shows). LVGL keeps pointers to these.
-const int32_t kColumns[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1),
-                            LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-const int32_t kRowsDsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+// Columns and rows of equal shares; the page's padding keeps kGap round them (and the
+// context bar's room under them while it shows). LVGL keeps pointers to these.
+#define FR1 LV_GRID_FR(1)
+const int32_t kColumns[] = {FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, LV_GRID_TEMPLATE_LAST};
+const int32_t kRowsDsc[] = {FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, FR1, LV_GRID_TEMPLATE_LAST};
+#undef FR1
 static_assert(sizeof(kColumns) / sizeof(kColumns[0]) == kCols + 1, "a track per column");
 static_assert(sizeof(kRowsDsc) / sizeof(kRowsDsc[0]) == kRows + 1, "a track per row");
 
@@ -27,7 +38,7 @@ struct Placed {
   Tile *tile;
 };
 
-constexpr int kMaxPlaced = 4 * kCols * kRows;  // a page full of 1x1 tiles, four times over
+constexpr int kMaxPlaced = 32;  // every page's tiles together (16 kinds today), and room to grow
 Placed placed[kMaxPlaced];
 int placed_count = 0;
 

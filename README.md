@@ -127,7 +127,8 @@ feature.
 
 ## Making your own tile
 
-Today is made of tiles: each card is a module in `firmware/src/tiles/`, and the deck lays
-them out on a 7 x 3 grid and resizes them for you. A new tile is one file and two one-line
-changes: write the tile, register it in `tiles.cpp`, and add its id to the page. The
-[tile guide](docs/making-a-tile.md) walks through a complete example.
+Every page is made of tiles: each card is a module in `firmware/src/tiles/`, a page is a
+list of their ids in `pages.cpp`, and the deck lays them out on a 14 x 12 grid and resizes
+them for you. A new tile is one file and two one-line changes: write the tile, register it
+in `tiles.cpp`, and add its id to a page. The [tile guide](docs/making-a-tile.md) walks
+through a complete example.

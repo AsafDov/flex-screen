@@ -55,6 +55,10 @@ lv_obj_t *button(lv_obj_t *parent, int w, int h, uint32_t bg, lv_event_cb_t cb, 
 // A button holding one centered symbol; returns the symbol's label.
 lv_obj_t *iconButton(lv_obj_t *parent, int w, int h, uint32_t bg, const char *symbol, uint32_t color,
                      lv_event_cb_t cb, void *user = nullptr);
+// A button with a small-font label: "Open", "Pull". A button of set width cuts its label
+// short with "…"; LV_SIZE_CONTENT makes it as wide as its label.
+lv_obj_t *textButton(lv_obj_t *parent, int w, int h, uint32_t bg, const char *text, uint32_t color,
+                     lv_event_cb_t cb, void *user = nullptr);
 void ellipsize(lv_obj_t *label);  // one line, full width, "…" when too long
 // Setters that skip unchanged values. Every set redraws the object, and pages refresh
 // once a second for their "3 min ago" texts; redrawing whole cards for nothing kept the

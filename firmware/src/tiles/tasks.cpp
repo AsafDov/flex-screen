@@ -1,14 +1,17 @@
-#include "page_tasks.h"
-
+// The Tasks tile (Capture): every open task from the companion's task sources (Google
+// Tasks, Microsoft To Do, Obsidian, Jira, GitHub), by list or all together, grouped by when
+// they're due; tap one to open it, its box to tick it off, + to add one with the on-screen
+// keyboard. One of a kind (the manager places each kind once), so its state lives here.
 #include <stdlib.h>
 #include <time.h>
 
 #include "fonts/font_icons.h"
 #include "model.h"
 #include "pc.h"
+#include "tiles.h"
 #include "ui_kit.h"
 
-namespace ui::tasks {
+namespace ui::tiles {
 namespace {
 
 constexpr int kFilters = model::Tasks::kMaxLists + 2;  // All tasks, Scheduled, then each list shown on the deck
@@ -517,10 +520,7 @@ void buildPopup() {
 
 // The card: a header (All tasks, Scheduled or the list on show, open count, refresh, +), All
 // tasks, Scheduled and the chosen lists as chips, the tasks.
-void buildCard(lv_obj_t *row) {
-  lv_obj_t *c = card(row);
-  lv_obj_set_height(c, LV_PCT(100));
-  lv_obj_set_flex_grow(c, 1);
+void buildCard(lv_obj_t *c) {
   lv_obj_set_style_pad_all(c, 10, 0);
   lv_obj_set_style_pad_bottom(c, 4, 0);
   flexCol(c, 4);
@@ -763,15 +763,7 @@ void updateList() {
   lv_obj_scroll_to_y(w.rows, scroll, LV_ANIM_OFF);
 }
 
-}  // namespace
-
-void build(lv_obj_t *row) {
-  buildCard(row);
-  buildForm();
-  buildPopup();
-}
-
-void update() {
+void updateTasks() {
   const int connected = pc::connected() ? 1 : 0;
   int64_t day = -1;
   if (millis() - tick_ms >= kTickMs) {
@@ -799,4 +791,18 @@ void update() {
   }
 }
 
-}  // namespace ui::tasks
+class Tasks : public Tile {
+ public:
+  void build(lv_obj_t *c, Span) override {
+    buildCard(c);
+    buildForm();
+    buildPopup();
+  }
+  void update() override { updateTasks(); }
+};
+
+}  // namespace
+
+extern const Kind kTasks = {"tasks", {8, 12}, {}, []() -> Tile * { return new Tasks(); }};
+
+}  // namespace ui::tiles
