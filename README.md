@@ -706,5 +706,21 @@ A key is `keys` (pressed in that app's window; `"g, i"` presses one after the ot
 | `backup/` | Factory firmware backup and restore steps |
 | `simulator/` | The deck's UI on the PC, with feature tests and screenshot tours ([README](simulator/README.md)) |
 
+### Making a tile
+
+Today is made of tiles: each card is a module of its own in `firmware/src/tiles/`, and the
+page only lists them. The deck lays them out on a 7 x 3 grid, makes each one's card, sizes
+it to its cells and resizes it when the context bar comes and goes, and keeps it updated.
+To add one:
+
+1. Copy `firmware/src/tiles/clock.cpp` to `tiles/<name>.cpp`. Fill the card in `build`,
+   redraw only what changed in `update`, and set its `Kind`: an id, the cells it takes
+   (`{3, 1}` is three columns, one row; Today's clock) and the fewest it can still draw in.
+2. Add it to the list of kinds in `firmware/src/tiles.cpp`.
+3. Put its id in the page's list (`kTiles` in `firmware/src/page_today.cpp`).
+
+Then build the [simulator](simulator/README.md) to see it, no deck needed.
+[DESIGN.md](DESIGN.md#tiles) has the rules a tile keeps.
+
 [DESIGN.md](DESIGN.md) has the architecture, the build history and the decisions behind
 each feature.

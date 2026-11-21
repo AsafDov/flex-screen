@@ -28,6 +28,9 @@ set(FIRMWARE_SOURCES approval ask call cheat ctxbar dayview demo diag glow icons
     page_windows pc ui ui_kit)
 list(TRANSFORM FIRMWARE_SOURCES PREPEND ${FW}/src/)
 list(TRANSFORM FIRMWARE_SOURCES APPEND .cpp)
+# The tiles (firmware/src/tiles.h): every file under tiles/, as the firmware builds them.
+file(GLOB TILE_SOURCES CONFIGURE_DEPENDS ${FW}/src/tiles/*.cpp)
+list(APPEND FIRMWARE_SOURCES ${FW}/src/tiles.cpp ${TILE_SOURCES})
 
 add_executable(flex-screen-sim
   ${FIRMWARE_SOURCES}

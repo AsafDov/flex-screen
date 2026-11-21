@@ -66,6 +66,44 @@ renders under 12px.
   and task sources are built from the profile's `accounts` at run time (`ICalendarProvider`,
   `ITaskProvider`), and the browser's sites from `sites.json` plus the profile's `sites`, so
   a new account, calendar or site needs no new firmware or release.
+- **Pages made of tiles** (firmware 1.2.0 on, Today first): a tile is one card, a module of
+  its own under `firmware/src/tiles/` (a class deriving from `ui::tiles::Tile`: `build` fills
+  the card it's given, `update` redraws what changed), with a `Kind` saying its id, the
+  cells it asks for and the fewest it can draw in. A page only lists tile ids;
+  `tiles::layout` does the rest: a 7 x 3 grid of equal cells (LVGL's grid, `LV_GRID_FR`), each
+  tile at the first place from the top left with room, shrunk toward its min when there
+  isn't, its card made and stretched over its cells. The cells follow the page's height, so
+  the context bar showing or not resizes every tile with no code in it. A new tile is its
+  file, a line in `tiles.cpp`'s list and its id in a page's list; the simulator builds every
+  file under `tiles/`. See [Tiles](#tiles) below.
+
+### Tiles
+
+```
+ page_today.cpp                  tiles.cpp (the manager)             tiles/<name>.cpp
+ ┌───────────────────────┐       ┌───────────────────────────┐       ┌───────────────────────┐
+ │ {"clock", "up-next",  │──────►│ finds each id's Kind      │──────►│ class Clock : Tile    │
+ │  "now-playing",       │ ids   │ places it on the 7x3 grid │ make  │   build(card, span)   │
+ │  "recent"}            │       │ makes its card, sizes it  │ build │   update()            │
+ └───────────────────────┘       │ calls update() every loop │       │ kClock = {"clock",    │
+                                 └───────────────────────────┘       │   {3,1}, {}, make}    │
+                                                                     └───────────────────────┘
+```
+
+| Tile | Id | Cells | What |
+|---|---|---|---|
+| Clock | `clock` | 3 x 1 | The PC's time, seconds and date |
+| Now Playing | `now-playing` | 3 x 2 | Track, art, transport, master volume, in the cover's color |
+| Up next | `up-next` | 4 x 1 | The next meeting, Join; a tap opens the day |
+| Recent | `recent` | 4 x 2 | The last five deck actions, and the tasks pill |
+
+Rules a tile keeps: it builds once and only changes what changed in `update` (ui_kit's
+`setText` and friends skip equal values; a version counter per model topic says what's
+new), it lays itself out to fill whatever card it gets (flex, `LV_PCT`, `flex_grow`; never
+the page's own numbers), and it shows once (a second copy of an id is left out). Every
+tile still reads the model `pc.cpp` fills, so a tile with new data still needs its topic
+there; tiles fed by the companion alone (generic kinds such as a value or a list, sent
+over the link) are a next step, not built.
 
 ## Features
 
@@ -2062,6 +2100,8 @@ Gotchas found after phase 6:
     corner showed (Columns as two columns, a custom layout as a block). They're scaled by
     their edges now, keeping the pixel between them. The simulator's fixtures and the demo's
     thumbnails are as the companion makes them (with the gaps) instead of touching cells.
+- 1.0.0 (2026-11-21): the same features as 0.31.2, the first release in the recreated
+  GitHub repository.
 - The tile drag's preview and Full screen, firmware 1.1.0 (2026-11-21; "when theres already
   something snapped, like the chrome, and i drag the claude window to it, the preview shows
   the text claude ontop of chrome", and "an option to put it in full screen in each
@@ -2082,6 +2122,26 @@ Gotchas found after phase 6:
     Full screen row leaves it less room than the Map view: the zones named, no window boxes,
     the window drawn in Chrome's zone, a snap, Full screen sending `win.max`, the row gone
     after), the full suite, the companion's and the ESP32 builds. Not yet on the deck.
+- Today made of tiles, firmware 1.2.0 (2026-11-21, branch `today-tiles`; "make it as easy as
+  possible for other developers to create tiles of their own … every tile is its own
+  separate module that, once added to a window, the deck manager takes care of all the
+  details of organizing, fitting to screen", then "today rebuilt as tiles"): the Today page's
+  four cards became tile modules (`firmware/src/tiles/clock.cpp`, `now_playing.cpp`,
+  `up_next.cpp`, `recent.cpp`), each a `Tile` class with its own objects and state instead of
+  one file's shared statics, and `page_today.cpp` became a list of their ids. The manager
+  (`tiles.h`, `tiles.cpp`) lays a page out on a 7 x 3 grid: 3 + 4 columns keep Today's two
+  sides close to what they were (296 and 398 px across, from 290 and 404; five columns, 276
+  and 418, cut Now Playing's titles sooner), and the rows share the page's height: with the
+  context bar a row is about 115 px (a 2-row tile 241), without it 133 (277), the tiles
+  growing into its room. A cell is about 92 px across, so a tile can be a narrow 1 x 1 or
+  anything up to the whole page. Same texts, taps and timings as before; no
+  protocol change. See [Tiles](#tiles).
+  - Checked: the simulator (`test_today_tiles`: the four tiles where the grid puts them, three
+    columns to four, a 2-row tile two cells and a gap tall, down to the context bar and
+    growing without it, every text inside its card with the day, without the bar and with
+    the stress set; the Today, day, pages, swipes and media accent tests unchanged); the
+    layout's other paths (a tile shrunk to fit, an unknown id, a second copy) tried once with a
+    throwaway layout; the ESP32 build. Not yet on the deck.
 
 ## Decisions
 

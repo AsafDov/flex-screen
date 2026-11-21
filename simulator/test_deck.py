@@ -22,6 +22,7 @@ OUT = os.path.join(HERE, 'out', 'tests')
 PREV, PLAY, PAUSE, NEXT = '', '', '', ''
 CLOSE = ''  # LV_SYMBOL_CLOSE
 SHUFFLE, LOOP = '', ''
+VOL = ''  # LV_SYMBOL_VOLUME_MAX: Now Playing's volume row
 results: list[tuple[str, bool, str]] = []
 
 
@@ -66,6 +67,7 @@ def tap(d: Deck, text: str, exact: bool = False, dx: int = 0, dy: int = 0, hold:
 
 CHIPS_LEFT, CHIPS_RIGHT = 98, 474  # the Tasks card's chip row, on Capture
 RAIL_W, RAIL_H = 76, 422  # the page rail down the left, above the context bar
+STATUS_H = 40  # the status line along the top, beside the rail
 LV_HOME = ''  # LV_SYMBOL_HOME, before the primary monitor's name
 
 
@@ -237,6 +239,76 @@ def test_today(d: Deck) -> None:
     check('today: the tasks pill opens Capture', on_screen(d, 'ALL TASKS', exact=True))
     d.page(0)
     d.shot(os.path.join(OUT, 'today.png'))
+
+
+def tile_cards(d: Deck) -> dict[str, dict]:
+    """Today's tiles' cards (the page's children), with the texts each holds, by a text
+    that tells the tile: the clock's date, UP NEXT, Now Playing's volume label, RECENT."""
+    tree = d.tree()
+    page = next((i for i, n in enumerate(tree) if n['x'] == RAIL_W and n['w'] == 800 - RAIL_W and n['y'] == STATUS_H
+                 and i + 1 < len(tree) and tree[i + 1]['d'] == n['d'] + 1 and tree[i + 1]['x'] > RAIL_W), None)
+    if page is None:
+        return {}
+    cards, depth = [], tree[page]['d'] + 1
+    for n in tree[page + 1:]:
+        if n['d'] < depth:
+            break
+        if n['d'] == depth:
+            cards.append(dict(n, texts=[], inside=[]))
+        elif cards and not n.get('hidden') and n.get('text'):
+            cards[-1]['texts'].append(n.get('text'))
+            cards[-1]['inside'].append(n)
+    names = {'November': 'clock', 'UP NEXT': 'up-next', VOL: 'now-playing', 'RECENT': 'recent'}
+    out = {}
+    for c in cards:
+        for text, name in names.items():
+            if any(text in t for t in c['texts']):
+                out[name] = c
+    return out
+
+
+def test_today_tiles(d: Deck) -> None:
+    # Today is made of tiles (firmware/src/tiles.h) on a 7 x 3 grid: the clock (3x1) and Up
+    # next (4x1) across the top, Now Playing (3x2) and Recent (4x2) under them.
+    d.page(0)
+    t = tile_cards(d)
+    check('tiles: Today has its four tiles', sorted(t) == ['clock', 'now-playing', 'recent', 'up-next'], str(sorted(t)))
+    if len(t) < 4:
+        return
+    clock, nxt, now, recent = t['clock'], t['up-next'], t['now-playing'], t['recent']
+    check('tiles: the clock and Up next share the top row', clock['y'] == nxt['y'] and clock['x'] < nxt['x'])
+    check('tiles: Now Playing under the clock, as wide', now['x'] == clock['x'] and now['w'] == clock['w'] and now['y'] > clock['y'] + clock['h'])
+    check('tiles: Recent under Up next, as wide', recent['x'] == nxt['x'] and recent['w'] == nxt['w'] and recent['y'] > nxt['y'] + nxt['h'])
+    cell = (clock['w'] - 20) / 3  # three columns and the gaps between them
+    check('tiles: four columns on the right to three on the left', abs(nxt['w'] - (4 * cell + 30)) <= 2, f"{clock['w']} / {nxt['w']}")
+    check('tiles: the two sides about as wide as before tiles (290 and 404)', abs(clock['w'] - 290) <= 8 and abs(nxt['w'] - 404) <= 8,
+          f"{clock['w']} / {nxt['w']}")
+    check('tiles: a 2-row tile is two cells and a gap tall', abs(now['h'] - (2 * clock['h'] + 10)) <= 2, f"{clock['h']} / {now['h']}")
+    bottom = now['y'] + now['h']
+    check('tiles: they fill the page down to the context bar', bottom == recent['y'] + recent['h'] and 410 <= bottom <= 428, str(bottom))
+
+    def spills(cards: dict[str, dict]) -> list[str]:
+        out = []
+        for name, c in cards.items():
+            for n in c['inside']:
+                if n['x'] < c['x'] or n['y'] < c['y'] or n['x'] + n['w'] > c['x'] + c['w'] + 1 or n['y'] + n['h'] > c['y'] + c['h'] + 1:
+                    out.append(f"{name}: {n.get('text')!r} at {n['x']},{n['y']} {n['w']}x{n['h']}")
+        return out
+    check("tiles: every tile's texts stay inside its card", not spills(t), str(spills(t)))
+
+    # Without the context bar the cells grow into its room; the tiles go with them.
+    d.state('context', {'app': '', 'icon': '', 'color': 0, 'keys': []})
+    grown = tile_cards(d)
+    check('tiles: with no context bar they grow down to the screen',
+          len(grown) == 4 and grown['recent']['h'] > recent['h'] and 460 <= grown['recent']['y'] + grown['recent']['h'] <= 474
+          and grown['clock']['h'] > clock['h'], str({k: (v['y'], v['h']) for k, v in grown.items()}))
+    check("tiles: and their texts still stay inside", not spills(grown), str(spills(grown)))
+
+    d.load(fixtures.stress())
+    d.page(0)
+    long = tile_cards(d)
+    check('tiles: long texts stay inside their cards too', len(long) == 4 and not spills(long), str(spills(long)))
+    d.load(fixtures.day())
 
 
 def test_status_bar(d: Deck) -> None:
@@ -2249,7 +2321,7 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_seek, test_media_accent, test_dev, test_windows, test_desktop_map, test_tile_drag, test_capture, test_tasks, test_task_sources, test_numpad,
+        for test in (test_today, test_today_tiles, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_seek, test_media_accent, test_dev, test_windows, test_desktop_map, test_tile_drag, test_capture, test_tasks, test_task_sources, test_numpad,
                      test_toast, test_call, test_zoom, test_cheat_sheet, test_face, test_launcher, test_shortcut_actions, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_scripts, test_hold_ring, test_context_lock, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day
