@@ -10,7 +10,7 @@
 
 namespace pc {
 
-constexpr const char *kFirmwareVersion = "1.0.0";
+constexpr const char *kFirmwareVersion = "1.1.0";
 
 void begin();  // starts USB; call first in setup()
 void poll();   // reads incoming lines; call every loop
@@ -79,6 +79,7 @@ void snapWindow(int monitor, int zone);  // the foreground window, into a FancyZ
 void snapWindowTo(const char *id, int monitor, int zone);  // that window (the desktop map's drag)
 // That window onto a monitor, its top-left at (x, y) of the work area, its size kept.
 void moveWindow(const char *id, int monitor, int x, int y);
+void maximizeWindow(const char *id, int monitor);  // that window, filling that monitor (the map's Full screen)
 // A LayoutChoice::id; the built-in layout already applied steps to its next zone count.
 void setLayout(int monitor, const char *id);
 

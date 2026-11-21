@@ -325,13 +325,15 @@ the first site that matches wins (yours before the built-in ones).
   again to minimize); a minimized window keeps its tile, icon dimmed, and a tap brings it
   back. Hold to close the window, which takes its tile away at once.
 - **Drag a tile to snap its window**: as soon as a tile moves under your finger the desktop
-  map (below) comes up in the tiles' place with every monitor's FancyZones zones drawn over
-  it, the one under your finger lit and a chip of the window just above your finger. Let go
-  on a zone and the window snaps into it, on whichever monitor (minimized windows too); the
-  tiles come back. On a monitor without zones the window's middle goes where you let go,
-  its size kept; off the monitors, or back in the zone it fills already, nothing moves. A
-  swipe that starts on a tile drags the window, so swipe to another page from elsewhere on
-  the page, or use the rail.
+  map (below) comes up in the tiles' place: every monitor's FancyZones zones, each naming
+  the app that fills it now, and above them a **Full screen** tile for each monitor. Where
+  the window would go is drawn as it would be there, with its icon and name: the zone under
+  your finger (in place of what's there now), or the whole monitor over its Full screen
+  tile. Let go and it goes there, on whichever monitor (minimized windows too): snapped
+  into the zone, or maximized on that monitor; the tiles come back. On a monitor without
+  zones the window's middle goes where you let go, its size kept; off the monitors, or back
+  in the zone it fills already, nothing moves. A swipe that starts on a tile drags the
+  window, so swipe to another page from elsewhere on the page, or use the rail.
 - Show desktop and Lock PC.
 - **Map** (beside Lock PC) shows the desktop map instead of the tiles (**Tiles** goes back):
   your monitors as they're arranged, each open window drawn where it is on them, the one in

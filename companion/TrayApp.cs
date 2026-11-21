@@ -1037,6 +1037,7 @@ sealed class TrayApp : ApplicationContext
             case "win.move":
                 if (long.TryParse(id, out var moved)) _zones.Move(moved, (int?)message["mon"] ?? -1, (int?)message["x"] ?? 0, (int?)message["y"] ?? 0);
                 break;
+            case "win.max": if (long.TryParse(id, out var maxed)) _zones.Maximize(maxed, (int?)message["mon"] ?? -1); break;
             case "icon.need": if (_windows.FindIcon(id) is { } icon) SendIcon(icon); break;
             case "key.text": KeyInput.Type((string?)message["text"] ?? ""); break;
             case "pc.lock": LockWorkStation(); break;

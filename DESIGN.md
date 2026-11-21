@@ -2062,6 +2062,26 @@ Gotchas found after phase 6:
     corner showed (Columns as two columns, a custom layout as a block). They're scaled by
     their edges now, keeping the pixel between them. The simulator's fixtures and the demo's
     thumbnails are as the companion makes them (with the gaps) instead of touching cells.
+- The tile drag's preview and Full screen, firmware 1.1.0 (2026-11-21; "when theres already
+  something snapped, like the chrome, and i drag the claude window to it, the preview shows
+  the text claude ontop of chrome", and "an option to put it in full screen in each
+  monitor, maybe as two tiles above the map"): the chip that followed the finger is gone,
+  and so are the window boxes while a tile is dragged (their names ran into it). Each zone
+  names what fills it now (`zones`' `app`, small and muted), and where the window would go
+  is drawn as it would be there, opaque, with its icon and name: over the zone under the
+  finger, its own size on a monitor without zones (a third of the monitor for a minimized
+  one, whose size the deck doesn't know), or the whole monitor over Full screen. A row of
+  Full screen tiles, one per monitor ("Full screen" over its name; on one line "Full
+  screen · DELL P2722H" was cut), sits above the map, only while a tile is dragged: in the
+  Map view its 50 px cost the windows their names. Let go there, the deck sends `win.max`
+  (`id`, `mon`) and the companion's `ZoneSource.Maximize` restores the window and moves it
+  into the middle of that monitor first when it's on another one or minimized, then
+  maximizes it (Windows maximizes where the window is). A deck on 1.1.0 with an older
+  companion: Full screen does nothing.
+  - Checked: the simulator (`test_tile_drag` reads the map off the drag itself, since the
+    Full screen row leaves it less room than the Map view: the zones named, no window boxes,
+    the window drawn in Chrome's zone, a snap, Full screen sending `win.max`, the row gone
+    after), the full suite, the companion's and the ESP32 builds. Not yet on the deck.
 
 ## Decisions
 

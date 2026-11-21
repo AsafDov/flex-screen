@@ -487,6 +487,7 @@ def test_desktop_map(d: Deck) -> None:
         d.drag(explorer['x'] + 10, explorer['y'] + 6, dell['x'] + dell['w'] // 2, dell['y'] + 40, steps=16, ms=600)
         time.sleep(0.5)
         check('map: let go off the monitors, nothing moves', not d.took('zone.snap', since=mark) and not d.took('win.move', since=mark))
+    check('map: no Full screen in the Map view (only while a tile is dragged)', not on_screen(d, 'Full screen', exact=True))
     # A monitor without zones: the window goes where it's let go.
     no_zones = fixtures.zones()
     no_zones['mons'][1]['zones'] = []
@@ -509,37 +510,65 @@ def tile(d: Deck, app: str) -> dict | None:
     return next((n for n in shown(d) if n.get('text') == app and RAIL_W < n['x'] < 460), None)
 
 
+def on_drag_map(d: Deck, text: str) -> list[dict]:
+    """Labels with that text on the map a dragged tile brings up (below its Full screen row,
+    above the context bar)."""
+    return [n for n in shown(d) if n.get('text') == text and RAIL_W < n['x'] < 540 and 140 < n['y'] < 420]
+
+
 def test_tile_drag(d: Deck) -> None:
     d.page(3)
-    # Where the map puts the monitors, to aim at: the map comes up in the same place.
-    tap(d, 'Map', exact=True)
-    d.settle()
-    dell, lenovo = on_map(d, LV_HOME + ' DELL P2722H'), on_map(d, 'LEN T24i-10')
-    tap(d, 'Tiles', exact=True)
-    d.settle()
-    check('tile drag: aiming at the map', bool(dell and lenovo), f'{dell} {lenovo}')
     terminal = tile(d, 'Terminal')
-    if not (dell and lenovo and terminal):
-        check('tile drag: the Terminal tile', False, str(terminal))
+    if not terminal:
+        check('tile drag: the Terminal tile', False)
         return
 
-    # Into the portrait monitor's lower zone, slowly (past the hold's 400 ms): the map comes up
-    # mid-drag, and letting go snaps the window there, no close and no focus.
+    # A press that moves past 16 px is a drag: the map comes up in the tiles' place. Where it
+    # puts things is read off it then, to aim at (its Full screen row leaves the map less
+    # room than in the Map view).
     mark = d.mark()
     x0, y0 = terminal['x'] + 10, terminal['y'] + 6
-    x1, y1 = lenovo['x'] + lenovo['w'] // 2, lenovo['y'] - 20
     d.touch(x0, y0, True)
     time.sleep(0.1)
-    for i in range(1, 9):
-        d.touch(x0 + (x1 - x0) * i // 16, y0 + (y1 - y0) * i // 16, True)
+    for i in range(1, 7):
+        d.touch(x0 + 4 * i, y0 + 4 * i, True)
         time.sleep(0.04)
     d.settle()
+    # The monitors' names at their feet (the Full screen row above names them too).
+    dell = next(iter(on_drag_map(d, LV_HOME + ' DELL P2722H')), None)
+    lenovo = next(iter(on_drag_map(d, 'LEN T24i-10')), None)
     check('tile drag: the map comes up while a tile is dragged',
-          not on_screen(d, 'Show desktop') and on_screen(d, 'Let go on a zone', exact=True) and bool(on_map(d, 'LEN T24i-10')))
-    check('tile drag: a chip of the window follows the finger', sum(1 for n in shown(d) if n.get('text') == 'Terminal') >= 1)
+          not on_screen(d, 'Show desktop') and on_screen(d, 'Moving Terminal', exact=True) and bool(dell and lenovo))
+    full = [n for n in shown(d) if n.get('text') in ('DELL P2722H', 'LEN T24i-10') and n['y'] < 150]
+    full_len = next((n for n in full if n['text'] == 'LEN T24i-10'), None)
+    check('tile drag: Full screen for each monitor above the map', on_screen(d, 'Full screen', exact=True) and len(full) == 2 and
+          bool(full_len) and dell is not None and full_len['y'] < dell['y'], str(full))
+    # Not the windows themselves (their names ran into the dragged one's): what fills each
+    # zone, named in it.
+    check('tile drag: the windows themselves are not drawn', not on_drag_map(d, 'PrusaSlicer') and not on_drag_map(d, 'Explorer'))
+    chrome_zone = next(iter(on_drag_map(d, 'Chrome')), None)
+    check('tile drag: each zone names what fills it', bool(chrome_zone) and bool(on_drag_map(d, 'VS Code')) and
+          bool(on_drag_map(d, 'Terminal')))
+    if not (dell and lenovo and chrome_zone):
+        d.touch(x0 + 24, y0 + 24, False)
+        d.settle()
+        return
+
+    # Over Chrome's zone the window is drawn in it, in Chrome's place; then on, slowly (past
+    # the hold's 400 ms), into the portrait monitor's lower zone, where letting go snaps it,
+    # no close and no focus.
+    xs, ys = x0 + 24, y0 + 24
+    xc, yc = chrome_zone['x'] + chrome_zone['w'] // 2, chrome_zone['y'] + chrome_zone['h'] // 2
+    for i in range(1, 9):
+        d.touch(xs + (xc - xs) * i // 8, ys + (yc - ys) * i // 8, True)
+        time.sleep(0.04)
+    d.settle()
+    check('tile drag: the window is drawn in the zone under the finger', len(on_drag_map(d, 'Terminal')) == 2,
+          str(on_drag_map(d, 'Terminal')))
     d.shot(os.path.join(OUT, 'windows-tile-drag.png'))
-    for i in range(9, 17):
-        d.touch(x0 + (x1 - x0) * i // 16, y0 + (y1 - y0) * i // 16, True)
+    x1, y1 = lenovo['x'] + lenovo['w'] // 2, lenovo['y'] - 20
+    for i in range(1, 9):
+        d.touch(xc + (x1 - xc) * i // 8, yc + (y1 - yc) * i // 8, True)
         time.sleep(0.04)
     time.sleep(0.3)
     d.touch(x1, y1, False)
@@ -550,7 +579,7 @@ def test_tile_drag(d: Deck) -> None:
     check('tile drag: a drag is not a hold (no close) nor a tap (no focus)',
           not d.took('win.close', since=mark) and not d.took('win.focus', since=mark), str(d.acts(mark)))
     check('tile drag: the tiles come back after', on_screen(d, 'Show desktop') and on_screen(d, 'Map', exact=True) and
-          not on_screen(d, 'Let go on a zone', exact=True))
+          not on_screen(d, 'Moving Terminal', exact=True))
     check('tile drag: the drag stays on the Windows page', on_screen(d, 'Lock PC'))
 
     # A minimized window's tile too, into the landscape monitor's first zone.
@@ -574,6 +603,17 @@ def test_tile_drag(d: Deck) -> None:
               not d.took('zone.snap', since=mark) and not d.took('win.move', since=mark) and not d.took('win.close', since=mark),
               str(d.acts(mark)))
         check('tile drag: and the tiles come back', on_screen(d, 'Show desktop'))
+
+    # Onto Full screen above the map: maximized on that monitor.
+    explorer = tile(d, 'Explorer')
+    check('tile drag: Full screen leaves with the map', not on_screen(d, 'Full screen', exact=True))
+    if explorer and full_len:
+        mark = d.mark()
+        d.drag(explorer['x'] + 10, explorer['y'] + 6, full_len['x'] + 20, full_len['y'] + full_len['h'] // 2, steps=16, ms=500)
+        hit = did(d, mark, 'win.max')
+        check('tile drag: onto Full screen maximizes it on that monitor', bool(hit) and hit.get('id') == '105' and hit.get('mon') == 1,
+              str(d.acts(mark)))
+        check('tile drag: and the tiles come back after Full screen', on_screen(d, 'Show desktop'))
 
     # A monitor without zones: the window's middle goes where it's let go.
     no_zones = fixtures.zones()

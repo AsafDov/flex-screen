@@ -236,10 +236,10 @@ sealed class ZoneSource
     /// (made smaller only to fit): the deck's desktop map, a window let go where there's no
     /// zone. A maximized or minimized window is restored first.
     /// </summary>
-    public void Move(long handle, int monitor, int x, int y)
+    public bool Move(long handle, int monitor, int x, int y)
     {
         var state = Current;
-        if (monitor < 0 || monitor >= state.Monitors.Count || !WindowSource.Exists(handle)) return;
+        if (monitor < 0 || monitor >= state.Monitors.Count || !WindowSource.Exists(handle)) return false;
         var m = state.Monitors[monitor];
         var hwnd = (IntPtr)handle;
         if (IsZoomed(hwnd) || IsIconic(hwnd)) ShowWindow(hwnd, SwRestore);
@@ -263,12 +263,37 @@ sealed class ZoneSource
                 if (error == ErrorAccessDenied)
                 {
                     Toast?.Invoke(new Toast("error", $"{AppName(state, handle, hwnd)} runs as administrator, so it can't be moved from the deck"));
-                    return;
+                    return false;
                 }
             }
         }
         var after = WindowSource.Bounds(hwnd);
         Log.Write($"move: \"{WindowSource.WindowText(hwnd)}\" to {m.Name} at {x},{y}, now {after.X},{after.Y} {after.Width}x{after.Height}");
+        lock (_gate) _loadedAt = DateTime.MinValue;
+        return true;
+    }
+
+    /// <summary>
+    /// Maximizes a window on a monitor: the deck's desktop map, a window let go on that
+    /// monitor's Full screen. On another monitor, or minimized, it's restored and moved into
+    /// the middle of this one first (Windows maximizes a window where it is).
+    /// </summary>
+    public void Maximize(long handle, int monitor)
+    {
+        var state = Current;
+        if (monitor < 0 || monitor >= state.Monitors.Count || !WindowSource.Exists(handle)) return;
+        var m = state.Monitors[monitor];
+        var hwnd = (IntPtr)handle;
+        var bounds = WindowSource.Bounds(hwnd);
+        var here = !IsIconic(hwnd) && m.Work.Contains(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
+        if (!here)
+        {
+            if (IsZoomed(hwnd) || IsIconic(hwnd)) ShowWindow(hwnd, SwRestore);
+            var size = WindowSource.Bounds(hwnd);
+            if (!Move(handle, monitor, (m.Work.Width - size.Width) / 2, (m.Work.Height - size.Height) / 2)) return;
+        }
+        ShowWindow(hwnd, SwMaximize);
+        Log.Write($"maximize: \"{WindowSource.WindowText(hwnd)}\" on {m.Name}");
         lock (_gate) _loadedAt = DateTime.MinValue;
     }
 

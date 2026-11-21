@@ -1479,6 +1479,15 @@ void moveWindow(const char *id, int monitor, int x, int y) {
   send(doc);
 }
 
+void maximizeWindow(const char *id, int monitor) {
+  JsonDocument doc;
+  doc["t"] = "act";
+  doc["a"] = "win.max";
+  doc["id"] = id;
+  doc["mon"] = monitor;
+  send(doc);
+}
+
 void setLayout(int monitor, const char *id) {
   JsonDocument doc;
   doc["t"] = "act";
