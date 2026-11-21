@@ -60,7 +60,7 @@ and `sim.type` (`text`).
 ## Test
 
 Python from PlatformIO (`%USERPROFILE%\.platformio\penv\Scripts\python.exe`) runs these;
-they need nothing beyond the standard library.
+they need nothing beyond the standard library (all but `slideshow.py`, which needs Pillow).
 
 - `deck.py`: the driver. `Deck.launch()` starts the simulator headless; then `sync()`,
   `load(topics)`, `tap(x, y)`, `hold`, `drag`, `page(i)`, `shot(path)`, `tree()`,
@@ -79,6 +79,8 @@ they need nothing beyond the standard library.
   (waiting, offline, gone, day in the five themes, stress, empty).
 - `sheet.py`: six screenshots on one sheet, for looking them over: `python sheet.py
   day-ember` or `python sheet.py -o out.png a.png b.png …`.
+- `slideshow.py`: the README's slideshow (`docs/screens/slideshow.png`) from the tests' and the
+  tour's screenshots; it needs Pillow, and its first lines say which shots to take.
 
 ## How it differs from the board
 

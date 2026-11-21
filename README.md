@@ -1,5 +1,9 @@
 # flex-screen
 
+<p align="center">
+  <img src="docs/screens/slideshow.png" alt="A slideshow of the deck's screens: Today, the Claude session board, Claude approvals and questions, Audio, Dev, snapping windows into zones, tasks and the clipboard, the day's calendar, calls, drawing in Zoom, the context bar, shortcuts, the numpad and the five themes" width="828">
+</p>
+
 A 7" touch deck that sits next to the keyboard and runs the parts of the workday that live
 outside the editor: audio, meetings and the day's calendar, tasks, Claude Code, builds, git,
 windows, clipboard, Obsidian, keys for the app (or site) in front, and a numpad.
@@ -33,8 +37,6 @@ task lists go on the deck, the shortcuts, the context bar's keys and your own si
 can be synced between PCs; each PC signs in for itself and keeps its own folders in
 `machine.json` (see [Profiles](#profiles)). A new calendar, account or site needs no new
 firmware or release.
-
-<img src="docs/screens/today.png" alt="The Today page: the rail, the status line, the clock, now playing, up next, recent actions and the context bar" width="720">
 
 ## Features
 
