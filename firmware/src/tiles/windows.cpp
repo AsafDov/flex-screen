@@ -318,7 +318,7 @@ void showMap(bool on) {
   setHidden(mp.area, !on);
   if (!on) setHidden(mp.full, true);
   setText(mp.toggle_label, on ? "Tiles" : "Map");
-  setText(mp.hint, on ? "Drag: move" : "Tap: focus · hold: close");  // a longer one was cut beside Tiles
+  setText(mp.hint, on ? "Drag: move" : "Hold: close");  // tapping focuses, as anyone would try first
   mp.windows_seen = UINT32_MAX;
 }
 
@@ -670,7 +670,8 @@ void buildWindows(lv_obj_t *c) {
   lv_obj_set_size(head, LV_PCT(100), LV_SIZE_CONTENT);
   flexRow(head, 6);
   label(head, "OPEN WINDOWS", &small_font, kMuted);
-  lv_obj_t *hint = mp.hint = label(head, "Tap: focus · hold: close", &small_font, kMuted);  // the longer one was cut
+  // "Tap: focus · hold: close" was cut to "hold:…" beside Map and Lock PC.
+  lv_obj_t *hint = mp.hint = label(head, "Hold: close", &small_font, kMuted);
   fillRow(hint);
   lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_RIGHT, 0);
   // The tiles or the desktop map.

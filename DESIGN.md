@@ -2189,6 +2189,15 @@ Gotchas found after phase 6:
     both rows of notes, growing without the bar, every text inside its card with the day and
     the stress set, a scrolled list's rows counted as scrolled); every page in the tour; the
     ESP32 build (flash 21.8%, RAM 27.9%, as 1.2.0). Not yet on the deck.
+  - On the deck the same day (the kit installed from the release, the deck updated from the
+    companion's offer): all five pages as in the simulator, with live data.
+- The Windows hint whole, firmware 1.3.1 (2026-11-21; seen on the deck at 1.3.0): the open
+  windows' header showed "Tap: focus · hold:…", cut beside Map and Lock PC since the Map
+  button came in (0.30.0; 1.2.0 had about 3 px less room for it than 1.3.0). It says "Hold:
+  close" now, like the map's "Drag: move": tapping a window to focus it needs no hint, closing
+  it by holding does.
+  - Checked: `test_windows` checks the hint shows whole; the simulator's full suite (518 of
+    518); the ESP32 build (flash 21.8%, RAM 27.9%); on the deck, flashed with `ota_upload.py`.
 
 ## Decisions
 

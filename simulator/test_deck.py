@@ -569,6 +569,8 @@ def test_dev(d: Deck) -> None:
 
 def test_windows(d: Deck) -> None:
     d.page(3)
+    check("windows: the header's hint shows whole beside Map and Lock PC", on_screen(d, 'Hold: close', exact=True),
+          str([n.get('text') for n in shown(d) if 'old' in n.get('text', '')]))
     expect_act(d, 'windows: tap a tile focuses it', 'Chrome', 'win.focus', exact=True, id='102')
     expect_act(d, 'windows: tap a minimized tile brings it back', 'Obsidian', 'win.focus', exact=True, id='104')
     expect_act(d, 'windows: hold a tile closes it', 'Explorer', 'win.close', exact=True, hold=True, id='105')
