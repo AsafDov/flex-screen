@@ -12,7 +12,7 @@ keeping where it came from and a link back to it:
 | GitHub | open issues assigned to you, in every repository | no: open them on GitHub | no | below |
 
 All of them are under the companion's tray icon, **Task sources**. A source that isn't set
-up is simply left out. Sites and choices go in your [profile](../README.md#profiles), so a
+up is simply left out. Sites and choices go in your [profile](settings.md#profiles), so a
 work profile can have Jira and GitHub and a home profile Google, To Do and Obsidian, and
 switching profiles switches sources. Tokens stay on each PC, encrypted for your Windows
 account (`%LOCALAPPDATA%\flex-screen\*.bin`), one per site: a work Jira and a home one each

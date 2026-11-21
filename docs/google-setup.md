@@ -67,7 +67,7 @@ project, so no one else's app ever holds access to your account.
 
 The sign-in is stored on the PC encrypted for your Windows account (`google-token.bin` next to
 the client file; another account's is `<its id>-token.bin`), so it's useless anywhere else.
-The accounts themselves are part of your [profile](../README.md#profiles): a PC on the same
+The accounts themselves are part of your [profile](settings.md#profiles): a PC on the same
 profile lists the same accounts, and signs in to each one once.
 
 ## Tasks on the deck
@@ -110,7 +110,7 @@ account picker. Then:
   domain that only allows its own apps needs a client made in that domain's Google Cloud
   project: save its JSON in `%LOCALAPPDATA%\flex-screen\` under another name and give that
   name when adding the account (it's the account's `"client"` in the profile).
-- **Per profile:** the accounts are in your [profile](../README.md#profiles), so a work
+- **Per profile:** the accounts are in your [profile](settings.md#profiles), so a work
   profile can have the work account and a home profile not.
 
 Without adding it, another account's calendar can still show by sharing it: in that

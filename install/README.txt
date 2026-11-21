@@ -159,9 +159,9 @@ Context bar
     }
   by exe name ("spotify") or the name the deck shows ("Spotify"), "*" for apps without a
   list of their own; they're the app's keys until you rearrange them on the deck. Keys are "keys", "action" (as for shortcuts) or
-  "action": "close". "contextBar": false turns the bar off. The README lists the glyphs.
+  "action": "close". "contextBar": false turns the bar off. docs/settings.md lists the glyphs.
   In Chrome and Edge, Gmail, YouTube, Google Calendar, Jira and GitHub have keys of their
-  own, and so do the profile's own "sites" (the README shows how). An installed web app
+  own, and so do the profile's own "sites" (docs/features.md shows how). An installed web app
   (Install as app) shows under its own name and gets its site's keys.
 
 Browser extension (optional)

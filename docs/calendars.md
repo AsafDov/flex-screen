@@ -2,7 +2,7 @@
 
 The deck's calendar (Today's **Up next**, the whole day behind it, the status bar's next
 meeting, the meeting keys on the context bar) comes from every calendar in your
-[profile](../README.md#profiles) at once:
+[profile](settings.md#profiles) at once:
 
 | Source | What it needs | Set up |
 |---|---|---|
