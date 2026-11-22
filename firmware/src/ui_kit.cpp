@@ -147,6 +147,11 @@ lv_obj_t *pill(lv_obj_t *parent) {
 lv_obj_t *button(lv_obj_t *parent, int w, int h, uint32_t bg, lv_event_cb_t cb, void *user) {
   lv_obj_t *b = lv_button_create(parent);
   lv_obj_remove_style_all(b);
+  // LVGL focuses a button the moment it's pressed, and a focused button scrolls its list
+  // to show itself whole: a drag that began on a row cut off at a list's edge had that
+  // animation and the drag moving the list at once, and it jumped about. With no keypad
+  // on the deck, nothing needs it.
+  lv_obj_remove_flag(b, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
   lv_obj_set_size(b, w, h);
   lv_obj_set_style_bg_color(b, hex(bg), 0);
   lv_obj_set_style_bg_opa(b, bg == kSurface ? LV_OPA_TRANSP : LV_OPA_COVER, 0);

@@ -479,6 +479,30 @@ def test_device_scroll(d: Deck) -> None:
 
     check('devices: every output and input is listed', all(listed(n) for n in outs + ins),
           str([n for n in outs + ins if not listed(n)]) + ' in ' + str(texts))
+    # A finger on the row the card's foot cuts off, as a drag up begins: the list stays put
+    # (a pressed button scrolled itself into view, against the drag) and the row keeps its
+    # color (it lit up, then went out when the drag scrolled: the list flickered).
+    foot = card['y'] + card['h']
+    cut = next((n for n in card['inside'] if n.get('text') and n['y'] < foot - 6 < n['y'] + n['h'] + 8), None)
+    if not cut:
+        check('devices: a row cut off at the card\'s foot', False, str([(n.get('text'), n['y']) for n in card['inside']]))
+        return
+    x, y = cut['x'] + cut['w'] // 2, foot - 8
+    spot = (cut['x'] - 5, min(y, cut['y'] + cut['h'] // 2))  # the row's own color, beside its name
+    color = d.pixel(d.frame(), *spot)
+    held_at = label(d, 'INPUT', exact=True)
+    d.touch(x, y, True)
+    time.sleep(0.4)
+    pressed = d.pixel(d.frame(settle=False), *spot)
+    still = label(d, 'INPUT', exact=True)
+    d.touch(x, y, False)
+    d.settle()
+    check('devices: a finger on a cut-off row doesn\'t scroll the list', held_at and still and still['y'] == held_at['y'],
+          f"INPUT at {held_at and held_at['y']}, then {still and still['y']}")
+    check('devices: and doesn\'t light the row', color == pressed, f'{color} -> {pressed}')
+    d.state('devices', {'out': [{'id': f'o{i}', 'name': n, 'detail': '', 'sel': i == 0} for i, n in enumerate(outs)],
+                        'in': [{'id': f'i{i}', 'name': n, 'detail': '', 'sel': i == 0} for i, n in enumerate(ins)]})
+    d.settle()  # the tap picked that row: back to Speakers, as the PC would answer
     head = label(d, 'OUTPUT', exact=True)
     before = label(d, 'INPUT', exact=True)
     if not head or not before:

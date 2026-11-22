@@ -98,6 +98,9 @@ void fillDevices(lv_obj_t *row, const model::Device *list, int count, lv_event_c
     lv_obj_t *b = button(row, LV_PCT(100), kDeviceH, kRaised, cb, reinterpret_cast<void *>(intptr_t(i)));
     lv_obj_set_style_radius(b, 10, 0);
     lv_obj_set_style_pad_hor(b, 10, 0);
+    // No pressed color: every drag that began on a row lit it, and the scroll that followed
+    // put it out, so scrolling flickered row by row. A tap lights the row it picks anyway.
+    lv_obj_remove_local_style_prop(b, LV_STYLE_BG_COLOR, LV_STATE_PRESSED);
     lv_obj_t *l = label(b, d.name.c_str(), &body_font, kSoftText);
     ellipsize(l);
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
