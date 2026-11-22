@@ -262,6 +262,7 @@ the first site that matches wins (yours before the built-in ones).
   the cover (the hue its vivid parts share most, made light enough to read); a grey or
   black-and-white cover keeps the theme's color.
 - Output and input devices as lists down the left; a tap sets the Windows default device.
+  Up to ten of each; when they don't all fit, drag anywhere in the card to scroll it.
 - Per-app mixer beside them: a fader for each app playing sound; tap the app's name under
   it to mute it (amber while muted). Teams, Discord and Zoom have a fader whenever they're
   open, even before they make a sound (Windows only gives an app a volume once it plays
@@ -411,6 +412,9 @@ the first site that matches wins (yours before the built-in ones).
 - With more than one Vial keyboard plugged in, the pill and cheat sheet follow the one
   you last typed on. A keyboard Vial has locked can't report its layer: unlock it once
   in the Vial app (Security > Unlock) and it stays unlocked until it's unplugged.
+- While Vial is open (the app, or vial.rocks as the tab in front) the companion leaves
+  the keyboard to it, since Vial would read the companion's answers as its own: the
+  layer pill hides until about 15 seconds after Vial closes or you switch tabs.
 
 ## The deck itself
 - Holds show a ring: wherever a hold does something (Stop on the session board, closing a

@@ -1091,7 +1091,10 @@ sealed class TrayApp : ApplicationContext
             case "task.link": _tasks.Open((string?)message["src"] ?? "", (string?)message["list"] ?? "", id); break;
             case "cal.join": OpenUrl(_calendar.Find(id)?.Join ?? ""); break;
             case "mail.open": OpenUrl("https://mail.google.com/"); break;
-            case "kbd.vial": OpenUrl("https://vial.rocks/"); break;  // the cheat sheet's Edit in Vial: Vial's web app (Chrome or Edge, WebHID)
+            case "kbd.vial":  // the cheat sheet's Edit in Vial: Vial's web app (Chrome or Edge, WebHID)
+                _keyboard.MakeWayForVial();
+                OpenUrl("https://vial.rocks/");
+                break;
             case "zone.snap": _zones.Snap((int?)message["mon"] ?? -1, (int?)message["zone"] ?? -1, (long?)message["hwnd"] ?? 0); break;
             case "zone.layout": _zones.SetLayout((int?)message["mon"] ?? -1, (string?)message["id"] ?? (string?)message["type"] ?? ""); break;
             case "recent.run": RunRecent(id); break;

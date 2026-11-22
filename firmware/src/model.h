@@ -55,7 +55,7 @@ struct Device {
 };
 
 struct Devices {
-  static constexpr int kMax = 4;
+  static constexpr int kMax = 10;  // of each kind; the Devices tile scrolls (a monitor each, a dock, Bluetooth, virtual cables)
   Device out[kMax];
   Device in[kMax];
   int out_count = 0;

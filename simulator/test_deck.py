@@ -458,6 +458,51 @@ def test_audio(d: Deck) -> None:
     d.shot(os.path.join(OUT, 'audio.png'))
 
 
+def test_device_scroll(d: Deck) -> None:
+    # More devices than the card holds: all of them are there (the deck kept four of each),
+    # and a drag from anywhere in the card scrolls it. One from a heading or a gap used to
+    # reach the page, which took it as a swipe and changed page.
+    outs = ['Speakers', 'Headphones', 'LEN T24i-10', 'DELL P2722H', 'Realtek Digital Output', 'Galaxy Buds2 Pro', 'CABLE Input']
+    ins = ['Microphone Array', 'Headset Microphone', 'Webcam Mic', 'CABLE Output', 'Stereo Mix']
+    d.state('devices', {'out': [{'id': f'o{i}', 'name': n, 'detail': '', 'sel': i == 0} for i, n in enumerate(outs)],
+                        'in': [{'id': f'i{i}', 'name': n, 'detail': '', 'sel': i == 0} for i, n in enumerate(ins)]})
+    d.page(1)
+    d.settle()
+    card = tile_cards(d, PAGE_TILES[1]).get('devices')
+    if not card:
+        check('devices: the Devices card on Audio', False)
+        return
+    texts = card['texts']
+
+    def listed(name: str) -> bool:  # a long name ends in "..."
+        return any(t == name or (t.endswith('...') and len(t) > 6 and name.startswith(t[:-3])) for t in texts)
+
+    check('devices: every output and input is listed', all(listed(n) for n in outs + ins),
+          str([n for n in outs + ins if not listed(n)]) + ' in ' + str(texts))
+    head = label(d, 'OUTPUT', exact=True)
+    before = label(d, 'INPUT', exact=True)
+    if not head or not before:
+        check('devices: the OUTPUT and INPUT headings', False)
+        return
+    x, y = head['x'] + head['w'] // 2, head['y'] + head['h'] // 2
+    d.drag(x, y, x, y - 140)  # from a heading, not a device
+    d.settle()
+    check('devices: a drag from a heading stays on Audio', on_screen(d, 'Master', exact=True))
+    after = label(d, 'INPUT', exact=True)
+    check('devices: and scrolls the list', after is not None and after['y'] < before['y'] - 100,
+          f"INPUT at {before['y']}, then {after and after['y']}")
+    if after:
+        x, y = after['x'] + after['w'] // 2, after['y'] + after['h'] // 2
+        d.drag(x, y, x, y - 160)  # and on to the end
+        d.settle()
+    d.shot(os.path.join(OUT, 'audio-devices-scrolled.png'))
+    last = label(d, 'Stereo Mix', exact=True)
+    inside = last is not None and card['y'] < last['y'] and last['y'] + last['h'] < card['y'] + card['h']
+    check('devices: the last input scrolls into the card', inside, str(last))
+    if inside:
+        expect_act(d, 'devices: and a tap picks it', 'Stereo Mix', 'dev.in', exact=True, id='i4')
+
+
 def seek_bar(d: Deck) -> dict | None:
     """Audio's progress bar: the slider in the Now Playing band, between the two times."""
     return next((n for n in shown(d) if n.get('c') == 'slider' and n['y'] < 180 and n['w'] > 200), None)
@@ -2365,7 +2410,7 @@ def main() -> int:
         d.sync()
         d.settings('base')
         d.load(fixtures.day(), fixtures.ICONS, fixtures.NOW, fixtures.TZ_MIN)
-        for test in (test_today, test_today_tiles, test_page_tiles, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_seek, test_media_accent, test_dev, test_windows, test_tile_drag, test_capture, test_tasks, test_task_sources, test_numpad,
+        for test in (test_today, test_today_tiles, test_page_tiles, test_icon_asks, test_day, test_pages, test_status_bar, test_audio, test_device_scroll, test_seek, test_media_accent, test_dev, test_windows, test_tile_drag, test_capture, test_tasks, test_task_sources, test_numpad,
                      test_toast, test_call, test_zoom, test_cheat_sheet, test_face, test_launcher, test_shortcut_actions, test_context_bar, test_context_menu, test_approval, test_question, test_progress, test_scripts, test_hold_ring, test_context_lock, test_sessions, test_picker, test_diagnostics, test_demo, test_glow, test_idle, test_offline, test_firmware_update):
             try:
                 d.load(fixtures.day())  # each starts from the same day

@@ -21,8 +21,8 @@ record MicState(bool Available, bool Muted);
 /// </summary>
 sealed class DeviceSource : IMMNotificationClient
 {
-    /// <summary>The deck shows at most this many devices per row.</summary>
-    const int MaxPerFlow = 4;
+    /// <summary>The deck keeps at most this many outputs, and as many inputs (model::Devices::kMax); its list scrolls.</summary>
+    const int MaxPerFlow = 10;
 
     readonly object _gate = new();
     readonly MMDeviceEnumerator _enumerator = new();

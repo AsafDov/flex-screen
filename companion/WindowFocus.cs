@@ -19,6 +19,22 @@ static class WindowFocus
         return true;
     }
 
+    /// <summary>Whether a visible top-level window (minimized counts) has a title that passes <paramref name="match"/>.</summary>
+    public static bool AnyTitle(Func<string, bool> match)
+    {
+        var found = false;
+        var title = new StringBuilder(512);
+        EnumWindows((hwnd, _) =>
+        {
+            if (!IsWindowVisible(hwnd)) return true;
+            title.Clear();
+            if (GetWindowText(hwnd, title, title.Capacity) == 0 || !match(title.ToString())) return true;
+            found = true;
+            return false;
+        }, IntPtr.Zero);
+        return found;
+    }
+
     static IntPtr Find(string titlePart, string[] processNames)
     {
         var pids = new HashSet<uint>(processNames.SelectMany(n => Process.GetProcessesByName(n)).Select(p => (uint)p.Id));

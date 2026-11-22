@@ -1,6 +1,7 @@
 // The Devices tile (Audio): the PC's outputs, then its inputs, each a list under its
 // heading; a tap makes one the Windows default. Every name gets the tile's width (side by
-// side the third output was cut off), and more devices than fit scroll. One of a kind (the
+// side the third output was cut off), and more devices than fit scroll, from anywhere in
+// the card (up to model::Devices::kMax of each kind). One of a kind (the
 // manager places each kind once), so its state lives here.
 #include "model.h"
 #include "pc.h"
@@ -74,6 +75,10 @@ void buildDevices(lv_obj_t *c) {
   lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_scroll_dir(c, LV_DIR_VER);
   lv_obj_set_scrollbar_mode(c, LV_SCROLLBAR_MODE_AUTO);
+  // A drag from a heading, a gap or the padding scrolls too: a card that takes no presses
+  // left those to the page, which took them as a swipe and changed page. Only a drag that
+  // began on a device scrolled.
+  lv_obj_set_clickable(c, true);
   w.outputs = buildList(c, true);
   lv_obj_t *gap = box(c);
   lv_obj_set_size(gap, 1, 4);

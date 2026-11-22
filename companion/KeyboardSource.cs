@@ -40,6 +40,8 @@ sealed class KeyboardSource
     static readonly TimeSpan Rediscover = TimeSpan.FromSeconds(5);
     static readonly TimeSpan KeymapLife = TimeSpan.FromMinutes(2);  // picks up remaps from Vial
     static readonly TimeSpan LockCheck = TimeSpan.FromSeconds(30);  // notices an unlock done in the Vial app
+    static readonly TimeSpan VialCheck = TimeSpan.FromSeconds(1);
+    static readonly TimeSpan VialLinger = TimeSpan.FromSeconds(15);  // a look at another tab doesn't bring the polling back
     static readonly TimeSpan TappingTerm = TimeSpan.FromMilliseconds(200);
 
     // QMK keycodes (v6 and later, which Vial protocol 6 uses).
@@ -53,6 +55,7 @@ sealed class KeyboardSource
     readonly List<Board> _boards = [];
     Board? _active;  // the one the deck shows
     string _mapSignature = "";
+    long _vialSeenTicks;  // when Vial last showed (UTC ticks): the keyboards are left alone for VialLinger after
 
     public KeyboardState Current { get; private set; } = new(false, "", 0, "");
 
@@ -72,24 +75,51 @@ sealed class KeyboardSource
 
     public void Start() => _thread.Start();
 
+    /// <summary>
+    /// Leaves the keyboards to Vial from now on (the deck's Edit in Vial), before its page is
+    /// up; they stay left while Vial shows, as <see cref="VialShows"/> finds it.
+    /// </summary>
+    public void MakeWayForVial() => Interlocked.Exchange(ref _vialSeenTicks, DateTime.UtcNow.Ticks);
+
+    /// <summary>
+    /// Vial, the app or its web app (vial.rocks in Chrome or Edge), talks to the same raw HID
+    /// interface, and takes the first report that comes in after its request as the reply.
+    /// With this asking for the held keys every 10 ms, that was often this one's answer, and
+    /// Vial couldn't read the keyboard. The web app's tab shows as the browser window's title
+    /// while it's the tab in front, which is when it talks to the keyboard.
+    /// </summary>
+    static bool VialShows()
+    {
+        var apps = Process.GetProcessesByName("Vial");
+        foreach (var app in apps) app.Dispose();
+        return apps.Length > 0 || WindowFocus.AnyTitle(t => t.StartsWith("Vial Web", StringComparison.Ordinal));
+    }
+
     void Run()
     {
         var lastLook = DateTime.MinValue;
         var lastVialCheck = DateTime.MinValue;
-        var vialOpen = false;
+        var paused = false;
         while (true)
         {
-            // The Vial app talks to the same interfaces; two talkers would get each other's replies.
-            if (DateTime.UtcNow - lastVialCheck > TimeSpan.FromSeconds(2))
+            if (DateTime.UtcNow - lastVialCheck > VialCheck)
             {
                 lastVialCheck = DateTime.UtcNow;
-                vialOpen = Process.GetProcessesByName("Vial").Length > 0;
+                if (VialShows()) MakeWayForVial();
             }
-            if (vialOpen)
+            if (DateTime.UtcNow.Ticks - Interlocked.Read(ref _vialSeenTicks) < VialLinger.Ticks)
             {
-                foreach (var board in _boards.ToList()) Close(board, "paused while the Vial app is open");
-                Thread.Sleep(2000);
+                if (!paused) Log.Write("kbd: Vial is open, so the keyboards are left to it");
+                paused = true;
+                foreach (var board in _boards.ToList()) Close(board, "paused while Vial is open");
+                Thread.Sleep(500);
                 continue;
+            }
+            if (paused)
+            {
+                Log.Write("kbd: Vial is closed, back to the keyboards");
+                paused = false;
+                lastLook = DateTime.MinValue;
             }
             if (DateTime.UtcNow - lastLook > Rediscover)
             {
